@@ -1,0 +1,11 @@
+{
+  "name": "arctecfox-monorepo",
+  "private": true,
+  "workspaces": ["apps/*"],
+  "scripts": {
+    "dev:lite": "npm --workspace apps/lite run dev",
+    "dev:v1": "npm --workspace apps/v1 run dev",
+    "build:lite": "npm --workspace apps/lite run build",
+    "build:v1": "npm --workspace apps/v1 run build"
+  }
+}

@@ -1,0 +1,20 @@
+USER       PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND
+runner       1  0.1  0.0 2741936 64308 ?       Ssl  02:34   0:10 /nix/store/660742544j1pv7cb1yc6wr9mk4iywcx3-pid1-0.0.1/bi
+runner      17  0.2  0.2 12145460 169660 ?     Rl   02:40   0:15 pid2 --no-deprecation /pid2/bundles/0.0.939/server.cjs --
+runner      34  0.0  0.0   3852  2432 ?        S    02:40   0:00 nix-editor --return-output
+runner     853  0.0  0.0   2620  1536 ?        S    02:51   0:00 sh -c /nix/store/bz8k1njgmm249fr5krhaq1jsi7jrhx5k-taplo-0
+runner     854  0.0  0.0 1247312 27844 ?       Sl   02:51   0:00 /nix/store/bz8k1njgmm249fr5krhaq1jsi7jrhx5k-taplo-0.patch
+runner     856  0.0  0.0   2620  1536 ?        S    02:51   0:00 sh -c /nix/store/9cd76kqpml5gkw8jjnjx0flwdf0a1gv1-typescr
+runner     860  0.0  0.0 1095636 51780 ?       Sl   02:51   0:00 /nix/store/wfxq6w9bkp5dcfr8yb6789b0w7128gnb-nodejs-20.18.
+runner     892  0.0  0.2 1063572 136560 ?      Sl   02:51   0:01 /nix/store/wfxq6w9bkp5dcfr8yb6789b0w7128gnb-nodejs-20.18.
+runner     893  0.1  0.3 1210964 255204 ?      Sl   02:51   0:06 /nix/store/wfxq6w9bkp5dcfr8yb6789b0w7128gnb-nodejs-20.18.
+runner     906  0.0  0.0 1004764 64908 ?       Sl   02:51   0:00 /nix/store/wfxq6w9bkp5dcfr8yb6789b0w7128gnb-nodejs-20.18.
+runner    1067  0.0  0.0   2620  1408 ?        S    02:59   0:00 sh -c /nix/store/pcaxdkz86gjbgyl5lp9jp7h3gjyilm9k-pyright
+runner    1068  0.1  0.2 994648 139628 ?       Sl   02:59   0:08 node /nix/store/pcaxdkz86gjbgyl5lp9jp7h3gjyilm9k-pyright-
+runner    1795  0.0  0.0  10420  6656 pts/3    Ss   03:07   0:00 /nix/store/f33kh08pa7pmy4kvsmsibda46sh46s66-bash-interact
+runner    2484 19.9  0.0  36640 25572 pts/3    S+   03:16  11:52 /nix/store/wqhkxzzlaswkj3gimqign99sshvllcg6-python-wrappe
+runner    2489  0.0  0.0  19936 13312 pts/3    S+   03:16   0:00 /nix/store/wqhkxzzlaswkj3gimqign99sshvllcg6-python-wrappe
+runner    5043  0.1  0.0      0     0 pts/3    Z+   04:04   0:01 [python] <defunct>
+runner    5508  0.0  0.0   9848  6272 pts/2    Ss   04:13   0:00 bash --rcfile /nix/store/x5cq4yhjskwqb9d2yqnvcz99yjai9vxm
+runner    5648  0.0  0.0   8916  2944 pts/2    R+   04:15   0:00 ps aux
+~/workspace$ kill -9 [5648]

@@ -1,0 +1,56 @@
+# ───────────── Monorepo build artifacts ─────────────
+# Vite / front-end build output
+/frontend/dist/
+/dist/
+
+# Backend caches, virtual environments, lock files
+__pycache__/
+/*.py[cod]
+*.sqlite3
+*.egg-info/
+/venv/
+/.env*
+
+# ───────────── Dependency dirs ─────────────
+node_modules/
+frontend/node_modules/
+
+# ───────────── Logs ─────────────
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# ───────────── Coverage & reports ─────────────
+coverage/
+.nyc_output/
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# ───────────── Build caches ─────────────
+.cache/
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
+.parcel-cache/
+
+# ───────────── IDE / OS files ─────────────
+.vscode/
+.DS_Store
+*.swp
+.idea/
+
+# ───────────── Misc tooling ─────────────
+*.tgz
+*.pid
+*.seed
+*.pid.lock
+.cache
+.pnpm-debug.log
+
+# ───────────── Environment files ─────────────
+.env
+.env.*.local
