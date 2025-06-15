@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { NavLink, Outlet, Link } from "react-router-dom";
 import { getCurrentUser, signOut } from "../api";
+import Header from "../components/Header";
 import { 
   BarChart3, 
   Settings, 
@@ -62,6 +63,7 @@ const MainLayout = () => {
         </header>
 
         <main className="flex-1 overflow-auto p-6">
+          <Header />
           <Outlet />
         </main>
       </div>
