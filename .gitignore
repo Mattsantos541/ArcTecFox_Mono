@@ -23,4 +23,7 @@ out/
 
 # OS files
 .DS_Store
-Thumbs.db
+Thumbs.dbapps/Welcome/backend/venv/
+**/node_modules/
+**/.temp/
+**/package-lock.json
