@@ -1,9 +1,10 @@
 # App directories to ignore
-apps/lite/
-apps/v1/
+
 
 # Python virtual environment
-apps/welcome/backend/venv/
+**/Welcome/backend/venv/
+**/lite/backend/venv/
+***/v1/backend/venv/
 
 # Dependencies
 node_modules/
@@ -15,8 +16,8 @@ build/
 out/
 
 # Environment files
-.env
-.env.local
+**/.env
+**/.env.local
 
 # Logs
 *.log
