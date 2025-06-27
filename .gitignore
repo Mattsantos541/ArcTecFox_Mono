@@ -1,4 +1,3 @@
-cat > .gitignore << 'EOF'
 # App directories to ignore
 apps/lite/
 apps/v1/
@@ -36,4 +35,3 @@ Thumbs.db
 
 # Lock files
 **/package-lock.json
-EOF
