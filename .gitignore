@@ -4,7 +4,7 @@
 # Python virtual environment
 **/Welcome/backend/venv/
 **/lite/backend/venv/
-***/v1/backend/venv/
+**/v1/backend/venv/
 
 # Dependencies
 node_modules/
@@ -21,6 +21,10 @@ out/
 
 # Logs
 *.log
+
+# Add Python cache patterns to .gitignore
+echo "__pycache__/" >> .gitignore
+echo "*.pyc" >> .gitignore
 
 # OS files
 .DS_Store
