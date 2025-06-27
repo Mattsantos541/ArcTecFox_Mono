@@ -1,10 +1,10 @@
+cat > .gitignore << 'EOF'
 # App directories to ignore
-
+apps/lite/
+apps/v1/
 
 # Python virtual environment
-**/Welcome/backend/venv/
-**/lite/backend/venv/
-**/v1/backend/venv/
+apps/Welcome/backend/venv/
 
 # Dependencies
 node_modules/
@@ -16,19 +16,24 @@ build/
 out/
 
 # Environment files
-**/.env
-**/.env.local
+.env
+.env.local
 
 # Logs
 *.log
 
-# Add Python cache patterns to .gitignore
-echo "__pycache__/" >> .gitignore
-echo "*.pyc" >> .gitignore
+# Python cache files
+__pycache__/
+**/__pycache__/
+*.pyc
 
 # OS files
 .DS_Store
-Thumbs.dbapps/Welcome/backend/venv/
-**/node_modules/
+Thumbs.db
+
+# Temporary files
 **/.temp/
+
+# Lock files
 **/package-lock.json
+EOF
