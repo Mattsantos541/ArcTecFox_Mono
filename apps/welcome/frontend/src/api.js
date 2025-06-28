@@ -166,18 +166,17 @@ For each PM task:
       throw new Error('AI returned invalid JSON format');
     }
 
-    // Format the instructions if needed
+    // Format the instructions if needed - KEEP AS ARRAY for jsonb storage
     parsedPlan.forEach(task => {
       task.asset_name = planData.name;
       task.asset_model = planData.model;
 
-      // Format instructions if they're a pipe-separated string
+      // Only format if it's a pipe-separated string, otherwise keep array as-is
       if (typeof task.instructions === 'string' && task.instructions.includes('|')) {
         const steps = task.instructions.split('|').filter(s => s.trim());
-        task.instructions = steps.map((step, i) => `${i + 1}. ${step.trim()}`).join('\n');
-      } else if (Array.isArray(task.instructions)) {
-        task.instructions = task.instructions.map((step, i) => `${i + 1}. ${step.trim()}`).join('\n');
+        task.instructions = steps.map(step => step.trim()); // Keep as array, don't join to string
       }
+      // If it's already an array, keep it as an array - don't convert to string!
     });
 
     console.log('✅ PM plan generated successfully:', parsedPlan);
@@ -239,6 +238,45 @@ export const savePMPlanInput = async (planData) => {
     return data;
   } catch (error) {
     console.error("❌ Error saving PM plan input:", error);
+    throw error;
+  }
+};
+
+// Save PM Plan Results to Database
+export const savePMPlanResults = async (pmPlanId, aiGeneratedPlan) => {
+  try {
+    console.log('💾 Saving PM plan results to database:', { pmPlanId, taskCount: aiGeneratedPlan.length });
+    
+    // Prepare the data for batch insert
+    const resultsToInsert = aiGeneratedPlan.map(task => ({
+      pm_plan_id: pmPlanId,
+      task_name: task.task_name,
+      maintenance_interval: task.maintenance_interval,
+      instructions: task.instructions, // Keep as-is (array or string) - jsonb handles both
+      reason: task.reason,
+      engineering_rationale: task.engineering_rationale,
+      safety_precautions: task.safety_precautions,
+      common_failures_prevented: task.common_failures_prevented,
+      usage_insights: task.usage_insights,
+      scheduled_dates: Array.isArray(task.scheduled_dates) 
+        ? task.scheduled_dates // Keep as array for jsonb
+        : task.scheduled_dates || null
+    }));
+
+    console.log('🔍 Sample data being inserted:', JSON.stringify(resultsToInsert[0], null, 2));
+
+    // Insert all results in a single batch operation
+    const { data, error } = await supabase
+      .from('pm_tasks')
+      .insert(resultsToInsert)
+      .select();
+    
+    if (error) throw error;
+    
+    console.log('✅ PM plan results saved successfully:', data.length, 'tasks saved');
+    return data;
+  } catch (error) {
+    console.error("❌ Error saving PM plan results:", error);
     throw error;
   }
 };

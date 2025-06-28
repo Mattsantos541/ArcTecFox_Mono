@@ -1,7 +1,6 @@
 
 import { useState } from "react";
-import { generatePMPlan, savePMPlanInput, savePMLead } from "../api";
-
+import { generatePMPlan, savePMPlanInput, savePMLead, savePMPlanResults } from "../api";
 // Reusable UI Components
 function Input({ label, name, value, onChange, placeholder, type = "text" }) {
   return (
@@ -152,29 +151,42 @@ export default function WelcomePage() {
   };
 
   const handleContactSubmit = async () => {
+  try {
+    setLoading(true);
+    setGeneratedPlan(null);
+    const updatedFormData = { ...formData, email: "test@example.com", company: "Test" };
+    
+    // Save lead and input data
+    await savePMLead("test@example.com", "Test");
+    const savedPlanInput = await savePMPlanInput(updatedFormData);
+    
+    // Generate AI plan
+    const aiGeneratedPlan = await generatePMPlan(updatedFormData);
+    
+    // Save the AI results to database
     try {
-      setLoading(true);
-      setGeneratedPlan(null);
-      const updatedFormData = { ...formData, email: "test@example.com", company: "Test" };
-      await savePMLead("test@example.com", "Test");
-      await savePMPlanInput(updatedFormData);
-      const aiGeneratedPlan = await generatePMPlan(updatedFormData);
-      setGeneratedPlan(aiGeneratedPlan);
-      setMessage(`✅ PM Plan generated successfully! Found ${aiGeneratedPlan.length} maintenance tasks.`);
-      setMessageType("success");
-      setFormData(updatedFormData);
-    } catch (error) {
-      console.error("❌ PM Plan generation error:", error);
-      setMessage(
-        error.message.includes("Failed to fetch")
-          ? "❌ Error: Cannot connect to backend server. Is FastAPI running?"
-          : `❌ Error: ${error.message}`
-      );
-      setMessageType("error");
-    } finally {
-      setLoading(false);
+      await savePMPlanResults(savedPlanInput.id, aiGeneratedPlan);
+      console.log('✅ AI results successfully saved to database');
+    } catch (saveError) {
+      console.warn('⚠️ Failed to save AI results, but continuing:', saveError);
     }
-  };
+    
+    setGeneratedPlan(aiGeneratedPlan);
+    setMessage(`✅ PM Plan generated successfully! Found ${aiGeneratedPlan.length} maintenance tasks.`);
+    setMessageType("success");
+    setFormData(updatedFormData);
+  } catch (error) {
+    console.error("❌ PM Plan generation error:", error);
+    setMessage(
+      error.message.includes("Failed to fetch")
+        ? "❌ Error: Cannot connect to backend server. Is FastAPI running?"
+        : `❌ Error: ${error.message}`
+    );
+    setMessageType("error");
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <div className="min-h-screen bg-gray-50">
