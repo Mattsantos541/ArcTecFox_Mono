@@ -1,5 +1,5 @@
 import { useState, useEffect, createContext, useContext } from 'react';
-import { getCurrentUser, loginUser, logoutUser, signUpUser } from '../api';
+import { getCurrentUser, signIn, signOut, signUp } from '../api';
 
 // Create Auth Context
 const AuthContext = createContext({});
@@ -35,12 +35,7 @@ export const AuthProvider = ({ children }) => {
       setLoading(true);
       setError(null);
       
-      const { user: loggedInUser, error: loginError } = await loginUser(email, password);
-      
-      if (loginError) {
-        setError(loginError);
-        return { success: false, error: loginError };
-      }
+      const loggedInUser = await signIn(email, password);
       
       setUser(loggedInUser);
       return { success: true, user: loggedInUser };
@@ -57,12 +52,8 @@ export const AuthProvider = ({ children }) => {
       setLoading(true);
       setError(null);
       
-      const { user: newUser, error: signupError } = await signUpUser(email, password, userData);
-      
-      if (signupError) {
-        setError(signupError);
-        return { success: false, error: signupError };
-      }
+      const signupResult = await signUp(email, password);
+      const newUser = signupResult.user;
       
       setUser(newUser);
       return { success: true, user: newUser };
@@ -77,12 +68,8 @@ export const AuthProvider = ({ children }) => {
   const logout = async () => {
     try {
       setLoading(true);
-      const { error: logoutError } = await logoutUser();
       
-      if (logoutError) {
-        setError(logoutError);
-        return { success: false, error: logoutError };
-      }
+      await signOut();
       
       setUser(null);
       setError(null);
