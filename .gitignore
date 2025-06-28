@@ -3,7 +3,7 @@ apps/lite/
 apps/v1/
 
 # Python virtual environment
-apps/welcome/backend/venv/
+apps/wpelcome/backend/venv/
 
 # Dependencies
 node_modules/
