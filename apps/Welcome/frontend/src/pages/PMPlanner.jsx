@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import { generatePMPlan, savePMPlanInput, savePMLead } from "../api";
 
@@ -55,67 +56,6 @@ function Select({ label, name, value, onChange, options }) {
   );
 }
 
-function ContactModal({ isOpen, onClose, onSubmit, email, setEmail, company, setCompany }) {
-  if (!isOpen) return null;
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (!email.trim()) return alert("Please enter your email address");
-    if (!company.trim()) return alert("Please enter your company name");
-    onSubmit();
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-8 max-w-md mx-4 shadow-2xl">
-        <h3 className="text-2xl font-semibold text-gray-800 mb-2">Almost Ready!</h3>
-        <p className="text-gray-600 mb-4">
-          Before we generate your custom PM plan, we need a couple of details to personalize your experience.
-        </p>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email Address *</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full border border-gray-300 rounded px-3 py-2"
-              placeholder="your.email@company.com"
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Company Name *</label>
-            <input
-              type="text"
-              value={company}
-              onChange={(e) => setCompany(e.target.value)}
-              className="w-full border border-gray-300 rounded px-3 py-2"
-              placeholder="Your Company Name"
-              required
-            />
-          </div>
-          <div className="flex gap-3 pt-4">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-            >
-              Generate My Plan
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
 function LoadingModal({ isOpen }) {
   if (!isOpen) return null;
   return (
@@ -133,7 +73,6 @@ function LoadingModal({ isOpen }) {
 
 function PMPlanDisplay({ plan }) {
   if (!plan?.length) return null;
-
   return (
     <div className="mt-8 bg-gray-50 rounded-lg p-6">
       <h3 className="text-xl font-bold mb-6 text-gray-800">Generated PM Plan</h3>
@@ -196,9 +135,6 @@ export default function WelcomePage() {
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState("");
   const [generatedPlan, setGeneratedPlan] = useState(null);
-  const [showContactModal, setShowContactModal] = useState(false);
-  const [contactEmail, setContactEmail] = useState("");
-  const [contactCompany, setContactCompany] = useState("");
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -212,16 +148,15 @@ export default function WelcomePage() {
       return;
     }
     setMessage("");
-    setShowContactModal(true);
+    handleContactSubmit(); // call directly
   };
 
   const handleContactSubmit = async () => {
     try {
-      setShowContactModal(false);
       setLoading(true);
       setGeneratedPlan(null);
-      const updatedFormData = { ...formData, email: contactEmail, company: contactCompany };
-      await savePMLead(contactEmail, contactCompany);
+      const updatedFormData = { ...formData, email: "test@example.com", company: "Test" };
+      await savePMLead("test@example.com", "Test");
       await savePMPlanInput(updatedFormData);
       const aiGeneratedPlan = await generatePMPlan(updatedFormData);
       setGeneratedPlan(aiGeneratedPlan);
@@ -243,15 +178,6 @@ export default function WelcomePage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <ContactModal
-        isOpen={showContactModal}
-        onClose={() => setShowContactModal(false)}
-        onSubmit={handleContactSubmit}
-        email={contactEmail}
-        setEmail={setContactEmail}
-        company={contactCompany}
-        setCompany={setContactCompany}
-      />
       <LoadingModal isOpen={loading} />
       <header className="bg-white shadow-sm">
         <div className="max-w-7xl mx-auto px-6 py-6">
