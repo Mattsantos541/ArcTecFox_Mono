@@ -21,14 +21,18 @@ logger = logging.getLogger(__name__)
 # Initialize FastAPI app
 app = FastAPI(title="PM Planning AI API", version="1.0.0")
 
-# CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[os.getenv("CORS_ORIGIN", "http://localhost:3000")],
+    allow_origins=[
+        "https://www.arctecfox.ai",  # ✅ Production domain
+        "https://arctecfox-lite-99tsm4zkq-mattsantos541s-projects.vercel.app",  # ✅ Preview Vercel frontend
+        "http://localhost:3000"  # ✅ Local testing (optional)
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 # Initialize OpenAI client
 openai_api_key = os.getenv("OPENAI_API_KEY")
