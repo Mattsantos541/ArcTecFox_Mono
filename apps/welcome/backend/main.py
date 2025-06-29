@@ -24,9 +24,9 @@ app = FastAPI(title="PM Planning AI API", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://www.arctecfox.ai",  # ✅ Production
-        "https://arctecfox-lite-99tsm4zkq-mattsantos541s-projects.vercel.app",  # ✅ Preview
-        "http://localhost:3000"  # ✅ Local
+        "https://www.arctecfox.ai",  # ✅ make sure no trailing slashes or whitespace
+        "https://arctecfox-lite-99tsm4zkq-mattsantos541s-projects.vercel.app",
+        "http://localhost:3000"
     ],
     allow_credentials=True,
     allow_methods=["*"],
