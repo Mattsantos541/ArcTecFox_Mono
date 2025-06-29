@@ -1,6 +1,6 @@
-
 import { useState } from "react";
-import { generatePMPlan, savePMPlanInput, savePMLead, savePMPlanResults } from "../api";
+import { generatePMPlan } from "../api";
+
 // Reusable UI Components
 function Input({ label, name, value, onChange, placeholder, type = "text" }) {
   return (
@@ -92,11 +92,15 @@ function PMPlanDisplay({ plan }) {
               <div className="mt-4">
                 <p className="text-sm font-medium text-gray-600 mb-1">Scheduled Dates (Next 12 months):</p>
                 <div className="flex flex-wrap gap-2">
-                  {task.scheduled_dates.map((date, idx) => (
+                  {Array.isArray(task.scheduled_dates) ? task.scheduled_dates.map((date, idx) => (
                     <span key={idx} className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-medium">
                       {date}
                     </span>
-                  ))}
+                  )) : (
+                    <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-medium">
+                      {task.scheduled_dates}
+                    </span>
+                  )}
                 </div>
               </div>
             )}
@@ -117,15 +121,17 @@ function Info({ label, value }) {
 }
 
 function InfoBlock({ label, value, bg }) {
+  const displayValue = Array.isArray(value) ? value.join('\n') : value;
+  
   return (
     <div className="mb-4">
       <p className="text-sm font-medium text-gray-600 mb-1">{label}:</p>
-      <p className={`text-sm ${bg} p-2 rounded`}>{value}</p>
+      <p className={`text-sm ${bg} p-2 rounded whitespace-pre-line`}>{displayValue}</p>
     </div>
   );
 }
 
-export default function WelcomePage() {
+export default function PMPlanner() {
   const [formData, setFormData] = useState({
     name: "", model: "", serial: "", category: "", hours: "",
     cycles: "", environment: "", date_of_plan_start: "", email: "", company: ""
@@ -147,46 +153,34 @@ export default function WelcomePage() {
       return;
     }
     setMessage("");
-    handleContactSubmit(); // call directly
+    handleContactSubmit();
   };
 
   const handleContactSubmit = async () => {
-  try {
-    setLoading(true);
-    setGeneratedPlan(null);
-    const updatedFormData = { ...formData, email: "test@example.com", company: "Test" };
-    
-    // Save lead and input data
-    await savePMLead("test@example.com", "Test");
-    const savedPlanInput = await savePMPlanInput(updatedFormData);
-    
-    // Generate AI plan
-    const aiGeneratedPlan = await generatePMPlan(updatedFormData);
-    
-    // Save the AI results to database
     try {
-      await savePMPlanResults(savedPlanInput.id, aiGeneratedPlan);
-      console.log('✅ AI results successfully saved to database');
-    } catch (saveError) {
-      console.warn('⚠️ Failed to save AI results, but continuing:', saveError);
+      setLoading(true);
+      setGeneratedPlan(null);
+      const updatedFormData = { 
+        ...formData, 
+        email: "test@example.com", 
+        company: "Test Company" 
+      };
+      
+      // Single call that handles database + AI generation
+      const aiGeneratedPlan = await generatePMPlan(updatedFormData);
+      
+      setGeneratedPlan(aiGeneratedPlan);
+      setMessage(`✅ PM Plan generated successfully! Found ${aiGeneratedPlan.length} maintenance tasks.`);
+      setMessageType("success");
+      setFormData(updatedFormData);
+    } catch (error) {
+      console.error("❌ PM Plan generation error:", error);
+      setMessage(`❌ Error: ${error.message}`);
+      setMessageType("error");
+    } finally {
+      setLoading(false);
     }
-    
-    setGeneratedPlan(aiGeneratedPlan);
-    setMessage(`✅ PM Plan generated successfully! Found ${aiGeneratedPlan.length} maintenance tasks.`);
-    setMessageType("success");
-    setFormData(updatedFormData);
-  } catch (error) {
-    console.error("❌ PM Plan generation error:", error);
-    setMessage(
-      error.message.includes("Failed to fetch")
-        ? "❌ Error: Cannot connect to backend server. Is FastAPI running?"
-        : `❌ Error: ${error.message}`
-    );
-    setMessageType("error");
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
