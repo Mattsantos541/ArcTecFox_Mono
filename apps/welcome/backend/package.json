@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.0.1",
   "scripts": {
-    "dev": "uvicorn main:app --reload --port 8000"
-  }
+    "dev": "uvicorn main:app --reload --host 0.0.0.0 --port 8000",
+    "start": "uvicorn main:app --host 0.0.0.0 --port 8000"
+  },
+  "main": "main.py",
+  "description": "FastAPI backend for PM Planning"
 }
