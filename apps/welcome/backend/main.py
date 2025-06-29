@@ -24,22 +24,21 @@ app = FastAPI(title="PM Planning AI API", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://www.arctecfox.ai",  # ✅ Production domain
-        "https://arctecfox-lite-99tsm4zkq-mattsantos541s-projects.vercel.app",  # ✅ Preview Vercel frontend
-        "http://localhost:3000"  # ✅ Local testing (optional)
+        "https://www.arctecfox.ai",  # ✅ Production
+        "https://arctecfox-lite-99tsm4zkq-mattsantos541s-projects.vercel.app",  # ✅ Preview
+        "http://localhost:3000"  # ✅ Local
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-
 # Initialize OpenAI client
 openai_api_key = os.getenv("OPENAI_API_KEY")
 if not openai_api_key:
     raise ValueError("OPENAI_API_KEY must be set")
-
 openai.api_key = openai_api_key
+logger.info(f"🔑 OpenAI key loaded: {'Yes' if openai_api_key else 'No'}")
 
 # Pydantic models
 class PlanData(BaseModel):
@@ -63,27 +62,21 @@ class AIPlanResponse(BaseModel):
     success: bool
     data: List[Dict[str, Any]]
 
-# Routes
+# Health check route
 @app.get("/api/health", response_model=HealthResponse)
 async def health_check():
-    """Health check endpoint"""
     return HealthResponse(status="OK", message="FastAPI AI Backend is running")
 
+# Main PM generation route
 @app.post("/api/generate-ai-plan", response_model=AIPlanResponse)
 async def generate_ai_plan(request: GenerateAIPlanRequest):
-    """Generate PM plan using OpenAI only - frontend handles database operations"""
     try:
         plan_data = request.planData
         logger.info(f"🚀 Received AI plan request: {plan_data.name}")
         
-        # Validate required fields
         if not plan_data.name or not plan_data.category:
-            raise HTTPException(
-                status_code=400, 
-                detail="Missing required fields: name and category"
-            )
+            raise HTTPException(status_code=400, detail="Missing required fields: name and category")
 
-        # Generate AI plan with OpenAI
         prompt = f"""
 Generate a detailed preventive maintenance (PM) plan for the following asset:
 
@@ -124,59 +117,54 @@ For each PM task:
 - "scheduled_dates" (array of strings in YYYY-MM-DD format)
 """
 
-        # Call OpenAI API
-        response = openai.chat.completions.create(
-            model="gpt-4",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are an expert in preventive maintenance planning. Always return pure JSON without any markdown formatting."
-                },
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ],
-            temperature=0.7,
-            max_tokens=2000,
-        )
+        try:
+            response = openai.chat.completions.create(
+                model="gpt-4",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are an expert in preventive maintenance planning. Always return pure JSON without any markdown formatting."
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                temperature=0.7,
+                max_tokens=2000,
+            )
+        except openai.OpenAIError as oe:
+            logger.error(f"🧠 OpenAI API error: {oe}")
+            raise HTTPException(status_code=502, detail="OpenAI API error")
 
         raw_content = response.choices[0].message.content
-        logger.info(f"🧠 AI plan generated successfully")
+        logger.info("🧠 AI response received from OpenAI")
 
-        # Clean the response
-        if '```json' in raw_content:
-            raw_content = raw_content.replace('```json', '').replace('```', '')
-        if '```' in raw_content:
-            raw_content = raw_content.replace('```', '')
-        raw_content = raw_content.strip()
+        raw_content = raw_content.replace("```json", "").replace("```", "").strip()
 
-        # Parse JSON
         try:
             parsed_response = json.loads(raw_content)
-            parsed_plan = parsed_response.get('maintenance_plan', [])
+            parsed_plan = parsed_response.get("maintenance_plan", [])
         except json.JSONDecodeError as e:
-            logger.error(f"❌ JSON parse error: {e}")
+            logger.error(f"❌ JSON decode error: {e}")
             raise HTTPException(status_code=500, detail="AI returned invalid JSON format")
 
-        # Add asset info to each task
         for task in parsed_plan:
-            task['asset_name'] = plan_data.name
-            task['asset_model'] = plan_data.model
+            task["asset_name"] = plan_data.name
+            task["asset_model"] = plan_data.model
 
-        logger.info(f"✅ AI plan generated successfully with {len(parsed_plan)} tasks")
-        
-        return AIPlanResponse(
-            success=True,
-            data=parsed_plan
-        )
+        logger.info(f"✅ Final plan parsed with {len(parsed_plan)} tasks")
+
+        return AIPlanResponse(success=True, data=parsed_plan)
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Error generating AI plan: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        import traceback
+        logger.error("❌ Error generating AI plan:\n%s", traceback.format_exc())
+        raise HTTPException(status_code=500, detail="Internal error during plan generation")
 
+# Dev runner
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
