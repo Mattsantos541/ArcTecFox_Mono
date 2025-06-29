@@ -6,11 +6,10 @@ from datetime import datetime, date
 import json
 import pandas as pd
 import openai
-import os
-from dotenv import load_dotenv
 
-load_dotenv()
-openai.api_key = os.getenv("OPENAI_API_KEY")
+from backend.config import settings  # ✅ import settings
+
+openai.api_key = settings.OPENAI_API_KEY  # ✅ set API key
 
 router = APIRouter()
 
