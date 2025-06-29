@@ -163,6 +163,21 @@ For each PM task:
         import traceback
         logger.error("❌ Error generating AI plan:\n%s", traceback.format_exc())
         raise HTTPException(status_code=500, detail="Internal error during plan generation")
+    
+
+from fastapi.responses import JSONResponse
+
+@app.get("/api/debug-openai")
+async def debug_openai():
+    import openai, os
+    try:
+        openai.api_key = os.getenv("OPENAI_API_KEY")
+        models = openai.models.list()
+        model_ids = [m.id for m in models.data]
+        return JSONResponse(status_code=200, content={"success": True, "models": model_ids})
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
 
 # Dev runner
 if __name__ == "__main__":
