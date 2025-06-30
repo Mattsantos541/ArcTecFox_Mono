@@ -1,10 +1,9 @@
-# apps/welcome/backend/main.py - Production ready with flexible CORS
+# apps/welcome/backend/main.py - Production ready with environment-based CORS
 import os
 import json
 import logging
 from datetime import datetime
 from typing import Dict, Any, List, Optional
-import re
 
 import openai
 from dotenv import load_dotenv
@@ -23,49 +22,17 @@ logger = logging.getLogger(__name__)
 # Initialize FastAPI app
 app = FastAPI(title="PM Planning AI API", version="1.0.0")
 
-# Flexible CORS configuration
-def is_allowed_origin(origin: str) -> bool:
-    """Check if origin is allowed based on patterns"""
-    allowed_patterns = [
-        r"^https://www\.arctecfox\.ai$",  # Production domain
-        r"^https://.*\.vercel\.app$",     # Any Vercel subdomain
-        r"^http://localhost:\d+$",       # Local development
-        r"^https://.*-mattsantos541s-projects\.vercel\.app$"  # Your specific Vercel pattern
-    ]
-    
-    for pattern in allowed_patterns:
-        if re.match(pattern, origin):
-            return True
-    return False
+# Environment-based CORS configuration
+cors_origins_env = os.getenv("CORS_ORIGIN", "http://localhost:3000")
+cors_origins = [origin.strip() for origin in cors_origins_env.split(",")]
 
-# Custom CORS middleware for flexible origin checking
-@app.middleware("http")
-async def cors_handler(request: Request, call_next):
-    response = await call_next(request)
-    origin = request.headers.get("origin")
-    
-    if origin and is_allowed_origin(origin):
-        response.headers["Access-Control-Allow-Origin"] = origin
-        response.headers["Access-Control-Allow-Credentials"] = "true"
-        response.headers["Access-Control-Allow-Methods"] = "*"
-        response.headers["Access-Control-Allow-Headers"] = "*"
-    
-    # Handle preflight requests
-    if request.method == "OPTIONS":
-        response.headers["Access-Control-Max-Age"] = "86400"
-    
-    return response
+logger.info(f"🌐 CORS origins configured: {cors_origins}")
 
-# Add standard CORS as fallback
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://www.arctecfox.ai",
-        "http://localhost:3000",
-        "http://localhost:3001"
-    ],
+    allow_origins=cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -104,17 +71,17 @@ class AIPlanResponse(BaseModel):
 async def health_check():
     return HealthResponse(status="OK", message="FastAPI AI Backend is running")
 
-# Debug route to check CORS
+# Debug route to check CORS configuration
 @app.get("/api/debug-cors")
 async def debug_cors(request: Request):
     origin = request.headers.get("origin", "No origin header")
-    is_allowed = is_allowed_origin(origin) if origin != "No origin header" else False
     
     return {
-        "origin": origin,
-        "is_allowed": is_allowed,
-        "user_agent": request.headers.get("user-agent", "No user-agent"),
-        "headers": dict(request.headers)
+        "configured_origins": cors_origins,
+        "request_origin": origin,
+        "origin_allowed": origin in cors_origins if origin != "No origin header" else "N/A (direct access)",
+        "cors_env_var": os.getenv("CORS_ORIGIN", "Not set"),
+        "user_agent": request.headers.get("user-agent", "No user-agent")
     }
 
 # Main PM generation route
