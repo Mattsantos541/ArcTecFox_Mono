@@ -1,14 +1,16 @@
-# apps/welcome/backend/main.py - Simplified version for OpenAI only
+# apps/welcome/backend/main.py - Production ready with flexible CORS
 import os
 import json
 import logging
 from datetime import datetime
 from typing import Dict, Any, List, Optional
+import re
 
 import openai
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 # Load environment variables
@@ -21,12 +23,46 @@ logger = logging.getLogger(__name__)
 # Initialize FastAPI app
 app = FastAPI(title="PM Planning AI API", version="1.0.0")
 
+# Flexible CORS configuration
+def is_allowed_origin(origin: str) -> bool:
+    """Check if origin is allowed based on patterns"""
+    allowed_patterns = [
+        r"^https://www\.arctecfox\.ai$",  # Production domain
+        r"^https://.*\.vercel\.app$",     # Any Vercel subdomain
+        r"^http://localhost:\d+$",       # Local development
+        r"^https://.*-mattsantos541s-projects\.vercel\.app$"  # Your specific Vercel pattern
+    ]
+    
+    for pattern in allowed_patterns:
+        if re.match(pattern, origin):
+            return True
+    return False
+
+# Custom CORS middleware for flexible origin checking
+@app.middleware("http")
+async def cors_handler(request: Request, call_next):
+    response = await call_next(request)
+    origin = request.headers.get("origin")
+    
+    if origin and is_allowed_origin(origin):
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Allow-Methods"] = "*"
+        response.headers["Access-Control-Allow-Headers"] = "*"
+    
+    # Handle preflight requests
+    if request.method == "OPTIONS":
+        response.headers["Access-Control-Max-Age"] = "86400"
+    
+    return response
+
+# Add standard CORS as fallback
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://www.arctecfox.ai",  # ✅ make sure no trailing slashes or whitespace
-        "https://arctecfox-lite-99tsm4zkq-mattsantos541s-projects.vercel.app",
-        "http://localhost:3000"
+        "https://www.arctecfox.ai",
+        "http://localhost:3000",
+        "http://localhost:3001"
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -37,6 +73,7 @@ app.add_middleware(
 openai_api_key = os.getenv("OPENAI_API_KEY")
 if not openai_api_key:
     raise ValueError("OPENAI_API_KEY must be set")
+
 openai.api_key = openai_api_key
 logger.info(f"🔑 OpenAI key loaded: {'Yes' if openai_api_key else 'No'}")
 
@@ -66,6 +103,19 @@ class AIPlanResponse(BaseModel):
 @app.get("/api/health", response_model=HealthResponse)
 async def health_check():
     return HealthResponse(status="OK", message="FastAPI AI Backend is running")
+
+# Debug route to check CORS
+@app.get("/api/debug-cors")
+async def debug_cors(request: Request):
+    origin = request.headers.get("origin", "No origin header")
+    is_allowed = is_allowed_origin(origin) if origin != "No origin header" else False
+    
+    return {
+        "origin": origin,
+        "is_allowed": is_allowed,
+        "user_agent": request.headers.get("user-agent", "No user-agent"),
+        "headers": dict(request.headers)
+    }
 
 # Main PM generation route
 @app.post("/api/generate-ai-plan", response_model=AIPlanResponse)
@@ -140,6 +190,7 @@ For each PM task:
         raw_content = response.choices[0].message.content
         logger.info("🧠 AI response received from OpenAI")
 
+        # Clean the response
         raw_content = raw_content.replace("```json", "").replace("```", "").strip()
 
         try:
@@ -147,8 +198,10 @@ For each PM task:
             parsed_plan = parsed_response.get("maintenance_plan", [])
         except json.JSONDecodeError as e:
             logger.error(f"❌ JSON decode error: {e}")
+            logger.error(f"Raw content: {raw_content[:200]}...")
             raise HTTPException(status_code=500, detail="AI returned invalid JSON format")
 
+        # Add asset metadata to each task
         for task in parsed_plan:
             task["asset_name"] = plan_data.name
             task["asset_model"] = plan_data.model
@@ -163,21 +216,24 @@ For each PM task:
         import traceback
         logger.error("❌ Error generating AI plan:\n%s", traceback.format_exc())
         raise HTTPException(status_code=500, detail="Internal error during plan generation")
-    
 
-from fastapi.responses import JSONResponse
-
+# Debug OpenAI connection
 @app.get("/api/debug-openai")
 async def debug_openai():
-    import openai, os
     try:
-        openai.api_key = os.getenv("OPENAI_API_KEY")
         models = openai.models.list()
-        model_ids = [m.id for m in models.data]
-        return JSONResponse(status_code=200, content={"success": True, "models": model_ids})
+        model_ids = [m.id for m in models.data[:5]]  # Just first 5 for brevity
+        return JSONResponse(status_code=200, content={
+            "success": True, 
+            "models_sample": model_ids,
+            "api_key_set": bool(os.getenv("OPENAI_API_KEY"))
+        })
     except Exception as e:
-        return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
-
+        return JSONResponse(status_code=500, content={
+            "success": False, 
+            "error": str(e),
+            "api_key_set": bool(os.getenv("OPENAI_API_KEY"))
+        })
 
 # Dev runner
 if __name__ == "__main__":
