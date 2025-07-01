@@ -634,7 +634,7 @@ export default function PMPlanner() {
         <div className="max-w-7xl mx-auto px-6 py-6">
           <div className="flex items-center gap-4">
             <img 
-              src="/assets/arctecfox-logo.jpg" 
+              src="/assets/ArcTecFox-logo.jpg" 
               alt="ArcTecFox Logo" 
               width="64" 
               height="64" 
