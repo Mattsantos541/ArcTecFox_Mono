@@ -632,7 +632,16 @@ export default function PMPlanner() {
       
       <header className="bg-white shadow-sm">
         <div className="max-w-7xl mx-auto px-6 py-6">
-          <h1 className="text-4xl font-bold text-gray-900">ArcTecFox Welcome Page</h1>
+          <div className="flex items-center gap-4">
+            <img 
+              src="/assets/arctecfox-logo.jpg" 
+              alt="ArcTecFox Logo" 
+              width="64" 
+              height="64" 
+              className="flex-shrink-0 rounded-lg"
+            />
+            <h1 className="text-4xl font-bold text-gray-900">ArcTecFox Welcome Page</h1>
+          </div>
         </div>
       </header>
       <main className="max-w-6xl mx-auto px-6 py-8 space-y-8">
