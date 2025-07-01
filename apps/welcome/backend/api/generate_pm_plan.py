@@ -23,7 +23,7 @@ class PMPlanInput(BaseModel):
 def generate_prompt(data: PMPlanInput) -> str:
     today = datetime.utcnow().date().isoformat()
     return f"""
-Generate a detailed preventive maintenance (PM) plan for the following asset:
+Generate a comprehensive preventive maintenance (PM) plan for the following asset:
 
 - Name: {data.name}
 - Model: {data.model}
@@ -35,30 +35,33 @@ Generate a detailed preventive maintenance (PM) plan for the following asset:
 - Notes: {data.notes}
 - Plan Start Date: {today}
 
-Use the manufacturer’s user manual as the primary source for determining recommended maintenance tasks and intervals. If the manual is unavailable, cite best practices and credible sources (e.g., ISO standards, industry handbooks, or manufacturer websites) that justify your recommendations.
+**Instructions:**
 
-**Include a field called `usage_insights`** that evaluates the asset’s current usage and expected failure modes at this stage based on {data.hours} usage hours.
+1. Organize maintenance tasks by standard frequency buckets:  
+   - Daily  
+   - Weekly  
+   - Monthly  
+   - Quarterly  
+   - Yearly
 
-For each task in the PM plan:
-1. Include a task name and interval.
-2. Write step-by-step instructions.
-3. Include safety precautions.
-4. Describe common failures the task helps prevent.
-5. Include a rationale for the task and interval.
-6. List scheduled maintenance dates over the next 12 months.
-7. Provide citations or references for your rationale.
+2. For each task, include:
+   - "task_name"
+   - "maintenance_interval" (e.g. 'weekly', 'monthly')
+   - "instructions" (as an array of clear step-by-step strings)
+   - "reason" (why the task is needed)
+   - "engineering_rationale" (based on usage, criticality, category)
+   - "safety_precautions"
+   - "common_failures_prevented"
+   - "usage_insights" (relating to {data.hours} usage)
+   - "scheduled_dates" (array of dates over next 12 months, based on interval and today’s date)
+   - "recommended_materials" (specify any oil, lubricant, grease, etc., including type/grade if possible)
+   - "citations" (reliable sources; ideally the manufacturer’s manual or credible standards)
 
-**IMPORTANT:** Return only a valid JSON object with no markdown. The root object must contain `"maintenance_plan"` (array of objects). Each task must include:
-- "task_name"
-- "maintenance_interval"
-- "instructions" (array of strings)
-- "reason"
-- "engineering_rationale"
-- "safety_precautions"
-- "common_failures_prevented"
-- "usage_insights"
-- "scheduled_dates" (array of YYYY-MM-DD strings)
-- "citations" (array of strings)
+3. If the manufacturer's manual is available, base the recommendations on it. If not, cite best practices and standards from credible industry sources.
+
+4. Return a single valid JSON object with a key `"maintenance_plan"` whose value is an array of tasks (objects).
+
+**IMPORTANT:** Return only the JSON output. No markdown, text explanation, or commentary.
 """
 
 @router.post("/api/generate-ai-plan")
