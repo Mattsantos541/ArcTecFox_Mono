@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { generatePMPlan } from "../api";
+import * as XLSX from 'xlsx';
 
 // Reusable UI Components
 function Input({ label, name, value, onChange, placeholder, type = "text" }) {
@@ -467,6 +468,7 @@ export default function PMPlanner() {
   const [bulkProgress, setBulkProgress] = useState(0);
   const [bulkTotal, setBulkTotal] = useState(0);
   const [currentAssetName, setCurrentAssetName] = useState('');
+  const [exporting, setExporting] = useState(false);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -509,7 +511,72 @@ export default function PMPlanner() {
     }
   };
 
-  // Handle bulk import processing
+  // Handle export to Excel
+  const handleExportToExcel = async () => {
+    try {
+      setExporting(true);
+      setMessage("");
+      
+      console.log('🔄 Starting export process...');
+      
+      // Call the Supabase stored procedure
+      const { createClient } = await import("@supabase/supabase-js");
+      const supabase = createClient(
+        import.meta.env.VITE_SUPABASE_URL,
+        import.meta.env.VITE_SUPABASE_ANON_KEY
+      );
+      
+      const { data, error } = await supabase.rpc('sp_export_all_tasks');
+      
+      if (error) {
+        throw new Error(`Database error: ${error.message}`);
+      }
+      
+      if (!data || data.length === 0) {
+        throw new Error('No data found to export');
+      }
+      
+      console.log(`📊 Retrieved ${data.length} records for export`);
+      
+      // Create Excel workbook
+      const workbook = XLSX.utils.book_new();
+      const worksheet = XLSX.utils.json_to_sheet(data);
+      
+      // Auto-size columns
+      const colWidths = [];
+      const headers = Object.keys(data[0]);
+      headers.forEach((header, index) => {
+        const maxLength = Math.max(
+          header.length,
+          ...data.map(row => String(row[header] || '').length)
+        );
+        colWidths[index] = { width: Math.min(maxLength + 2, 50) };
+      });
+      worksheet['!cols'] = colWidths;
+      
+      // Add worksheet to workbook
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'PM Tasks Export');
+      
+      // Generate filename with timestamp
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-');
+      const filename = `PM_Tasks_Export_${timestamp}.xlsx`;
+      
+      // Download the file
+      XLSX.writeFile(workbook, filename);
+      
+      setMessage(`✅ Export completed successfully! Downloaded ${data.length} records to ${filename}`);
+      setMessageType("success");
+      
+      console.log(`✅ Export completed: ${filename}`);
+      
+    } catch (error) {
+      console.error("❌ Export error:", error);
+      setMessage(`❌ Export failed: ${error.message}`);
+      setMessageType("error");
+    } finally {
+      setExporting(false);
+    }
+  };
   const handleBulkImport = async (parsedAssets) => {
     try {
       setBulkProcessing(true);
@@ -632,20 +699,18 @@ export default function PMPlanner() {
       
       <header className="bg-white shadow-sm">
         <div className="max-w-7xl mx-auto px-6 py-6">
-          <div className="flex items-center gap-4">
-            <img 
-              src="/assets/ArcTecFox-logo.jpg" 
-              alt="ArcTecFox Logo" 
-              width="64" 
-              height="64" 
-              className="flex-shrink-0 rounded-lg"
-            />
-            <h1 className="text-4xl font-bold text-gray-900">ArcTecFox Welcome Page</h1>
-          </div>
+          <h1 className="text-4xl font-bold text-gray-900 text-center">ArcTecFox Welcome Page</h1>
         </div>
       </header>
       <main className="max-w-6xl mx-auto px-6 py-8 space-y-8">
         <section className="bg-white rounded-lg shadow-md p-8 space-y-6 text-center">
+          <img 
+            src="/assets/ArcTecFox-logo.jpg" 
+            alt="ArcTecFox Logo" 
+            width="120" 
+            height="120" 
+            className="mx-auto mb-6 rounded-xl shadow-lg hover:scale-105 transition-transform duration-300"
+          />
           <h2 className="text-2xl font-semibold text-gray-800">
             Welcome to our AI-Powered Maintenance Planning Platform
           </h2>
@@ -707,6 +772,36 @@ export default function PMPlanner() {
           </div>
         </section>
         <PMPlanDisplay plan={generatedPlan} />
+        
+        {/* Export Section */}
+        <section className="bg-white rounded-lg shadow-md p-6">
+          <div className="text-center">
+            <h3 className="text-lg font-semibold text-gray-800 mb-4">Export Data</h3>
+            <p className="text-gray-600 mb-6">
+              Export all PM tasks and plans to an Excel file for external analysis or reporting.
+            </p>
+            <button
+              onClick={handleExportToExcel}
+              disabled={exporting || loading || bulkProcessing}
+              className={`px-8 py-3 rounded-lg font-semibold flex items-center gap-2 mx-auto ${
+                exporting || loading || bulkProcessing
+                  ? 'bg-gray-400 text-gray-600 cursor-not-allowed'
+                  : 'bg-green-600 hover:bg-green-700 text-white'
+              }`}
+            >
+              {exporting ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  Exporting...
+                </>
+              ) : (
+                <>
+                  📊 Export to Excel
+                </>
+              )}
+            </button>
+          </div>
+        </section>
       </main>
     </div>
   );
