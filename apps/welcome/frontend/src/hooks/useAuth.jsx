@@ -1,5 +1,5 @@
 import { useState, useEffect, createContext, useContext } from 'react';
-import { getCurrentUser, signIn, signOut, signUp } from '../api';
+import { getCurrentUser, signIn, signOut, signUp, signInWithGoogle, getCurrentUserSession, supabase } from '../api';
 
 // Create Auth Context
 const AuthContext = createContext({});
@@ -7,13 +7,42 @@ const AuthContext = createContext({});
 // Auth Provider Component
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(false); // Changed from true to false
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // TEMPORARILY DISABLED - Remove this useEffect to stop infinite auth checks
-  // useEffect(() => {
-  //   checkUser();
-  // }, []);
+  // Check for existing auth session and listen for changes
+  useEffect(() => {
+    // Get initial session
+    const getInitialSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        setUser(session?.user ?? null);
+      } catch (error) {
+        console.error('Error getting initial session:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    getInitialSession();
+
+    // Listen for auth state changes (this handles OAuth redirects)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        console.log('Auth state changed:', event, session?.user?.email);
+        
+        setUser(session?.user ?? null);
+        setLoading(false);
+        
+        // Clear any error when successfully authenticated
+        if (session?.user) {
+          setError(null);
+        }
+      }
+    );
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   const checkUser = async () => {
     try {
@@ -24,7 +53,7 @@ export const AuthProvider = ({ children }) => {
     } catch (error) {
       console.log('No active session:', error.message);
       setUser(null);
-      setError(null); // Don't treat missing auth as an error
+      setError(null);
     } finally {
       setLoading(false);
     }
@@ -44,6 +73,22 @@ export const AuthProvider = ({ children }) => {
       return { success: false, error: error.message };
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loginWithGoogle = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      await signInWithGoogle();
+      // The onAuthStateChange listener will handle setting the user
+      
+      return { success: true };
+    } catch (error) {
+      setError(error.message);
+      setLoading(false);
+      return { success: false, error: error.message };
     }
   };
 
@@ -87,6 +132,7 @@ export const AuthProvider = ({ children }) => {
     loading,
     error,
     login,
+    loginWithGoogle,
     signup,
     logout,
     checkUser,
