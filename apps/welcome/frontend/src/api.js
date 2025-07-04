@@ -1,8 +1,8 @@
 // Frontend api.js - Direct Supabase + Backend AI calls
 import { createClient } from "@supabase/supabase-js";
 
-// Supabase client (safe with anon key)
-const supabase = createClient(
+// Supabase client (safe with anon key) - EXPORTED so other files can use same instance
+export const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
   import.meta.env.VITE_SUPABASE_ANON_KEY
 );
@@ -37,6 +37,44 @@ export async function signIn(email, password) {
   return data.user;
 }
 
+// ✅ UPDATED: Fixed Google OAuth sign-in function
+export async function signInWithGoogle() {
+  try {
+    console.log('🔍 signInWithGoogle called');
+    console.log('🔍 Current location:', window.location.href);
+    
+    // Force redirect to current environment
+    const currentOrigin = window.location.origin;
+    console.log('🔍 Redirect will go to:', currentOrigin);
+    
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: currentOrigin // This should override the Site URL
+      }
+    });
+    
+    console.log('🔍 OAuth response data:', data);
+    
+    if (error) {
+      console.error('❌ OAuth error:', error);
+      throw error;
+    }
+    
+    return data;
+  } catch (error) {
+    console.error('❌ signInWithGoogle error:', error);
+    throw error;
+  }
+}
+
+// ✅ Get current session (useful for OAuth)
+export async function getCurrentUserSession() {
+  const { data: { session }, error } = await supabase.auth.getSession();
+  if (error) throw error;
+  return session;
+}
+
 export async function signOut() {
   try {
     const { error } = await supabase.auth.signOut();
@@ -51,8 +89,16 @@ export async function signOut() {
   }
 }
 
+// ✅ Enhanced getCurrentUser to check both regular auth and OAuth
 export async function getCurrentUser() {
   try {
+    // First check for OAuth session
+    const session = await getCurrentUserSession();
+    if (session?.user) {
+      return session.user;
+    }
+    
+    // Then check regular auth
     const { data, error } = await supabase.auth.getUser();
     if (error) throw error;
     return data.user || null;
@@ -148,9 +194,7 @@ export const savePMPlanResults = async (pmPlanId, aiGeneratedPlan) => {
   }
 };
 
-
-
-// ✅ NEW: Secure AI call to backend
+// ✅ Secure AI call to backend
 export const generateAIPlan = async (planData) => {
   try {
     console.log('🤖 Generating AI plan via secure backend:', planData);
@@ -185,7 +229,7 @@ export const generateAIPlan = async (planData) => {
   }
 };
 
-// ✅ Updated: Combined function using both direct DB + secure AI
+// ✅ Combined function using both direct DB + secure AI
 export const generatePMPlan = async (planData) => {
   try {
     console.log('🚀 Starting PM plan generation process');
