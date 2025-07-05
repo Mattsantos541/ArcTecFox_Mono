@@ -135,6 +135,55 @@ export const savePMPlanInput = async (planData) => {
   try {
     console.log('💾 Saving PM plan input to database:', planData);
     
+    // Get the current authenticated user
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError) throw new Error('User not authenticated');
+    if (!user) throw new Error('No authenticated user found');
+    
+    console.log('👤 Current user email:', user.email);
+    
+    // Step 1: Check if user exists in users table
+    const { data: existingUser, error: userLookupError } = await supabase
+      .from('users')
+      .select('id')
+      .eq('email', user.email)
+      .single();
+    
+    if (userLookupError && userLookupError.code !== 'PGRST116') {
+      // PGRST116 is "not found" error, other errors are actual problems
+      throw new Error(`Error looking up user: ${userLookupError.message}`);
+    }
+    
+    let userId;
+    
+    if (existingUser) {
+      // User exists, use their ID
+      userId = existingUser.id;
+      console.log('✅ Found existing user with ID:', userId);
+    } else {
+      // User doesn't exist, create new user record
+      console.log('📝 Creating new user record for:', user.email);
+      
+      const { data: newUser, error: createUserError } = await supabase
+        .from('users')
+        .insert([{
+          id: user.id, // Use the Supabase auth user ID
+          email: user.email,
+          full_name: user.user_metadata?.full_name || null,
+          created_at: new Date().toISOString(),
+        }])
+        .select('id')
+        .single();
+      
+      if (createUserError) {
+        throw new Error(`Error creating user: ${createUserError.message}`);
+      }
+      
+      userId = newUser.id;
+      console.log('✅ Created new user with ID:', userId);
+    }
+    
+    // Step 2: Insert PM plan with the user ID
     const { data, error } = await supabase
       .from('pm_plans')
       .insert([{
@@ -143,16 +192,17 @@ export const savePMPlanInput = async (planData) => {
         serial_no: planData.serial,
         eq_category: planData.category,
         op_hours: parseInt(planData.hours) || 0,
-        cycles: parseInt(planData.cycles) || 0,
+        additional_context: planData.additional_context || null,
         env_desc: planData.environment,
         plan_start_date: planData.date_of_plan_start || null,
+        created_by: userId, // Use the ID from users table
       }])
       .select()
       .single();
     
     if (error) throw error;
     
-    console.log('✅ PM plan input saved successfully:', data);
+    console.log('✅ PM plan input saved successfully with user ID:', userId);
     return data;
   } catch (error) {
     console.error("❌ Error saving PM plan input:", error);
