@@ -202,7 +202,7 @@ function BulkImportModal({ isOpen, onClose, onBulkImport }) {
       'Serial Number',
       'Category',
       'Operating Hours',
-      'Cycles',
+      'Additional Context',
       'Environment',
       'Plan Start Date'
     ];
@@ -283,8 +283,8 @@ function BulkImportModal({ isOpen, onClose, onBulkImport }) {
           case 'operating hours':
             rowData.hours = value;
             break;
-          case 'cycles':
-            rowData.cycles = value;
+          case 'additional context':
+             rowData.additional_context = value;
             break;
           case 'environment':
             rowData.environment = value;
@@ -522,7 +522,7 @@ export default function PMPlanner() {
   
   const [formData, setFormData] = useState({
     name: "", model: "", serial: "", category: "", hours: "",
-    cycles: "", environment: "", date_of_plan_start: "", email: "", company: ""
+    additional_context: "", environment: "", date_of_plan_start: "", email: "", company: ""
   });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
@@ -665,7 +665,7 @@ export default function PMPlanner() {
             serial: asset.serial || '',
             category: asset.category || '',
             hours: asset.hours || '',
-            cycles: asset.cycles || '',
+            additional_context: asset.additional_context || '',
             environment: asset.environment || '',
             date_of_plan_start: asset.date_of_plan_start || '',
             email: user?.email || "bulk-import@example.com",
@@ -814,7 +814,8 @@ export default function PMPlanner() {
                 <div>
                   <h3 className="text-lg font-semibold mb-4 text-gray-700">Operating Conditions</h3>
                   <Input label="Operating Hours" name="hours" type="number" value={formData.hours} onChange={handleInputChange} placeholder="e.g., 8760" />
-                  <Input label="Cycles" name="cycles" type="number" value={formData.cycles} onChange={handleInputChange} placeholder="e.g., 1000" />
+                  <TextArea label="Additional Context" name="additional_context" value={formData.additional_context} onChange={handleInputChange} placeholder="e.g., high vibration equipment, critical production asset, recent repairs, etc." rows={3} 
+/>
                   <TextArea label="Environment" name="environment" value={formData.environment} onChange={handleInputChange}
                     placeholder="e.g., outdoor / high humidity, indoor clean room, etc." rows={3} />
                   <Input label="Plan Start Date" name="date_of_plan_start" type="date" value={formData.date_of_plan_start} onChange={handleInputChange} />
