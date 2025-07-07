@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { useNavigate } from "react-router-dom" // Add this import
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -13,6 +14,7 @@ import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
+import { useAuth } from "../../hooks/useAuth";
 
 // Mock schedule data
 const scheduledTasks = [
@@ -128,7 +130,8 @@ export default function MaintenanceSchedule() {
   const [selectedDate, setSelectedDate] = useState(new Date())
   const [viewMode, setViewMode] = useState("list")
   const { toast } = useToast()
-
+  const navigate = useNavigate() // This line is already here
+  const { user } = useAuth() // Add this line here instead
   // Add state for task actions
   const [viewingTask, setViewingTask] = useState(null)
   const [showViewDialog, setShowViewDialog] = useState(false)
@@ -145,6 +148,11 @@ export default function MaintenanceSchedule() {
   const [editedTechnician, setEditedTechnician] = useState("")
   const [editedDate, setEditedDate] = useState("")
   const [editedTime, setEditedTime] = useState("")
+
+  // Add navigation handler
+  const handleCreateNewPlans = () => {
+    navigate('/pmplanner')
+  }
 
   // Task action handlers
   const handleViewTask = (task) => {
@@ -379,7 +387,7 @@ export default function MaintenanceSchedule() {
     setShowExportDialog(true)
   }
 
-  const getStatusColor = (status: string) => {
+  const getStatusColor = (status) => {
     switch (status) {
       case "Completed":
         return "default"
@@ -394,7 +402,7 @@ export default function MaintenanceSchedule() {
     }
   }
 
-  const getPriorityColor = (priority: string) => {
+  const getPriorityColor = (priority) => {
     switch (priority) {
       case "High":
         return "destructive"
@@ -407,7 +415,7 @@ export default function MaintenanceSchedule() {
     }
   }
 
-  const getStatusIcon = (status: string) => {
+  const getStatusIcon = (status) => {
     switch (status) {
       case "Completed":
         return <CheckCircle className="h-4 w-4 text-green-500" />
@@ -420,6 +428,15 @@ export default function MaintenanceSchedule() {
     }
   }
 
+// Add this authentication check
+if (!user) {
+  return (
+    <div className="flex justify-center items-center min-h-96">
+      <p className="text-muted-foreground">Please sign in to access the maintenance dashboard.</p>
+    </div>
+  )
+}
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -427,9 +444,9 @@ export default function MaintenanceSchedule() {
           <h2 className="text-2xl font-bold">Maintenance Schedule</h2>
           <p className="text-muted-foreground">View and manage scheduled maintenance tasks</p>
         </div>
-        <Button>
+        <Button onClick={handleCreateNewPlans}>
           <CalendarDays className="h-4 w-4 mr-2" />
-          Schedule New Task
+          Create New Plans
         </Button>
       </div>
 

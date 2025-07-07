@@ -10,5 +10,10 @@
     "dev:lite": "npm --workspace apps/lite run dev",
     "build:v1": "npm --workspace apps/v1 run build",
     "dev:v1": "npm --workspace apps/v1 run dev"
+  },
+  "dependencies": {
+    "@radix-ui/react-dialog": "^1.1.14",
+    "@radix-ui/react-select": "^2.2.5",
+    "@radix-ui/react-tabs": "^1.1.12"
   }
 }
