@@ -7,6 +7,7 @@ export const supabase = createClient(
   import.meta.env.VITE_SUPABASE_ANON_KEY
 );
 
+
 // Backend URL for AI calls
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
 
@@ -24,6 +25,17 @@ export const fetchAssets = async () => {
 
 export async function signUp(email, password) {
   const { data, error } = await supabase.auth.signUp({ email, password });
+  if (error) throw error;
+  return data;
+}
+// ✅ Fetch asset types from the "dim_assets" table
+// This table should contain asset_type_id and asset_name
+export async function fetchAssetTypes() {
+  const { data, error } = await supabase
+    .from("dim_assets")
+    .select("asset_type_id, asset_name")
+    .order("asset_name");
+
   if (error) throw error;
   return data;
 }
