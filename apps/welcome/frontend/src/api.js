@@ -30,15 +30,16 @@ export async function signUp(email, password) {
 }
 // ✅ Fetch asset types from the "dim_assets" table
 // This table should contain asset_type_id and asset_name
-export async function fetchAssetTypes() {
-  const { data, error } = await supabase
-    .from("dim_assets")
-    .select("asset_type_id, asset_name")
-    .order("asset_name");
+// export async function fetchAssetTypes() {
+//   const { data, error } = await supabase
+//     .from("dim_assets")
+//     .select("asset_type_id, asset_name")
+//     .order("asset_name");
 
-  if (error) throw error;
-  return data;
-}
+//   if (error) throw error;
+//   return data;
+// }
+
 
 export async function signIn(email, password) {
   const { data, error } = await supabase.auth.signInWithPassword({

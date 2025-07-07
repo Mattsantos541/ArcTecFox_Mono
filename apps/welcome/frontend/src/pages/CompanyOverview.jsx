@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { fetchAssets, fetchMetrics, fetchAssetTypes } from "../api";
+// import { fetchAssetTypes } from "../api";
+import { fetchAssets, fetchMetrics } from "../api";
 
 function CompanyOverview() {
   const [assets, setAssets] = useState([]);
@@ -15,11 +16,30 @@ function CompanyOverview() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [assetData = [], assetTypeData = []] = await Promise.all([
-          fetchAssets().catch(() => []),
-          fetchAssetTypes().catch(() => []),
-        ]);
+        // ✅ Hardcoded asset types
+        const assetTypeData = [
+          { asset_type_id: 1, asset_name: "Pump" },
+          { asset_type_id: 2, asset_name: "Motor" },
+          { asset_type_id: 3, asset_name: "Valve" },
+          { asset_type_id: 4, asset_name: "Sensor" },
+          { asset_type_id: 5, asset_name: "Actuator" },
+          { asset_type_id: 6, asset_name: "Controller" },
+          { asset_type_id: 7, asset_name: "Conveyor" },
+          { asset_type_id: 8, asset_name: "Compressor" },
+          { asset_type_id: 9, asset_name: "Gearbox" },
+          { asset_type_id: 10, asset_name: "Hydraulic System" },
+          { asset_type_id: 11, asset_name: "Pneumatic System" },
+          { asset_type_id: 12, asset_name: "Heat Exchanger" },
+          { asset_type_id: 13, asset_name: "Chiller" },
+          { asset_type_id: 14, asset_name: "Boiler" },
+          { asset_type_id: 15, asset_name: "Cooling Tower" },
+          { asset_type_id: 16, asset_name: "Furnace" },
+          { asset_type_id: 17, asset_name: "Industrial Fan / Blower" },
+          { asset_type_id: 18, asset_name: "Industrial Robot" },
+          { asset_type_id: 19, asset_name: "CNC Machine" },
+        ];
 
+        const assetData = await fetchAssets().catch(() => []);
         setAssets(assetData);
         setAssetTypes(assetTypeData);
 
