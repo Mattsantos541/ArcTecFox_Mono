@@ -52,7 +52,7 @@ function CompanyOverview() {
       </div>
 
       <div>
-        <h2 className="text-xl font-semibold text-gray-800">Filter by Asset Type</h2>
+        <h2 className="text-xl font-semibold text-gray-800">Filter by Category</h2>
         <select
           className="border p-2 rounded mt-2"
           value={selectedAssetType ?? ""}
@@ -60,7 +60,7 @@ function CompanyOverview() {
             setSelectedAssetType(e.target.value ? Number(e.target.value) : null)
           }
         >
-          <option value="">All Asset Types</option>
+          <option value="">All Categories</option>
           {assetTypes.map((type) => (
             <option key={type.asset_type_id} value={type.asset_type_id}>
               {type.asset_name}
@@ -76,7 +76,7 @@ function CompanyOverview() {
             <thead className="bg-gray-100">
               <tr>
                 <th className="p-4 border-b">Asset Name</th>
-                <th className="p-4 border-b">Asset Type</th>
+                <th className="p-4 border-b">Category</th>
                 <th className="p-4 border-b">Usage Hours</th>
                 <th className="p-4 border-b">Location</th>
               </tr>
