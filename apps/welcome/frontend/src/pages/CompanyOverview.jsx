@@ -16,7 +16,7 @@ function CompanyOverview() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        // ✅ Hardcoded asset types
+        // ✅ Hardcoded asset types for now
         const assetTypeData = [
           { asset_type_id: 1, asset_name: "Pump" },
           { asset_type_id: 2, asset_name: "Motor" },
@@ -111,8 +111,10 @@ function CompanyOverview() {
                   <tr key={asset.id} className="border-b hover:bg-gray-50">
                     <td className="p-4">{asset.name}</td>
                     <td className="p-4">
-                      {assetTypes.find((t) => t.asset_type_id === asset.asset_type_id)
-                        ?.asset_name || "Unknown"}
+                      {/* ✅ Corrected Category display */}
+                      {assetTypes.find(
+                        (t) => t.asset_type_id === asset.asset_type_id
+                      )?.asset_name || "Unknown"}
                     </td>
                     <td className="p-4">{asset.usage_hours ?? "N/A"} hrs</td>
                     <td className="p-4">{asset.location || "N/A"}</td>
