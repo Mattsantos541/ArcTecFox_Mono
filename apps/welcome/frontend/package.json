@@ -25,10 +25,12 @@
     "vite": "^5.0.0"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.49.1",
+    "@radix-ui/react-tabs": "^1.1.12",
+    "@supabase/supabase-js": "^2.50.3",
     "axios": "^1.7.9",
     "express-jwt": "^8.5.1",
     "jwt-decode": "^4.0.0",
+    "lucide-react": "^0.263.1",
     "react-router-dom": "^7.1.5",
     "xlsx": "^0.18.5"
   }
