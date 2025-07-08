@@ -15,10 +15,10 @@ class PMPlanInput(BaseModel):
     model: str
     serial: str
     category: str
-    hours: str
+    hours: str  # Operating hours
     frequency: str
     criticality: str
-    notes: str
+    additional_context: str  # Replaces usage cycles
 
 def generate_prompt(data: PMPlanInput) -> str:
     today = datetime.utcnow().date().isoformat()
@@ -29,10 +29,10 @@ Generate a comprehensive preventive maintenance (PM) plan for the following asse
 - Model: {data.model}
 - Serial: {data.serial}
 - Category: {data.category}
-- Usage Hours: {data.hours}
+- Operating Hours: {data.hours}
 - PM Frequency: {data.frequency}
 - Criticality: {data.criticality}
-- Notes: {data.notes}
+- Additional Context: {data.additional_context}
 - Plan Start Date: {today}
 
 **Instructions:**
@@ -49,10 +49,10 @@ Generate a comprehensive preventive maintenance (PM) plan for the following asse
    - "maintenance_interval" (e.g. 'weekly', 'monthly')
    - "instructions" (as an array of clear step-by-step strings)
    - "reason" (why the task is needed)
-   - "engineering_rationale" (based on usage, criticality, category)
+   - "engineering_rationale" (based on operating hours, criticality, category, and additional context)
    - "safety_precautions"
    - "common_failures_prevented"
-   - "usage_insights" (relating to {data.hours} usage)
+   - "usage_insights" (relating to {data.hours} operating hours and the additional context)
    - "scheduled_dates" (array of dates over next 12 months, based on interval and today’s date)
    - "recommended_materials" (specify any oil, lubricant, grease, etc., including type/grade if possible)
    - "citations" (reliable sources; ideally the manufacturer’s manual or credible standards)
