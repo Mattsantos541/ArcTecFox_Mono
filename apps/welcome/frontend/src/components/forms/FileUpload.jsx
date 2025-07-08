@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 export const FileUpload = ({ 
   label, 
   accept, 
-  maxSize = 10 * 1024 * 1024, // 10MB default
+  maxSize = 30 * 1024 * 1024, // 30MB default
   onFileSelect,
   error,
   required = false,

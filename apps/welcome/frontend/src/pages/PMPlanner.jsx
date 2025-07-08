@@ -893,7 +893,7 @@ export default function PMPlanner() {
                 <FileUpload
                   label="Include User Manual (Optional)"
                   accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png,.gif"
-                  maxSize={10 * 1024 * 1024} // 10MB
+                  maxSize={30 * 1024 * 1024} // 30MB
                   onFileSelect={handleFileSelect}
                   error={fileUploadError}
                   disabled={uploadingFile}

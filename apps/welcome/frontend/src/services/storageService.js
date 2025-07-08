@@ -29,7 +29,7 @@ export class StorageService {
         console.log('1. Go to Supabase Dashboard → Storage');
         console.log('2. Create bucket named "user-manuals"');
         console.log('3. Set as Private bucket');
-        console.log('4. Set file size limit to 10MB');
+        console.log('4. Set file size limit to 30MB');
         console.log('5. Add storage policies for user access');
         
         return { 
@@ -76,9 +76,9 @@ export class StorageService {
         throw new Error('File type not supported. Please upload PDF, DOC, DOCX, TXT, or image files.');
       }
 
-      // Validate file size (10MB limit)
-      if (file.size > 10 * 1024 * 1024) {
-        throw new Error('File size must be less than 10MB');
+      // Validate file size (30MB limit)
+      if (file.size > 30 * 1024 * 1024) {
+        throw new Error('File size must be less than 30MB');
       }
 
       // Generate unique file name

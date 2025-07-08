@@ -8,7 +8,7 @@
 3. Create bucket with these settings:
    - **Name**: `user-manuals`
    - **Public**: `false` (private bucket)
-   - **File size limit**: `10485760` (10MB)
+   - **File size limit**: `31457280` (30MB)
    - **Allowed MIME types**: 
      ```
      application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,image/jpeg,image/png,image/gif
@@ -72,7 +72,7 @@ If you still get errors:
 1. **"Bucket not found"**: Make sure the bucket name is exactly `user-manuals`
 2. **"Row level security policy"**: Ensure all 4 storage policies are created
 3. **"Access denied"**: Check that the user is authenticated
-4. **"File size limit"**: Ensure bucket file size limit is set to 10MB
+4. **"File size limit"**: Ensure bucket file size limit is set to 30MB
 
 ## File Structure
 
