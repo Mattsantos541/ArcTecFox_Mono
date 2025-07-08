@@ -1,5 +1,6 @@
 import { Outlet } from "react-router-dom";
 import { useAuth } from '../hooks/useAuth';
+import { AuthLoading } from '../components/loading/LoadingStates';
 
 // GoogleLoginButton Component
 function GoogleLoginButton({ className = "" }) {
@@ -34,13 +35,7 @@ function AuthHeader() {
   const { user, logout, loading } = useAuth();
 
   if (loading) {
-    return (
-      <div className="bg-white border-b border-gray-200 px-6 py-4">
-        <div className="max-w-6xl mx-auto flex justify-center">
-          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
-        </div>
-      </div>
-    );
+    return <AuthLoading />;
   }
 
   if (user) {
