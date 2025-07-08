@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { generatePMPlan } from "../api";
 import * as XLSX from 'xlsx';
 import { useAuth } from '../hooks/useAuth';
@@ -454,6 +454,42 @@ export default function PMPlanner() {
   const [bulkTotal, setBulkTotal] = useState(0);
   const [currentAssetName, setCurrentAssetName] = useState('');
   const [exporting, setExporting] = useState(false);
+  const [assetCategories, setAssetCategories] = useState([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(true);
+
+  const fetchAssetCategories = async () => {
+    try {
+      setCategoriesLoading(true);
+      const { createClient } = await import("@supabase/supabase-js");
+      const supabase = createClient(
+        import.meta.env.VITE_SUPABASE_URL,
+        import.meta.env.VITE_SUPABASE_ANON_KEY
+      );
+
+      const { data, error } = await supabase
+        .from('dim_assets')
+        .select('asset_name')
+        .order('asset_name');
+
+      if (error) throw error;
+
+      // Extract unique asset names and sort them
+      const uniqueCategories = [...new Set(data.map(item => item.asset_name))].sort();
+      setAssetCategories(uniqueCategories);
+    } catch (err) {
+      console.error('Error fetching asset categories:', err);
+      // Fallback to hardcoded list if fetch fails
+      setAssetCategories(["Pump", "Motor", "Valve", "Sensor", "Actuator", "Controller", "Other"]);
+    } finally {
+      setCategoriesLoading(false);
+    }
+  };
+
+  // Load categories when component mounts
+  // Load categories when component mounts
+  useEffect(() => {
+    fetchAssetCategories();
+  }, []);
 
   const handleBackToDashboard = () => {
     navigate('/');
@@ -500,64 +536,91 @@ export default function PMPlanner() {
   };
 
   const handleExportToExcel = async () => {
-    try {
-      setExporting(true);
-      setMessage("");
-      
-      console.log('🔄 Starting export process...');
-      
-      const { createClient } = await import("@supabase/supabase-js");
-      const supabase = createClient(
-        import.meta.env.VITE_SUPABASE_URL,
-        import.meta.env.VITE_SUPABASE_ANON_KEY
-      );
-      
-      const { data, error } = await supabase.rpc('sp_export_all_tasks');
-      
-      if (error) {
-        throw new Error(`Database error: ${error.message}`);
-      }
-      
-      if (!data || data.length === 0) {
-        throw new Error('No data found to export');
-      }
-      
-      console.log(`📊 Retrieved ${data.length} records for export`);
-      
-      const workbook = XLSX.utils.book_new();
-      const worksheet = XLSX.utils.json_to_sheet(data);
-      
-      const colWidths = [];
-      const headers = Object.keys(data[0]);
-      headers.forEach((header, index) => {
-        const maxLength = Math.max(
-          header.length,
-          ...data.map(row => String(row[header] || '').length)
-        );
-        colWidths[index] = { width: Math.min(maxLength + 2, 50) };
-      });
-      worksheet['!cols'] = colWidths;
-      
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'PM Tasks Export');
-      
-      const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-');
-      const filename = `PM_Tasks_Export_${timestamp}.xlsx`;
-      
-      XLSX.writeFile(workbook, filename);
-      
-      setMessage(`✅ Export completed successfully! Downloaded ${data.length} records to ${filename}`);
-      setMessageType("success");
-      
-      console.log(`✅ Export completed: ${filename}`);
-      
-    } catch (error) {
-      console.error("❌ Export error:", error);
-      setMessage(`❌ Export failed: ${error.message}`);
-      setMessageType("error");
-    } finally {
-      setExporting(false);
+  try {
+    setExporting(true);
+    setMessage("");
+    
+    console.log('🔄 Starting export process...');
+    
+    // Check if user is authenticated
+    if (!user) {
+      throw new Error('User not authenticated');
     }
-  };
+    
+    // Create authenticated Supabase client (same way as your maintenance schedule)
+    const { createClient } = await import("@supabase/supabase-js");
+    const supabase = createClient(
+      import.meta.env.VITE_SUPABASE_URL,
+      import.meta.env.VITE_SUPABASE_ANON_KEY
+    );
+    
+    // Set the auth session manually
+    const { data: { session } } = await supabase.auth.getSession();
+    console.log('Export session check:', session?.user?.id);
+    
+    // Test direct query instead of stored procedure
+    const { data: testData, error: testError } = await supabase
+      .from('pm_tasks')
+      .select(`
+        *,
+        pm_plans (
+          asset_name
+        )
+      `)
+      .limit(5);
+    
+    console.log('Direct query test - data:', testData);
+    console.log('Direct query test - error:', testError);
+
+    const { data, error } = await supabase.rpc('sp_export_all_tasks');
+    
+    console.log('RPC result - data:', data);
+    console.log('RPC result - error:', error);
+    
+    if (error) {
+      throw new Error(`Database error: ${error.message}`);
+    }
+    
+    if (!data || data.length === 0) {
+      throw new Error('No data found to export');
+    }
+    
+    console.log(`📊 Retrieved ${data.length} records for export`);
+    
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.json_to_sheet(data);
+    
+    const colWidths = [];
+    const headers = Object.keys(data[0]);
+    headers.forEach((header, index) => {
+      const maxLength = Math.max(
+        header.length,
+        ...data.map(row => String(row[header] || '').length)
+      );
+      colWidths[index] = { width: Math.min(maxLength + 2, 50) };
+    });
+    worksheet['!cols'] = colWidths;
+    
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'PM Tasks Export');
+    
+    const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-');
+    const filename = `PM_Tasks_Export_${timestamp}.xlsx`;
+    
+    XLSX.writeFile(workbook, filename);
+    
+    setMessage(`✅ Export completed successfully! Downloaded ${data.length} records to ${filename}`);
+    setMessageType("success");
+    
+    console.log(`✅ Export completed: ${filename}`);
+    
+  } catch (error) {
+    console.error("❌ Export error:", error);
+    setMessage(`❌ Export failed: ${error.message}`);
+    setMessageType("error");
+  } finally {
+    setExporting(false);
+  }
+};
 
   const handleBulkImport = async (parsedAssets) => {
     try {
@@ -719,8 +782,13 @@ export default function PMPlanner() {
               <Input label="Asset Name *" name="name" value={formData.name} onChange={handleInputChange} placeholder="e.g., Hydraulic Pump #1" />
               <Input label="Model" name="model" value={formData.model} onChange={handleInputChange} placeholder="e.g., HPX-500" />
               <Input label="Serial Number" name="serial" value={formData.serial} onChange={handleInputChange} placeholder="e.g., HPX500-00123" />
-              <Select label="Category *" name="category" value={formData.category} onChange={handleInputChange}
-                options={["Pump", "Motor", "Valve", "Sensor", "Actuator", "Controller", "Other"]} />
+              <Select 
+                label="Category *" 
+                name="category" 
+                value={formData.category} 
+                onChange={handleInputChange}
+                options={categoriesLoading ? ["Loading..."] : assetCategories} 
+              />
             </div>
             <div>
               <h3 className="text-lg font-semibold mb-4 text-gray-700">Operating Conditions</h3>

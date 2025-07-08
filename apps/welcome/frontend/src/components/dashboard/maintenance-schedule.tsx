@@ -1,137 +1,51 @@
 "use client"
 
-import { useState } from "react"
-import { useNavigate } from "react-router-dom" // Add this import
+import { useState, useEffect } from "react"
+import { useNavigate } from "react-router-dom"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Calendar } from "@/components/ui/calendar"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { CalendarDays, Clock, User, CheckCircle, AlertCircle, Eye, Edit, Trash2, Download, Info } from "lucide-react"
+import { CalendarDays, Clock, User, CheckCircle, AlertCircle, Eye, Edit, Trash2, Download, Info, Loader2 } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
-import { useAuth } from "../../hooks/useAuth";
-
-// Mock schedule data
-const scheduledTasks = [
-  {
-    id: 1,
-    asset: "Compressor Unit A-1",
-    task: "Oil change and filter replacement",
-    date: "2024-01-15",
-    time: "09:00",
-    technician: "John Smith",
-    duration: "2 hours",
-    status: "Scheduled",
-    priority: "High",
-    planId: "P001",
-  },
-  {
-    id: 2,
-    asset: "Conveyor Belt B-3",
-    task: "Belt tension adjustment",
-    date: "2024-01-16",
-    time: "14:00",
-    technician: "Sarah Johnson",
-    duration: "45 min",
-    status: "In Progress",
-    priority: "Medium",
-    planId: "P002",
-  },
-  {
-    id: 3,
-    asset: "HVAC System C-2",
-    task: "Filter replacement",
-    date: "2024-01-17",
-    time: "10:30",
-    technician: "Mike Wilson",
-    duration: "30 min",
-    status: "Completed",
-    priority: "Low",
-    planId: "P002",
-  },
-  {
-    id: 4,
-    asset: "CNC Machine M-1",
-    task: "Spindle inspection and coolant check",
-    date: "2024-01-18",
-    time: "08:00",
-    technician: "John Smith",
-    duration: "1 hour",
-    status: "Scheduled",
-    priority: "High",
-    planId: "P003",
-  },
-  {
-    id: 5,
-    asset: "Injection Molding Press P-2",
-    task: "Hydraulic pressure check and mold inspection",
-    date: "2024-01-19",
-    time: "11:00",
-    technician: "Sarah Johnson",
-    duration: "1.5 hours",
-    status: "Scheduled",
-    priority: "High",
-    planId: "P001",
-  },
-  {
-    id: 6,
-    asset: "Packaging Line PL-1",
-    task: "Conveyor belt inspection and sensor calibration",
-    date: "2024-01-20",
-    time: "13:00",
-    technician: "Mike Wilson",
-    duration: "45 min",
-    status: "Overdue",
-    priority: "Medium",
-    planId: "P003",
-  },
-  {
-    id: 7,
-    asset: "Generator G-1",
-    task: "Fuel system inspection",
-    date: "2024-01-21",
-    time: "08:00",
-    technician: "John Smith",
-    duration: "1.5 hours",
-    status: "Scheduled",
-    priority: "High",
-    planId: "P001",
-  },
-  {
-    id: 8,
-    asset: "Pump P-4",
-    task: "Impeller inspection",
-    date: "2024-01-22",
-    time: "11:00",
-    technician: "Sarah Johnson",
-    duration: "1 hour",
-    status: "Scheduled",
-    priority: "High",
-    planId: "P002",
-  },
-]
-
-const weeklyView = [
-  { date: "Mon 15", tasks: 2 },
-  { date: "Tue 16", tasks: 1 },
-  { date: "Wed 17", tasks: 3 },
-  { date: "Thu 18", tasks: 1 },
-  { date: "Fri 19", tasks: 2 },
-  { date: "Sat 20", tasks: 0 },
-  { date: "Sun 21", tasks: 0 },
-]
+import { useAuth } from "../../hooks/useAuth"
 
 export default function MaintenanceSchedule() {
-  const [selectedDate, setSelectedDate] = useState(new Date())
+  // Initialize Supabase client once
+  const [supabaseClient, setSupabaseClient] = useState(null);
+  
+  useEffect(() => {
+    const initSupabase = async () => {
+      const { createClient } = await import("@supabase/supabase-js");
+      const client = createClient(
+        import.meta.env.VITE_SUPABASE_URL,
+        import.meta.env.VITE_SUPABASE_ANON_KEY
+      );
+      setSupabaseClient(client);
+    };
+    initSupabase();
+  }, []);
+
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
+  
+// Debug selectedDate changes
+  useEffect(() => {
+    console.log('selectedDate changed:', selectedDate, 'type:', typeof selectedDate);
+  }, [selectedDate])
   const [viewMode, setViewMode] = useState("list")
+  const [scheduledTasks, setScheduledTasks] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
   const { toast } = useToast()
-  const navigate = useNavigate() // This line is already here
-  const { user } = useAuth() // Add this line here instead
+  const navigate = useNavigate()
+  const { user } = useAuth()
+
   // Add state for task actions
   const [viewingTask, setViewingTask] = useState(null)
   const [showViewDialog, setShowViewDialog] = useState(false)
@@ -139,7 +53,6 @@ export default function MaintenanceSchedule() {
   const [showEditDialog, setShowEditDialog] = useState(false)
   const [deletingTask, setDeletingTask] = useState(null)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
-
   const [showExportDialog, setShowExportDialog] = useState(false)
   const [exportingTask, setExportingTask] = useState(null)
 
@@ -148,6 +61,210 @@ export default function MaintenanceSchedule() {
   const [editedTechnician, setEditedTechnician] = useState("")
   const [editedDate, setEditedDate] = useState("")
   const [editedTime, setEditedTime] = useState("")
+
+// Fetch tasks from database
+  const fetchTasks = async () => {
+    console.log('=== FETCH TASKS CALLED ===');
+    if (!user) return
+
+    try {
+      console.log('=== INSIDE TRY BLOCK ===');
+      setLoading(true)
+      setError(null)
+      
+      console.log('=== ABOUT TO GET SUPABASE CLIENT ===');
+      
+      if (!supabaseClient) return;
+      const supabase = supabaseClient;
+      const { data: { session } } = await supabase.auth.getSession();
+      console.log('Current session:', session?.user?.id);
+      console.log('=== USING EXISTING SUPABASE CLIENT ===');
+      
+     // Debug: Check current user info
+      try {
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        console.log('=== AUTH DEBUG ===');
+        console.log('Current authenticated user email:', user?.email);
+        console.log('Current authenticated user ID:', user?.id);
+        
+        // Check what's in users table for this email
+        const { data: dbUser } = await supabase
+          .from('users')
+          .select('id, email')
+          .eq('email', user?.email)
+          .single();
+        console.log('Database user record:', dbUser);
+        console.log('IDs match?', user?.id === dbUser?.id);
+        console.log('==================');
+      } catch (e) {
+        console.log('Error in auth debug:', e);
+      }
+      
+      const { data, error } = await supabase
+        .from('pm_tasks')
+        .select(`
+          *,
+          pm_plans (
+            id,
+            asset_name,
+            created_by,
+            users (
+              id,
+              email,
+              full_name
+            )
+          )
+        `)
+        // No sorting for now
+
+      if (error) throw error
+
+      // Transform data to match component expectations
+      const transformedTasks = data.map(task => ({
+        id: task.id,
+        asset: task.pm_plans?.asset_name || 'Unknown Asset',
+        task: task.task_name || 'No description',
+        date: (task.scheduled_dates && task.scheduled_dates.length > 0) ? task.scheduled_dates[0] : 'No date',
+        time: '09:00',
+        technician: task.pm_plans?.users?.full_name || 'Unassigned',
+        duration: task.maintenance_interval || 'Unknown',
+        status: 'Pending',
+        priority: 'Medium',
+        planId: task.pm_plan_id,
+        createdByEmail: task.pm_plans?.users?.email,
+        notes: task.notes,
+        completedAt: task.completed_at,
+        actualDuration: task.actual_duration
+      }))
+
+      setScheduledTasks(transformedTasks)
+    } catch (err) {
+      console.error('Error fetching tasks:', err)
+      setError(err.message)
+      toast({
+        title: "Error Loading Tasks",
+        description: "Failed to load maintenance tasks. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Update task in database
+  const updateTask = async (taskId, updates) => {
+    // Debug: Check current user info
+      try {
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        console.log('=== AUTH DEBUG ===');
+        console.log('Current authenticated user email:', user?.email);
+        console.log('Current authenticated user ID:', user?.id);
+        
+        // Check what's in users table for this email
+        const { data: dbUser } = await supabase
+          .from('users')
+          .select('id, email')
+          .eq('email', user?.email)
+          .single();
+        console.log('Database user record:', dbUser);
+        console.log('IDs match?', user?.id === dbUser?.id);
+        console.log('==================');
+      } catch (e) {
+        console.log('Error getting user:', e);
+      }
+  }
+
+  // Delete task from database
+  const deleteTaskFromDB = async (taskId) => {
+    try {
+    const supabase = supabaseClient;
+      console.log('=== USING EXISTING SUPABASE CLIENT ===');
+      
+      console.log('=== GOT SUPABASE CLIENT ===');
+      
+      // Debug: Check current user info
+      try {
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        console.log('=== AUTH DEBUG ===');
+        console.log('Current authenticated user email:', user?.email);
+        console.log('Current authenticated user ID:', user?.id);
+        
+        // Check what's in users table for this email
+        const { data: dbUser } = await supabase
+          .from('users')
+          .select('id, email')
+          .eq('email', user?.email)
+          .single();
+        console.log('Database user record:', dbUser);
+        console.log('IDs match?', user?.id === dbUser?.id);
+        console.log('==================');
+      } catch (e) {
+        console.log('Error in auth debug:', e);
+      }
+
+      const { error } = await supabase
+        .from('pm_tasks')
+        .delete()
+        .eq('id', taskId)
+
+      if (error) throw error
+
+      // Refresh tasks
+      await fetchTasks()
+      return { success: true }
+    } catch (err) {
+      console.error('Error deleting task:', err)
+      return { success: false, error: err.message }
+    }
+  }
+
+  // Load data when component mounts
+useEffect(() => {
+    console.log('=== USE EFFECT TRIGGERED ===');
+    console.log('user:', !!user);
+    console.log('supabaseClient:', !!supabaseClient);
+    if (user && supabaseClient) {
+      console.log('=== CALLING FETCH TASKS FROM USE EFFECT ===');
+      fetchTasks()
+    } else {
+      console.log('=== NOT CALLING FETCH TASKS - MISSING USER OR CLIENT ===');
+    }
+  }, [user, supabaseClient])
+
+  // Calculate weekly view data from real tasks
+  const getWeeklyView = () => {
+    const today = new Date()
+    const weekStart = new Date(today)
+    weekStart.setDate(today.getDate() - today.getDay()) // Start of week (Sunday)
+    
+    const weeklyData = []
+    
+    for (let i = 0; i < 7; i++) {
+      const date = new Date(weekStart)
+      date.setDate(weekStart.getDate() + i)
+      
+      const dateStr = date.toISOString().split('T')[0]
+      const tasksCount = scheduledTasks.filter(task => task.date === dateStr).length
+      
+      const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+      
+      weeklyData.push({
+        date: `${dayNames[i]} ${date.getDate()}`,
+        tasks: tasksCount
+      })
+    }
+    
+    return weeklyData
+  }
+
+  // Calculate summary stats
+  const getSummaryStats = () => {
+    const total = scheduledTasks.length
+    const completed = scheduledTasks.filter(task => task.status === 'Completed').length
+    const overdue = scheduledTasks.filter(task => task.status === 'Overdue').length
+    
+    return { total, completed, overdue }
+  }
 
   // Add navigation handler
   const handleCreateNewPlans = () => {
@@ -174,37 +291,56 @@ export default function MaintenanceSchedule() {
     setShowDeleteDialog(true)
   }
 
-  const confirmDeleteTask = () => {
+  const confirmDeleteTask = async () => {
     if (deletingTask) {
-      // In a real app, you would call an API to delete the task
-      // For now, we'll just show a toast
-      toast({
-        title: "Task Deleted",
-        description: `Maintenance task for ${deletingTask.asset} has been removed.`,
-        variant: "default",
-      })
+      const result = await deleteTaskFromDB(deletingTask.id)
+      if (result.success) {
+        toast({
+          title: "Task Deleted",
+          description: `Maintenance task for ${deletingTask.asset} has been removed.`,
+          variant: "default",
+        })
+      } else {
+        toast({
+          title: "Error Deleting Task",
+          description: result.error || "Failed to delete task. Please try again.",
+          variant: "destructive",
+        })
+      }
       setDeletingTask(null)
       setShowDeleteDialog(false)
     }
   }
 
-  const saveTaskChanges = () => {
+  const saveTaskChanges = async () => {
     if (editingTask) {
-      // In a real app, you would call an API to update the task
-      // For now, we'll just show a toast
-      toast({
-        title: "Task Updated",
-        description: `Changes to ${editingTask.asset} task have been saved.`,
-        variant: "default",
-      })
+      const updates = {
+        status: editedStatus,
+        assigned_technician: editedTechnician,
+        scheduled_date: editedDate,
+        scheduled_time: editedTime
+      }
+
+      const result = await updateTask(editingTask.id, updates)
+      if (result.success) {
+        toast({
+          title: "Task Updated",
+          description: `Changes to ${editingTask.asset} task have been saved.`,
+          variant: "default",
+        })
+      } else {
+        toast({
+          title: "Error Updating Task",
+          description: result.error || "Failed to update task. Please try again.",
+          variant: "destructive",
+        })
+      }
       setShowEditDialog(false)
       setEditingTask(null)
     }
   }
 
-  // Add export functionality to the maintenance schedule component as well
-  // Add this function after the existing handler functions
-
+  // Export functionality
   const exportTaskData = (task, format = "json") => {
     const taskData = {
       id: task.id,
@@ -224,7 +360,6 @@ export default function MaintenanceSchedule() {
     switch (format) {
       case "emaint-x5":
         // eMaint X5 Task Template Format
-        // Header row with eMaint X5 field names
         const emaintHeaders = [
           "PM_NUMBER",
           "TASK_NUMBER",
@@ -240,7 +375,6 @@ export default function MaintenanceSchedule() {
           "ASSET_DESC",
         ]
 
-        // Task row
         const emaintTaskRow = [
           task.planId, // PM_NUMBER
           `${task.planId}-${task.id}`, // TASK_NUMBER
@@ -259,7 +393,6 @@ export default function MaintenanceSchedule() {
           task.asset, // ASSET_DESC
         ]
 
-        // Create the task CSV content
         let emaintContent = emaintHeaders.join(",") + "\n"
         emaintContent += emaintTaskRow.map((field) => `"${field}"`).join(",") + "\n"
 
@@ -428,14 +561,47 @@ export default function MaintenanceSchedule() {
     }
   }
 
-// Add this authentication check
-if (!user) {
-  return (
-    <div className="flex justify-center items-center min-h-96">
-      <p className="text-muted-foreground">Please sign in to access the maintenance dashboard.</p>
-    </div>
-  )
-}
+  // Authentication check
+  if (!user) {
+    return (
+      <div className="flex justify-center items-center min-h-96">
+        <p className="text-muted-foreground">Please sign in to access the maintenance dashboard.</p>
+      </div>
+    )
+  }
+
+  // Loading state
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center min-h-96">
+        <div className="flex items-center space-x-2">
+          <Loader2 className="h-6 w-6 animate-spin" />
+          <p className="text-muted-foreground">Loading maintenance tasks...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <div className="flex justify-center items-center min-h-96">
+        <div className="text-center space-y-4">
+          <AlertCircle className="h-12 w-12 text-red-500 mx-auto" />
+          <div>
+            <p className="text-lg font-medium">Error Loading Tasks</p>
+            <p className="text-muted-foreground">{error}</p>
+          </div>
+          <Button onClick={fetchTasks}>
+            Try Again
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  const weeklyView = getWeeklyView()
+  const stats = getSummaryStats()
 
   return (
     <div className="space-y-6">
@@ -460,75 +626,86 @@ if (!user) {
         <TabsContent value="list" className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Scheduled Maintenance Tasks</CardTitle>
+              <CardTitle>Scheduled Maintenance Tasks ({scheduledTasks.length})</CardTitle>
               <CardDescription>All upcoming and recent maintenance activities</CardDescription>
             </CardHeader>
             <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Asset</TableHead>
-                    <TableHead>Task</TableHead>
-                    <TableHead>Date & Time</TableHead>
-                    <TableHead>Technician</TableHead>
-                    <TableHead>Duration</TableHead>
-                    <TableHead>Priority</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {scheduledTasks.map((task) => (
-                    <TableRow key={task.id}>
-                      <TableCell className="font-medium">{task.asset}</TableCell>
-                      <TableCell>{task.task}</TableCell>
-                      <TableCell>
-                        <div className="space-y-1">
-                          <div>{task.date}</div>
-                          <div className="text-sm text-muted-foreground">{task.time}</div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center space-x-2">
-                          <User className="h-4 w-4" />
-                          <span>{task.technician}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center space-x-2">
-                          <Clock className="h-4 w-4" />
-                          <span>{task.duration}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={getPriorityColor(task.priority)}>{task.priority}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center space-x-2">
-                          {getStatusIcon(task.status)}
-                          <Badge variant={getStatusColor(task.status)}>{task.status}</Badge>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center space-x-1">
-                          <Button variant="ghost" size="sm" onClick={() => handleViewTask(task)}>
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                          <Button variant="ghost" size="sm" onClick={() => handleEditTask(task)}>
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button variant="ghost" size="sm" onClick={() => handleDeleteTask(task)}>
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                          <Button variant="ghost" size="sm" onClick={() => handleExportTask(task)}>
-                            <Download className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
+              {scheduledTasks.length === 0 ? (
+                <div className="text-center py-8">
+                  <CalendarDays className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                  <p className="text-lg font-medium text-gray-600">No maintenance tasks found</p>
+                  <p className="text-gray-500 mb-4">Create your first maintenance plan to get started</p>
+                  <Button onClick={handleCreateNewPlans}>
+                    Create New Plans
+                  </Button>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Asset</TableHead>
+                      <TableHead>Task</TableHead>
+                      <TableHead>Date & Time</TableHead>
+                      <TableHead>Technician</TableHead>
+                      <TableHead>Duration</TableHead>
+                      <TableHead>Priority</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Actions</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {scheduledTasks.map((task) => (
+                      <TableRow key={task.id}>
+                        <TableCell className="font-medium">{task.asset}</TableCell>
+                        <TableCell>{task.task}</TableCell>
+                        <TableCell>
+                          <div className="space-y-1">
+                            <div>{task.date}</div>
+                            <div className="text-sm text-muted-foreground">{task.time}</div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center space-x-2">
+                            <User className="h-4 w-4" />
+                            <span>{task.technician}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center space-x-2">
+                            <Clock className="h-4 w-4" />
+                            <span>{task.duration}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={getPriorityColor(task.priority)}>{task.priority}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center space-x-2">
+                            {getStatusIcon(task.status)}
+                            <Badge variant={getStatusColor(task.status)}>{task.status}</Badge>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center space-x-1">
+                            <Button variant="ghost" size="sm" onClick={() => handleViewTask(task)}>
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => handleEditTask(task)}>
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => handleDeleteTask(task)}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => handleExportTask(task)}>
+                              <Download className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -541,10 +718,12 @@ if (!user) {
                 <CardDescription>Select a date to view scheduled tasks</CardDescription>
               </CardHeader>
               <CardContent>
-                <Calendar
-                  mode="single"
-                  selected={selectedDate}
-                  onSelect={setSelectedDate}
+               <Calendar
+                  value={selectedDate || ''}
+                  onChange={(e) => {
+                    console.log('Calendar onChange called with:', e.target.value);
+                    setSelectedDate(e.target.value);
+                  }}
                   className="rounded-md border"
                 />
               </CardContent>
@@ -552,13 +731,13 @@ if (!user) {
 
             <Card className="lg:col-span-2">
               <CardHeader>
-                <CardTitle>Tasks for {selectedDate?.toDateString()}</CardTitle>
+                <CardTitle>Tasks for {selectedDate ? new Date(selectedDate + 'T12:00:00').toLocaleDateString() : 'Select a date'}</CardTitle>
                 <CardDescription>Scheduled maintenance activities</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
                   {scheduledTasks
-                    .filter((task) => new Date(task.date).toDateString() === selectedDate?.toDateString())
+                    .filter((task) => selectedDate instanceof Date && new Date(task.date).toDateString() === selectedDate.toDateString())
                     .map((task) => (
                       <div key={task.id} className="border rounded-lg p-4">
                         <div className="flex items-center justify-between mb-2">
@@ -599,8 +778,49 @@ if (!user) {
                         </div>
                       </div>
                     ))}
-                  {scheduledTasks.filter((task) => new Date(task.date).toDateString() === selectedDate?.toDateString())
-                    .length === 0 && (
+                    {scheduledTasks
+                    .filter((task) => task.date === selectedDate)
+                    .map((task) => (
+<div key={task.id} className="border rounded-lg p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="font-semibold">{task.asset}</h4>
+                          <div className="flex items-center space-x-2">
+                            <Badge variant={getPriorityColor(task.priority)}>{task.priority}</Badge>
+                            <Badge variant={getStatusColor(task.status)}>{task.status}</Badge>
+                          </div>
+                        </div>
+                        <p className="text-sm text-muted-foreground mb-2">{task.task}</p>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-4 text-sm">
+                            <span className="flex items-center space-x-1">
+                              <Clock className="h-4 w-4" />
+                              <span>
+                                {task.time} ({task.duration})
+                              </span>
+                            </span>
+                            <span className="flex items-center space-x-1">
+                              <User className="h-4 w-4" />
+                              <span>{task.technician}</span>
+                            </span>
+                          </div>
+                          <div className="flex items-center space-x-1">
+                            <Button variant="ghost" size="sm" onClick={() => handleViewTask(task)}>
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => handleEditTask(task)}>
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => handleDeleteTask(task)}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => handleExportTask(task)}>
+                              <Download className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  {scheduledTasks.filter((task) => task.date === selectedDate).length === 0 && (
                     <div className="text-center py-8 text-muted-foreground">No tasks scheduled for this date</div>
                   )}
                 </div>
@@ -618,7 +838,7 @@ if (!user) {
             <CardContent>
               <div className="grid grid-cols-7 gap-4">
                 {weeklyView.map((day, index) => (
-                  <div key={index} className="text-center">
+                  <div key={`week-${index}`} className="text-center">
                     <div className="font-medium mb-2">{day.date}</div>
                     <div className="bg-blue-100 rounded-lg p-4 min-h-[100px] flex flex-col items-center justify-center">
                       <div className="text-2xl font-bold text-blue-600">{day.tasks}</div>
@@ -636,7 +856,7 @@ if (!user) {
                 <CardTitle>This Week</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-3xl font-bold text-blue-600">9</div>
+                <div className="text-3xl font-bold text-blue-600">{stats.total}</div>
                 <p className="text-sm text-muted-foreground">Total tasks scheduled</p>
               </CardContent>
             </Card>
@@ -646,7 +866,7 @@ if (!user) {
                 <CardTitle>Completed</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-3xl font-bold text-green-600">3</div>
+                <div className="text-3xl font-bold text-green-600">{stats.completed}</div>
                 <p className="text-sm text-muted-foreground">Tasks completed</p>
               </CardContent>
             </Card>
@@ -656,7 +876,7 @@ if (!user) {
                 <CardTitle>Overdue</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-3xl font-bold text-red-600">1</div>
+                <div className="text-3xl font-bold text-red-600">{stats.overdue}</div>
                 <p className="text-sm text-muted-foreground">Tasks overdue</p>
               </CardContent>
             </Card>
