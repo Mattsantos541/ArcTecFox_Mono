@@ -6,7 +6,9 @@ import * as XLSX from 'xlsx';
 import { useAuth } from '../hooks/useAuth';
 import { useNavigate } from "react-router-dom";
 import { FormInput, FormSelect, FormTextarea, FormError, FormSuccess } from "../components/forms/FormField";
+import FileUpload from "../components/forms/FileUpload";
 import { pmPlannerSchema, bulkImportRowSchema } from "../lib/validationSchemas";
+import { createStorageService } from "../services/storageService";
 import ComponentErrorBoundary from "../components/ComponentErrorBoundary";
 import { PMPlannerLoading, GeneratedPlanLoading, ProgressiveLoader } from "../components/loading/LoadingStates";
 
@@ -456,6 +458,11 @@ export default function PMPlanner() {
   const [exporting, setExporting] = useState(false);
   const [assetCategories, setAssetCategories] = useState([]);
   const [categoriesLoading, setCategoriesLoading] = useState(true);
+  
+  // File upload state
+  const [userManualFile, setUserManualFile] = useState(null);
+  const [fileUploadError, setFileUploadError] = useState(null);
+  const [uploadingFile, setUploadingFile] = useState(false);
 
   const fetchAssetCategories = async () => {
     try {
@@ -510,17 +517,39 @@ export default function PMPlanner() {
       setMessage("");
       setMessageType("");
       
+      let userManualData = null;
+      
+      // Upload user manual if provided
+      if (userManualFile) {
+        userManualData = await uploadUserManual(userManualFile, data.name);
+        if (!userManualData) {
+          // If upload failed, the error is already set, so just return
+          return;
+        }
+      }
+      
       const formDataWithDefaults = {
         ...data,
         email: user?.email || "test@example.com",
-        company: "Test Company"
+        company: "Test Company",
+        userManual: userManualData // Include user manual data
       };
       
       const aiGeneratedPlan = await generatePMPlan(formDataWithDefaults);
       
       setGeneratedPlan(aiGeneratedPlan);
-      setMessage(`✅ PM Plan generated successfully! Found ${aiGeneratedPlan.length} maintenance tasks.`);
+      
+      let successMessage = `✅ PM Plan generated successfully! Found ${aiGeneratedPlan.length} maintenance tasks.`;
+      if (userManualData) {
+        successMessage += ` User manual uploaded and will be referenced in the plan.`;
+      }
+      
+      setMessage(successMessage);
       setMessageType("success");
+      
+      // Reset file upload after successful submission
+      setUserManualFile(null);
+      setFileUploadError(null);
       
       // Optionally reset form after successful submission
       // reset(); // Uncomment if you want to clear form after submission
@@ -538,6 +567,42 @@ export default function PMPlanner() {
     console.log("Form validation errors:", errors);
     setMessage("Please fix the errors below before submitting.");
     setMessageType("error");
+  };
+
+  // File upload handlers
+  const handleFileSelect = (file, error) => {
+    if (error) {
+      setFileUploadError(error);
+      setUserManualFile(null);
+    } else {
+      setFileUploadError(null);
+      setUserManualFile(file);
+    }
+  };
+
+  // Upload file to Supabase Storage
+  const uploadUserManual = async (file, assetName) => {
+    if (!file || !user) return null;
+
+    try {
+      setUploadingFile(true);
+      const storageService = await createStorageService();
+      
+      const result = await storageService.uploadUserManual(file, assetName, user.id);
+      
+      if (result.success) {
+        console.log('User manual uploaded successfully:', result);
+        return result;
+      } else {
+        throw new Error(result.error);
+      }
+    } catch (error) {
+      console.error('Error uploading user manual:', error);
+      setFileUploadError(`Failed to upload user manual: ${error.message}`);
+      return null;
+    } finally {
+      setUploadingFile(false);
+    }
   };
 
   const handleExportToExcel = async () => {
@@ -824,6 +889,23 @@ export default function PMPlanner() {
                   className="mb-3"
                   {...register("category")}
                 />
+                
+                <FileUpload
+                  label="Include User Manual (Optional)"
+                  accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png,.gif"
+                  maxSize={10 * 1024 * 1024} // 10MB
+                  onFileSelect={handleFileSelect}
+                  error={fileUploadError}
+                  disabled={uploadingFile}
+                  className="mb-3"
+                />
+                
+                {uploadingFile && (
+                  <div className="mb-3 text-sm text-blue-600 flex items-center gap-2">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                    Uploading user manual...
+                  </div>
+                )}
               </div>
               <div>
                 <h3 className="text-lg font-semibold mb-4 text-gray-700">Operating Conditions</h3>
