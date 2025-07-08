@@ -746,11 +746,12 @@ export default function PMPlanner() {
       <main className="max-w-6xl mx-auto px-6 py-8 space-y-8">
 
        <section className="bg-white rounded-lg shadow-md p-6">
-  <div className="flex justify-between items-center mb-6 relative">
+  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-6 gap-4">
+  <div className="flex justify-between items-center sm:flex-1">
     <button
       onClick={handleBackToDashboard}
       disabled={loading || bulkProcessing}
-      className={`px-8 py-3 rounded-lg font-semibold text-white ${
+      className={`px-6 py-2 sm:px-8 sm:py-3 rounded-lg font-semibold text-white text-sm sm:text-base ${
         loading || bulkProcessing 
           ? "bg-gray-400 cursor-not-allowed" 
           : "bg-blue-600 hover:bg-blue-700"
@@ -758,11 +759,10 @@ export default function PMPlanner() {
     >
       ← Dashboard
     </button>
-    <h2 className="text-2xl font-bold text-gray-800 absolute left-1/2 transform -translate-x-1/2">PM Planner</h2>
     <button
       onClick={() => setShowBulkImport(true)}
       disabled={loading || bulkProcessing}
-      className={`px-6 py-2 rounded-lg font-medium flex items-center gap-2 ${
+      className={`px-4 py-2 sm:px-6 rounded-lg font-medium flex items-center gap-2 text-sm sm:text-base ${
         loading || bulkProcessing
           ? 'bg-gray-400 text-gray-600 cursor-not-allowed'
           : 'bg-purple-600 hover:bg-purple-700 text-white'
@@ -771,6 +771,8 @@ export default function PMPlanner() {
       📊 Bulk Import
     </button>
   </div>
+  <h2 className="text-xl sm:text-2xl font-bold text-gray-800 text-center sm:absolute sm:left-1/2 sm:transform sm:-translate-x-1/2">PM Planner</h2>
+</div>
           {message && (
             <div className={`p-4 rounded-lg mb-6 whitespace-pre-line ${messageType === "success" ? "bg-green-100 text-green-800 border border-green-200" : "bg-red-100 text-red-800 border border-red-200"}`}>
               {message}
