@@ -1,17 +1,15 @@
 import * as React from "react"
 import { cn } from "@/lib/utils"
 
-export const Input = React.forwardRef(({ 
+export const Textarea = React.forwardRef(({ 
   className, 
-  type = "text", 
   error,
   ...props 
 }, ref) => {
   return (
-    <input
-      type={type}
+    <textarea
       className={cn(
-        "flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
+        "flex min-h-[80px] w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
         error && "border-red-500 focus-visible:ring-red-500",
         className
       )}
@@ -20,16 +18,16 @@ export const Input = React.forwardRef(({
     />
   )
 })
-Input.displayName = "Input"
+Textarea.displayName = "Textarea"
 
-// Enhanced Input with Label component
-export function InputField({ 
+// Enhanced Textarea with Label component
+export function TextareaField({ 
   label, 
   name, 
   value, 
   onChange, 
   placeholder, 
-  type = "text", 
+  rows = 3,
   error,
   required = false,
   className,
@@ -46,13 +44,13 @@ export function InputField({
           {required && <span className="text-red-500 ml-1">*</span>}
         </label>
       )}
-      <Input
+      <Textarea
         id={name}
         name={name}
         value={value}
         onChange={onChange}
-        type={type}
         placeholder={placeholder}
+        rows={rows}
         error={error}
         {...props}
       />

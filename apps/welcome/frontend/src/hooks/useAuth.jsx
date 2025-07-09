@@ -1,5 +1,6 @@
 import { useState, useEffect, createContext, useContext } from 'react';
 import { getCurrentUser, signIn, signOut, signUp, signInWithGoogle, getCurrentUserSession, supabase } from '../api';
+import { useErrorHandler } from './useErrorHandler';
 
 // Create Auth Context
 const AuthContext = createContext({});
@@ -9,6 +10,7 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const { handleAsyncError } = useErrorHandler();
 
   // Check for existing auth session and listen for changes
   useEffect(() => {
@@ -76,7 +78,7 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const loginWithGoogle = async () => {
+  const loginWithGoogle = handleAsyncError(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -90,7 +92,7 @@ export const AuthProvider = ({ children }) => {
       setLoading(false);
       return { success: false, error: error.message };
     }
-  };
+  });
 
   const signup = async (email, password, userData = {}) => {
     try {

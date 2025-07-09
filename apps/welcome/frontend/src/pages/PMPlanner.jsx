@@ -1,73 +1,43 @@
 import { useState, useEffect } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { generatePMPlan } from "../api";
 import * as XLSX from 'xlsx';
 import { useAuth } from '../hooks/useAuth';
 import { useNavigate } from "react-router-dom";
+import { FormInput, FormSelect, FormTextarea, FormError, FormSuccess } from "../components/forms/FormField";
+import FileUpload from "../components/forms/FileUpload";
+import { pmPlannerSchema, bulkImportRowSchema } from "../lib/validationSchemas";
+import { createStorageService } from "../services/storageService";
+import ComponentErrorBoundary from "../components/ComponentErrorBoundary";
+import { PMPlannerLoading, GeneratedPlanLoading, ProgressiveLoader } from "../components/loading/LoadingStates";
 
-// Reusable UI Components
-function Input({ label, name, value, onChange, placeholder, type = "text" }) {
-  return (
-    <div className="flex flex-col mb-3">
-      {label && <label className="mb-1 font-medium">{label}</label>}
-      <input
-        className="border border-gray-300 rounded px-3 py-2"
-        type={type}
-        name={name}
-        value={value}
-        onChange={onChange}
-        placeholder={placeholder}
-      />
-    </div>
-  );
-}
-
-function TextArea({ label, name, value, onChange, placeholder, rows = 3 }) {
-  return (
-    <div className="flex flex-col mb-3">
-      {label && <label className="mb-1 font-medium">{label}</label>}
-      <textarea
-        className="border border-gray-300 rounded px-3 py-2"
-        name={name}
-        value={value}
-        onChange={onChange}
-        placeholder={placeholder}
-        rows={rows}
-      />
-    </div>
-  );
-}
-
-function Select({ label, name, value, onChange, options }) {
-  return (
-    <div className="flex flex-col mb-3">
-      {label && <label className="mb-1 font-medium">{label}</label>}
-      <select
-        className="border border-gray-300 rounded px-3 py-2"
-        name={name}
-        value={value}
-        onChange={onChange}
-      >
-        <option value="">Select {label}</option>
-        {options.map((option) => (
-          <option key={option} value={option}>
-            {option}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
-}
+// Custom components removed - now using standardized UI components from /components/ui/
 
 function LoadingModal({ isOpen }) {
   if (!isOpen) return null;
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg p-8 max-w-md mx-4 text-center">
-        <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mx-auto mb-4" />
-        <h3 className="text-xl font-semibold text-gray-800 mb-2">Generating Your PM Plan</h3>
-        <p className="text-gray-600">
-          Sit tight while we work our magic! ⚡ Our AI is analyzing your asset...
-        </p>
+        <div className="mb-6">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 rounded-full mb-4">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+          </div>
+          <h3 className="text-xl font-semibold text-gray-800 mb-2">Generating Your PM Plan</h3>
+          <p className="text-gray-600 mb-4">
+            Our AI is analyzing your asset and creating a comprehensive maintenance plan...
+          </p>
+          <ProgressiveLoader 
+            stage={0} 
+            stages={[
+              'Analyzing asset specifications...',
+              'Researching maintenance requirements...',
+              'Generating maintenance tasks...',
+              'Finalizing your plan...'
+            ]}
+            className="justify-center"
+          />
+        </div>
       </div>
     </div>
   );
@@ -218,7 +188,14 @@ function BulkImportModal({ isOpen, onClose, onBulkImport }) {
         throw new Error(`Row ${index + 2}: Asset Name and Category are required fields`);
       }
 
-      return rowData;
+      // Validate each row using Zod schema
+      try {
+        const validatedRow = bulkImportRowSchema.parse(rowData);
+        return validatedRow;
+      } catch (validationError) {
+        console.error(`Validation error for row ${index + 2}:`, validationError);
+        throw new Error(`Row ${index + 2}: ${validationError.errors.map(e => e.message).join(', ')}`);
+      }
     });
 
     return parsedData;
@@ -373,7 +350,11 @@ function BulkImportModal({ isOpen, onClose, onBulkImport }) {
   );
 }
 
-function PMPlanDisplay({ plan }) {
+function PMPlanDisplay({ plan, loading = false }) {
+  if (loading) {
+    return <GeneratedPlanLoading />;
+  }
+  
   if (!plan?.length) return null;
   return (
     <div className="mt-8 bg-gray-50 rounded-lg p-6">
@@ -438,10 +419,31 @@ export default function PMPlanner() {
   const { user } = useAuth();
   const navigate = useNavigate();
   
-  const [formData, setFormData] = useState({
-    name: "", model: "", serial: "", category: "", hours: "",
-    additional_context: "", environment: "", date_of_plan_start: "", email: "", company: ""
+  // React Hook Form setup
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting, isValid },
+    setValue,
+    watch,
+    reset
+  } = useForm({
+    resolver: zodResolver(pmPlannerSchema),
+    mode: "onChange", // Enable real-time validation
+    defaultValues: {
+      name: "",
+      model: "",
+      serial: "",
+      category: "",
+      hours: "",
+      additional_context: "",
+      environment: "",
+      date_of_plan_start: "",
+      email: user?.email || "",
+      company: ""
+    }
   });
+
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState("");
@@ -456,6 +458,11 @@ export default function PMPlanner() {
   const [exporting, setExporting] = useState(false);
   const [assetCategories, setAssetCategories] = useState([]);
   const [categoriesLoading, setCategoriesLoading] = useState(true);
+  
+  // File upload state
+  const [userManualFile, setUserManualFile] = useState(null);
+  const [fileUploadError, setFileUploadError] = useState(null);
+  const [uploadingFile, setUploadingFile] = useState(false);
 
   const fetchAssetCategories = async () => {
     try {
@@ -495,43 +502,106 @@ export default function PMPlanner() {
     navigate('/');
   };
 
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
-
-  const handleGenerateClick = () => {
-    if (!formData.name || !formData.category) {
-      setMessage("Please fill in at least the Asset Name and Category");
-      setMessageType("error");
-      return;
+  // Update user email when user changes
+  useEffect(() => {
+    if (user?.email) {
+      setValue('email', user.email);
     }
-    setMessage("");
-    handleContactSubmit();
-  };
+  }, [user, setValue]);
 
-  const handleContactSubmit = async () => {
+  // Form submission handler
+  const onSubmit = async (data) => {
     try {
       setLoading(true);
       setGeneratedPlan(null);
-      const updatedFormData = { 
-        ...formData, 
-        email: user?.email || "test@example.com", 
-        company: "Test Company" 
+      setMessage("");
+      setMessageType("");
+      
+      let userManualData = null;
+      
+      // Upload user manual if provided
+      if (userManualFile) {
+        userManualData = await uploadUserManual(userManualFile, data.name);
+        if (!userManualData) {
+          // If upload failed, the error is already set, so just return
+          return;
+        }
+      }
+      
+      const formDataWithDefaults = {
+        ...data,
+        email: user?.email || "test@example.com",
+        company: "Test Company",
+        userManual: userManualData // Include user manual data
       };
       
-      const aiGeneratedPlan = await generatePMPlan(updatedFormData);
+      const aiGeneratedPlan = await generatePMPlan(formDataWithDefaults);
       
       setGeneratedPlan(aiGeneratedPlan);
-      setMessage(`✅ PM Plan generated successfully! Found ${aiGeneratedPlan.length} maintenance tasks.`);
+      
+      let successMessage = `✅ PM Plan generated successfully! Found ${aiGeneratedPlan.length} maintenance tasks.`;
+      if (userManualData) {
+        successMessage += ` User manual uploaded and will be referenced in the plan.`;
+      }
+      
+      setMessage(successMessage);
       setMessageType("success");
-      setFormData(updatedFormData);
+      
+      // Reset file upload after successful submission
+      setUserManualFile(null);
+      setFileUploadError(null);
+      
+      // Optionally reset form after successful submission
+      // reset(); // Uncomment if you want to clear form after submission
     } catch (error) {
       console.error("❌ PM Plan generation error:", error);
       setMessage(`❌ Error: ${error.message}`);
       setMessageType("error");
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Handle form errors
+  const onError = (errors) => {
+    console.log("Form validation errors:", errors);
+    setMessage("Please fix the errors below before submitting.");
+    setMessageType("error");
+  };
+
+  // File upload handlers
+  const handleFileSelect = (file, error) => {
+    if (error) {
+      setFileUploadError(error);
+      setUserManualFile(null);
+    } else {
+      setFileUploadError(null);
+      setUserManualFile(file);
+    }
+  };
+
+  // Upload file to Supabase Storage
+  const uploadUserManual = async (file, assetName) => {
+    if (!file || !user) return null;
+
+    try {
+      setUploadingFile(true);
+      const storageService = await createStorageService();
+      
+      const result = await storageService.uploadUserManual(file, assetName, user.id);
+      
+      if (result.success) {
+        console.log('User manual uploaded successfully:', result);
+        return result;
+      } else {
+        throw new Error(result.error);
+      }
+    } catch (error) {
+      console.error('Error uploading user manual:', error);
+      setFileUploadError(`Failed to upload user manual: ${error.message}`);
+      return null;
+    } finally {
+      setUploadingFile(false);
     }
   };
 
@@ -726,7 +796,8 @@ export default function PMPlanner() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <ComponentErrorBoundary name="PM Planner" fallbackMessage="Unable to load the PM Planner. Please try refreshing the page.">
+      <div className="min-h-screen bg-gray-50">
       <LoadingModal isOpen={loading} />
       
       <BulkImportProgressModal 
@@ -773,46 +844,126 @@ export default function PMPlanner() {
   </div>
   <h2 className="text-xl sm:text-2xl font-bold text-gray-800 text-center sm:absolute sm:left-1/2 sm:transform sm:-translate-x-1/2">PM Planner</h2>
 </div>
-          {message && (
-            <div className={`p-4 rounded-lg mb-6 whitespace-pre-line ${messageType === "success" ? "bg-green-100 text-green-800 border border-green-200" : "bg-red-100 text-red-800 border border-red-200"}`}>
-              {message}
-            </div>
+          {message && messageType === "success" && (
+            <FormSuccess message={message} />
           )}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <h3 className="text-lg font-semibold mb-4 text-gray-700">Asset Information</h3>
-              <Input label="Asset Name *" name="name" value={formData.name} onChange={handleInputChange} placeholder="e.g., Hydraulic Pump #1" />
-              <Input label="Model" name="model" value={formData.model} onChange={handleInputChange} placeholder="e.g., HPX-500" />
-              <Input label="Serial Number" name="serial" value={formData.serial} onChange={handleInputChange} placeholder="e.g., HPX500-00123" />
-              <Select 
-                label="Category *" 
-                name="category" 
-                value={formData.category} 
-                onChange={handleInputChange}
-                options={categoriesLoading ? ["Loading..."] : assetCategories} 
-              />
+          {message && messageType === "error" && (
+            <FormError message={message} />
+          )}
+          {Object.keys(errors).length > 0 && (
+            <FormError message="Please fix the validation errors below." />
+          )}
+          <form onSubmit={handleSubmit(onSubmit, onError)}>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <h3 className="text-lg font-semibold mb-4 text-gray-700">Asset Information</h3>
+                <FormInput 
+                  label="Asset Name" 
+                  placeholder="e.g., Hydraulic Pump #1" 
+                  required
+                  error={errors.name?.message}
+                  className="mb-3"
+                  {...register("name")}
+                />
+                <FormInput 
+                  label="Model" 
+                  placeholder="e.g., HPX-500" 
+                  error={errors.model?.message}
+                  className="mb-3"
+                  {...register("model")}
+                />
+                <FormInput 
+                  label="Serial Number" 
+                  placeholder="e.g., HPX500-00123" 
+                  error={errors.serial?.message}
+                  className="mb-3"
+                  {...register("serial")}
+                />
+                <FormSelect 
+                  label="Category" 
+                  options={categoriesLoading ? [] : assetCategories}
+                  placeholder={categoriesLoading ? "Loading categories..." : "Select Category"}
+                  disabled={categoriesLoading}
+                  required
+                  error={errors.category?.message}
+                  className="mb-3"
+                  {...register("category")}
+                />
+                
+                <FileUpload
+                  label="Include User Manual (Optional)"
+                  accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png,.gif"
+                  maxSize={30 * 1024 * 1024} // 30MB
+                  onFileSelect={handleFileSelect}
+                  error={fileUploadError}
+                  disabled={uploadingFile}
+                  className="mb-3"
+                />
+                
+                {uploadingFile && (
+                  <div className="mb-3 text-sm text-blue-600 flex items-center gap-2">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                    Uploading user manual...
+                  </div>
+                )}
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold mb-4 text-gray-700">Operating Conditions</h3>
+                <FormInput 
+                  label="Operating Hours" 
+                  type="number" 
+                  placeholder="e.g., 8760" 
+                  error={errors.hours?.message}
+                  className="mb-3"
+                  {...register("hours")}
+                />
+                <FormTextarea 
+                  label="Additional Context" 
+                  placeholder="e.g., high vibration equipment, critical production asset, recent repairs, etc." 
+                  rows={3} 
+                  error={errors.additional_context?.message}
+                  className="mb-3"
+                  {...register("additional_context")}
+                />
+                <FormTextarea 
+                  label="Environment" 
+                  placeholder="e.g., outdoor / high humidity, indoor clean room, etc." 
+                  rows={3} 
+                  error={errors.environment?.message}
+                  className="mb-3"
+                  {...register("environment")}
+                />
+                <FormInput 
+                  label="Plan Start Date" 
+                  type="date" 
+                  error={errors.date_of_plan_start?.message}
+                  className="mb-3"
+                  {...register("date_of_plan_start")}
+                />
+              </div>
             </div>
-            <div>
-              <h3 className="text-lg font-semibold mb-4 text-gray-700">Operating Conditions</h3>
-              <Input label="Operating Hours" name="hours" type="number" value={formData.hours} onChange={handleInputChange} placeholder="e.g., 8760" />
-              <TextArea label="Additional Context" name="additional_context" value={formData.additional_context} onChange={handleInputChange} placeholder="e.g., high vibration equipment, critical production asset, recent repairs, etc." rows={3} />
-              <TextArea label="Environment" name="environment" value={formData.environment} onChange={handleInputChange}
-                placeholder="e.g., outdoor / high humidity, indoor clean room, etc." rows={3} />
-              <Input label="Plan Start Date" name="date_of_plan_start" type="date" value={formData.date_of_plan_start} onChange={handleInputChange} />
+            <div className="mt-8 text-center">
+              <button
+                type="submit"
+                disabled={loading || bulkProcessing || isSubmitting || !isValid}
+                className={`px-8 py-3 rounded-lg font-semibold text-white transition-colors ${
+                  loading || bulkProcessing || isSubmitting || !isValid
+                    ? "bg-gray-400 cursor-not-allowed" 
+                    : "bg-blue-600 hover:bg-blue-700"
+                }`}
+              >
+                {loading || isSubmitting ? "Generating PM Plan..." : "Generate Plan"}
+              </button>
+              {!isValid && Object.keys(errors).length > 0 && (
+                <p className="text-sm text-gray-500 mt-2">
+                  Please fix the errors above to enable submission
+                </p>
+              )}
             </div>
-          </div>
-          <div className="mt-8 text-center">
-            <button
-              onClick={handleGenerateClick}
-              disabled={loading || bulkProcessing}
-              className={`px-8 py-3 rounded-lg font-semibold text-white ${loading || bulkProcessing ? "bg-gray-400 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"}`}
-           >
-             {loading ? "Generating PM Plan..." : "Generate Plan"}
-           </button>
-         </div>
+          </form>
        </section>
 
-       <PMPlanDisplay plan={generatedPlan} />
+       <PMPlanDisplay plan={generatedPlan} loading={loading && !generatedPlan} />
        
        {/* Export Section */}
        <section className="bg-white rounded-lg shadow-md p-6">
@@ -824,7 +975,7 @@ export default function PMPlanner() {
            <button
              onClick={handleExportToExcel}
              disabled={exporting || loading || bulkProcessing}
-             className={`px-8 py-3 rounded-lg font-semibold flex items-center gap-2 mx-auto ${
+             className={`px-8 py-3 rounded-lg font-semibold flex items-center gap-2 mx-auto transition-colors ${
                exporting || loading || bulkProcessing
                  ? 'bg-gray-400 text-gray-600 cursor-not-allowed'
                  : 'bg-green-600 hover:bg-green-700 text-white'
@@ -833,17 +984,19 @@ export default function PMPlanner() {
              {exporting ? (
                <>
                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                 Exporting...
+                 <span>Exporting...</span>
                </>
              ) : (
                <>
-                 📊 Export to Excel
+                 <span>📊</span>
+                 <span>Export to Excel</span>
                </>
              )}
            </button>
          </div>
        </section>
      </main>
-   </div>
+      </div>
+    </ComponentErrorBoundary>
  );
 }
