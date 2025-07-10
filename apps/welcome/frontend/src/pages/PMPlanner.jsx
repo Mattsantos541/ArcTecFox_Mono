@@ -642,7 +642,7 @@ export default function PMPlanner() {
     console.log('Direct query test - data:', testData);
     console.log('Direct query test - error:', testError);
 
-    const { data, error } = await supabase.rpc('sp_export_all_tasks');
+    const { data, error } = await supabase.rpc('sp_export_recent_task');
     
     console.log('RPC result - data:', data);
     console.log('RPC result - error:', error);
