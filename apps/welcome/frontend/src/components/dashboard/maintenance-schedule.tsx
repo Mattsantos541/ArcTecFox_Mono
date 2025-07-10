@@ -5,10 +5,9 @@ import { useNavigate } from "react-router-dom"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Calendar } from "@/components/ui/calendar"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { CalendarDays, Clock, User, CheckCircle, AlertCircle, Eye, Edit, Trash2, Download, Info, Loader2 } from "lucide-react"
+import { CalendarDays, Clock, User, CheckCircle, AlertCircle, Eye, Edit, Trash2, Download, Info, Loader2, ChevronLeft, ChevronRight } from "lucide-react"
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip"
 import ComponentErrorBoundary from "../ComponentErrorBoundary"
 import { MaintenanceScheduleLoading } from "../loading/LoadingStates"
@@ -36,6 +35,8 @@ export default function MaintenanceSchedule() {
   }, []);
 
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
+  const [currentMonth, setCurrentMonth] = useState(new Date())
+  const [calendarView, setCalendarView] = useState('month') // 'month' or 'single'
   
 // Debug selectedDate changes
   useEffect(() => {
@@ -564,6 +565,45 @@ useEffect(() => {
     }
   }
 
+  // Calendar helper functions
+  const getDaysInMonth = (date) => {
+    const year = date.getFullYear()
+    const month = date.getMonth()
+    const firstDay = new Date(year, month, 1)
+    const lastDay = new Date(year, month + 1, 0)
+    const daysInMonth = lastDay.getDate()
+    const startingDayOfWeek = firstDay.getDay()
+    
+    const days = []
+    
+    // Add empty cells for days before the first day of the month
+    for (let i = 0; i < startingDayOfWeek; i++) {
+      days.push(null)
+    }
+    
+    // Add all days of the month
+    for (let day = 1; day <= daysInMonth; day++) {
+      days.push(day)
+    }
+    
+    return days
+  }
+
+  const getTasksForDate = (date) => {
+    const dateString = date.toISOString().split('T')[0]
+    return scheduledTasks.filter(task => task.date === dateString)
+  }
+
+  const navigateMonth = (direction) => {
+    const newMonth = new Date(currentMonth)
+    newMonth.setMonth(currentMonth.getMonth() + direction)
+    setCurrentMonth(newMonth)
+  }
+
+  const formatMonthYear = (date) => {
+    return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+  }
+
   // Authentication check
   if (!user) {
     return (
@@ -737,33 +777,103 @@ useEffect(() => {
         </TabsContent>
 
         <TabsContent value="calendar" className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <span>Calendar View</span>
+                <div className="flex items-center space-x-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => navigateMonth(-1)}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <span className="text-lg font-semibold min-w-[180px] text-center">
+                    {formatMonthYear(currentMonth)}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => navigateMonth(1)}
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </CardTitle>
+              <CardDescription>View all scheduled maintenance tasks for the month</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="w-full">
+                {/* Calendar Header */}
+                <div className="grid grid-cols-7 gap-1 mb-2">
+                  {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+                    <div key={day} className="p-2 text-center text-sm font-medium text-muted-foreground">
+                      {day}
+                    </div>
+                  ))}
+                </div>
+                
+                {/* Calendar Grid */}
+                <div className="grid grid-cols-7 gap-1">
+                  {getDaysInMonth(currentMonth).map((day, index) => {
+                    if (day === null) {
+                      return <div key={`empty-${index}`} className="p-2 min-h-[100px]" />
+                    }
+                    
+                    const cellDate = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day)
+                    const tasksForDay = getTasksForDate(cellDate)
+                    const isToday = cellDate.toDateString() === new Date().toDateString()
+                    const isSelected = cellDate.toDateString() === new Date(selectedDate + 'T12:00:00').toDateString()
+                    
+                    return (
+                      <div
+                        key={day}
+                        className={`border p-2 min-h-[100px] cursor-pointer transition-colors ${
+                          isToday ? 'bg-blue-50 border-blue-200' : 'hover:bg-gray-50'
+                        } ${isSelected ? 'ring-2 ring-blue-500' : ''}`}
+                        onClick={() => setSelectedDate(cellDate.toISOString().split('T')[0])}
+                      >
+                        <div className="font-medium text-sm mb-1">{day}</div>
+                        <div className="space-y-1">
+                          {tasksForDay.slice(0, 3).map((task) => (
+                            <div
+                              key={task.id}
+                              className={`text-xs p-1 rounded text-white truncate ${
+                                task.priority === 'High' ? 'bg-red-500' :
+                                task.priority === 'Medium' ? 'bg-yellow-500' :
+                                'bg-green-500'
+                              }`}
+                              title={`${task.asset} - ${task.task}`}
+                            >
+                              {task.asset}
+                            </div>
+                          ))}
+                          {tasksForDay.length > 3 && (
+                            <div className="text-xs text-muted-foreground">
+                              +{tasksForDay.length - 3} more
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          
+          {/* Selected Date Details */}
+          {selectedDate && (
             <Card>
               <CardHeader>
-                <CardTitle>Calendar</CardTitle>
-                <CardDescription>Select a date to view scheduled tasks</CardDescription>
-              </CardHeader>
-              <CardContent>
-               <Calendar
-                  value={selectedDate || ''}
-                  onChange={(e) => {
-                    console.log('Calendar onChange called with:', e.target.value);
-                    setSelectedDate(e.target.value);
-                  }}
-                  className="rounded-md border"
-                />
-              </CardContent>
-            </Card>
-
-            <Card className="lg:col-span-2">
-              <CardHeader>
-                <CardTitle>Tasks for {selectedDate ? new Date(selectedDate + 'T12:00:00').toLocaleDateString() : 'Select a date'}</CardTitle>
+                <CardTitle>Tasks for {new Date(selectedDate + 'T12:00:00').toLocaleDateString()}</CardTitle>
                 <CardDescription>Scheduled maintenance activities</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
                   {scheduledTasks
-                    .filter((task) => selectedDate instanceof Date && new Date(task.date).toDateString() === selectedDate.toDateString())
+                    .filter((task) => task.date === selectedDate)
                     .map((task) => (
                       <div key={task.id} className="border rounded-lg p-4">
                         <div className="flex items-center justify-between mb-2">
@@ -778,79 +888,7 @@ useEffect(() => {
                           <div className="flex items-center space-x-4 text-sm">
                             <span className="flex items-center space-x-1">
                               <Clock className="h-4 w-4" />
-                              <span>
-                                {task.time} ({task.duration})
-                              </span>
-                            </span>
-                            <span className="flex items-center space-x-1">
-                              <User className="h-4 w-4" />
-                              <span>{task.technician}</span>
-                            </span>
-                          </div>
-                          <div className="flex items-center space-x-1">
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button variant="ghost" size="sm" onClick={() => handleViewTask(task)}>
-                                  <Eye className="h-4 w-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>View task details</p>
-                              </TooltipContent>
-                            </Tooltip>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button variant="ghost" size="sm" onClick={() => handleEditTask(task)}>
-                                  <Edit className="h-4 w-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Edit task</p>
-                              </TooltipContent>
-                            </Tooltip>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button variant="ghost" size="sm" onClick={() => handleDeleteTask(task)}>
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Delete task</p>
-                              </TooltipContent>
-                            </Tooltip>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button variant="ghost" size="sm" onClick={() => handleExportTask(task)}>
-                                  <Download className="h-4 w-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Export task</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                    {scheduledTasks
-                    .filter((task) => task.date === selectedDate)
-                    .map((task) => (
-<div key={task.id} className="border rounded-lg p-4">
-                        <div className="flex items-center justify-between mb-2">
-                          <h4 className="font-semibold">{task.asset}</h4>
-                          <div className="flex items-center space-x-2">
-                            <Badge variant={getPriorityColor(task.priority)}>{task.priority}</Badge>
-                            <Badge variant={getStatusColor(task.status)}>{task.status}</Badge>
-                          </div>
-                        </div>
-                        <p className="text-sm text-muted-foreground mb-2">{task.task}</p>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center space-x-4 text-sm">
-                            <span className="flex items-center space-x-1">
-                              <Clock className="h-4 w-4" />
-                              <span>
-                                {task.time} ({task.duration})
-                              </span>
+                              <span>{task.time} ({task.duration})</span>
                             </span>
                             <span className="flex items-center space-x-1">
                               <User className="h-4 w-4" />
@@ -903,12 +941,14 @@ useEffect(() => {
                       </div>
                     ))}
                   {scheduledTasks.filter((task) => task.date === selectedDate).length === 0 && (
-                    <div className="text-center py-8 text-muted-foreground">No tasks scheduled for this date</div>
+                    <div className="text-center py-8 text-muted-foreground">
+                      No tasks scheduled for this date
+                    </div>
                   )}
                 </div>
               </CardContent>
             </Card>
-          </div>
+          )}
         </TabsContent>
 
         <TabsContent value="weekly" className="space-y-6">

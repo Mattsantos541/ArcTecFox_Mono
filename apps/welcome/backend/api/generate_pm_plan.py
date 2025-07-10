@@ -1,14 +1,18 @@
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
-from openai import OpenAI, APIConnectionError, OpenAIError
+import google.generativeai as genai
 from datetime import datetime
 import logging
 import os
+from typing import Optional
+import sys
+sys.path.append('..')
+from file_processor import file_processor
 
 router = APIRouter()
 logger = logging.getLogger("main")
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 
 class PMPlanInput(BaseModel):
@@ -84,23 +88,13 @@ async def generate_ai_plan(input: PMPlanInput, request: Request):
     prompt = generate_prompt(input)
 
     try:
-        response = client.chat.completions.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": "You are an expert in preventive maintenance planning."},
-                {"role": "user", "content": prompt}
-            ],
-            timeout=20
-        )
-        ai_output = response.choices[0].message.content
+        model = genai.GenerativeModel('gemini-pro')
+        full_prompt = "You are an expert in preventive maintenance planning.\n\n" + prompt
+        response = model.generate_content(full_prompt)
+        ai_output = response.text
         logger.info("✅ AI plan generated successfully")
         return {"plan": ai_output}
-    except APIConnectionError as e:
-        logger.error(f"🔌 OpenAI connection error: {e}")
-        raise HTTPException(status_code=502, detail="OpenAI connection failed.")
-    except OpenAIError as e:
-        logger.error(f"🧐 OpenAI API error: {e}")
-        raise HTTPException(status_code=500, detail="OpenAI API error.")
+
     except Exception as e:
-        logger.error(f"❌ Unexpected error: {e}")
-        raise HTTPException(status_code=500, detail="Unexpected server error.")
+        logger.error(f"❌ Gemini API error: {e}")
+        raise HTTPException(status_code=500, detail="Gemini API error.")
