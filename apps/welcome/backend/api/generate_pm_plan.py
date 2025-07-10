@@ -88,9 +88,15 @@ async def generate_ai_plan(input: PMPlanInput, request: Request):
     prompt = generate_prompt(input)
 
     try:
-        model = genai.GenerativeModel('gemini-pro')
+        model = genai.GenerativeModel('gemini-2.0-flash-exp')
         full_prompt = "You are an expert in preventive maintenance planning.\n\n" + prompt
-        response = model.generate_content(full_prompt)
+        response = model.generate_content(
+            full_prompt,
+            generation_config=genai.types.GenerationConfig(
+                temperature=0.7,
+                max_output_tokens=8192,
+            )
+        )
         ai_output = response.text
         logger.info("✅ AI plan generated successfully")
         return {"plan": ai_output}
