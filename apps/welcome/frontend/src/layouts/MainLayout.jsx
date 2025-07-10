@@ -107,7 +107,7 @@ export default function MainLayout() {
         </p>
         <p className="text-gray-600 max-w-4xl mx-auto border-t pt-6">
           Manage pumps, motors, valves, and more with maintenance strategies from manufacturer specs,
-          industry best practices, and your real-world ops. Fill the form below to get started.
+          industry best practices, and your real-world ops. Generate a plan to get started.
         </p>
       </section>
       
