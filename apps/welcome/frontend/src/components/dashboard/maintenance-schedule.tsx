@@ -648,10 +648,13 @@ useEffect(() => {
           <h2 className="text-2xl font-bold">Maintenance Schedule</h2>
           <p className="text-muted-foreground">View and manage scheduled maintenance tasks</p>
         </div>
-        <Button onClick={handleCreateNewPlans}>
-          <CalendarDays className="h-4 w-4 mr-2" />
-          Create New Plans
-        </Button>
+        <button
+          onClick={handleCreateNewPlans}
+          className="px-6 py-2 sm:px-8 sm:py-3 rounded-lg font-semibold text-white text-sm sm:text-base bg-blue-600 hover:bg-blue-700 transition-colors flex items-center gap-2"
+        >
+          <CalendarDays className="h-4 w-4" />
+          Generate New Plans
+        </button>
       </div>
 
       <Tabs value={viewMode} onValueChange={setViewMode} className="space-y-6">
@@ -673,9 +676,12 @@ useEffect(() => {
                   <CalendarDays className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                   <p className="text-lg font-medium text-gray-600">No maintenance tasks found</p>
                   <p className="text-gray-500 mb-4">Create your first maintenance plan to get started</p>
-                  <Button onClick={handleCreateNewPlans}>
-                    Create New Plans
-                  </Button>
+                  <button
+                    onClick={handleCreateNewPlans}
+                    className="px-6 py-2 sm:px-8 sm:py-3 rounded-lg font-semibold text-white text-sm sm:text-base bg-blue-600 hover:bg-blue-700 transition-colors"
+                  >
+                    Generate New Plans
+                  </button>
                 </div>
               ) : (
                 <Table>
