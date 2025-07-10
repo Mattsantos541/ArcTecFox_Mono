@@ -447,6 +447,10 @@ export default function PMPlanner() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState("");
+  const [customCategory, setCustomCategory] = useState("");
+  
+  // Watch the category field to detect "Other" selection
+  const watchedCategory = watch("category");
   const [generatedPlan, setGeneratedPlan] = useState(null);
   const [showBulkImport, setShowBulkImport] = useState(false);
   
@@ -480,8 +484,8 @@ export default function PMPlanner() {
 
       if (error) throw error;
 
-      // Extract unique asset names and sort them
-      const uniqueCategories = [...new Set(data.map(item => item.asset_name))].sort();
+      // Extract unique asset names, add "Other" option, and sort them
+      const uniqueCategories = [...new Set(data.map(item => item.asset_name)), "Other"].sort();
       setAssetCategories(uniqueCategories);
     } catch (err) {
       console.error('Error fetching asset categories:', err);
@@ -512,6 +516,13 @@ export default function PMPlanner() {
   // Form submission handler
   const onSubmit = async (data) => {
     try {
+      // Validate custom category if "Other" is selected
+      if (data.category === "Other" && !customCategory.trim()) {
+        setMessage("❌ Please enter a custom category when 'Other' is selected.");
+        setMessageType("error");
+        return;
+      }
+
       setLoading(true);
       setGeneratedPlan(null);
       setMessage("");
@@ -530,6 +541,8 @@ export default function PMPlanner() {
       
       const formDataWithDefaults = {
         ...data,
+        // Use custom category if "Other" is selected, otherwise use the selected category
+        category: data.category === "Other" ? customCategory.trim() : data.category,
         email: user?.email || "test@example.com",
         company: "Test Company",
         userManual: userManualData // Include user manual data
@@ -889,6 +902,19 @@ export default function PMPlanner() {
                   className="mb-3"
                   {...register("category")}
                 />
+
+                {/* Show custom category input when "Other" is selected */}
+                {watchedCategory === "Other" && (
+                  <FormInput 
+                    label="Custom Category" 
+                    placeholder="Enter your custom category" 
+                    value={customCategory}
+                    onChange={(e) => setCustomCategory(e.target.value)}
+                    required
+                    error={watchedCategory === "Other" && !customCategory ? "Custom category is required" : ""}
+                    className="mb-3"
+                  />
+                )}
                 
                 <FileUpload
                   label="Include User Manual (Optional)"
