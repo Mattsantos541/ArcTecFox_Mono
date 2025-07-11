@@ -1,18 +1,14 @@
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
-import google.generativeai as genai
+from openai import OpenAI, APIConnectionError, OpenAIError
 from datetime import datetime
 import logging
 import os
-from typing import Optional
-import sys
-sys.path.append('..')
-from file_processor import file_processor
 
 router = APIRouter()
 logger = logging.getLogger("main")
 
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 
 class PMPlanInput(BaseModel):
@@ -57,7 +53,11 @@ You are an expert in preventive maintenance (PM) for industrial assets. Generate
    - "engineering_rationale": a technical explanation considering the asset's operating hours ({data.hours}), criticality ({data.criticality}), category ({data.category}), and **especially the additional context** ({data.additional_context}). If the task addresses the additional context directly, clearly highlight this.
    - "safety_precautions": important safety measures for performing the task safely.
    - "common_failures_prevented": typical failure modes this task prevents. When applicable, highlight **grease points**, **typical failure points**, or wear-prone components.
-   - "usage_insights": insights specific to {data.hours} operating hours and the additional context.
+   - "usage_insights": insights specific to {data.hours} operating hours and the additional context. Do not reference usage cycles.
+   - "estimated_time_minutes": the estimated time to complete the task, in minutes.
+   - "tools_needed": an array of required tools to perform the task.
+   - "number_of_technicians": recommended number of technicians needed to complete the task.
+   - "comments": a free-form field for additional comments or considerations.
    - "scheduled_dates": an array of specific dates for the next 12 months starting from {today}, based on the task frequency.
    - "recommended_materials": list specific brands, types, and grades of required materials (e.g., lubricants, filters, belts). Include product examples (e.g., "Mobil SHC 632 gear oil", "SKF LGMT 2 grease") where applicable.
    - "citations": cite reliable sources for each task—ideally from the manufacturer’s manual. If unavailable, use credible industry references (e.g., ISO, ASTM, API, Mobil, SKF, Shell).
@@ -68,7 +68,9 @@ You are an expert in preventive maintenance (PM) for industrial assets. Generate
    - Explain how proper lubrication prevents wear, overheating, or failure.
    - Align recommendations with the asset's actual operating conditions and any special notes from the additional context.
 
-4. Prioritize information from the manufacturer’s manual. If not available, rely on best practices from industry standards and reputable sources.
+4. **MANDATORY:** Ensure that every relevant task addresses the "Additional Context" provided. If the additional context describes specific concerns, environmental factors, operating conditions, or customer requirements, clearly explain how the PM plan mitigates or supports those factors within the relevant fields (e.g., "engineering_rationale", "usage_insights", or "comments").
+
+5. Prioritize information from the manufacturer’s manual. If not available, rely on best practices from industry standards and reputable sources.
 
 **Output Format:**
 
@@ -88,13 +90,23 @@ async def generate_ai_plan(input: PMPlanInput, request: Request):
     prompt = generate_prompt(input)
 
     try:
-        model = genai.GenerativeModel('gemini-pro')
-        full_prompt = "You are an expert in preventive maintenance planning.\n\n" + prompt
-        response = model.generate_content(full_prompt)
-        ai_output = response.text
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "You are an expert in preventive maintenance planning."},
+                {"role": "user", "content": prompt}
+            ],
+            timeout=20
+        )
+        ai_output = response.choices[0].message.content
         logger.info("✅ AI plan generated successfully")
         return {"plan": ai_output}
-
+    except APIConnectionError as e:
+        logger.error(f"🔌 OpenAI connection error: {e}")
+        raise HTTPException(status_code=502, detail="OpenAI connection failed.")
+    except OpenAIError as e:
+        logger.error(f"🧐 OpenAI API error: {e}")
+        raise HTTPException(status_code=500, detail="OpenAI API error.")
     except Exception as e:
-        logger.error(f"❌ Gemini API error: {e}")
-        raise HTTPException(status_code=500, detail="Gemini API error.")
+        logger.error(f"❌ Unexpected error: {e}")
+        raise HTTPException(status_code=500, detail="Unexpected server error.")
