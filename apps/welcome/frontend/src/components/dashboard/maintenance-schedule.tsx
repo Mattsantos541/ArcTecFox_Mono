@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
 import { useAuth } from "../../hooks/useAuth"
+import { exportMaintenanceTaskToPDF } from "../../utils/pdfExport"
 
 export default function MaintenanceSchedule() {
   // Initialize Supabase client once
@@ -354,6 +355,9 @@ useEffect(() => {
       time: task.time,
       technician: task.technician,
       duration: task.duration,
+      time_to_complete: task.time_to_complete || 'N/A',
+      tools_needed: task.tools_needed || 'N/A',
+      no_techs_needed: task.no_techs_needed || 'N/A',
       status: task.status,
       priority: task.priority,
       planId: task.planId,
@@ -372,6 +376,9 @@ useEffect(() => {
           "SCHEDULED_DATE",
           "SCHEDULED_TIME",
           "DURATION_HOURS",
+          "TIME_TO_COMPLETE",
+          "TOOLS_NEEDED",
+          "NO_TECHS_NEEDED",
           "TASK_PRIORITY",
           "TASK_STATUS",
           "ASSIGNED_TO",
@@ -390,6 +397,9 @@ useEffect(() => {
             .replace(" min", "/60")
             .replace(" hours", "")
             .replace(" hour", ""), // DURATION_HOURS
+          task.time_to_complete || 'N/A', // TIME_TO_COMPLETE
+          task.tools_needed || 'N/A', // TOOLS_NEEDED
+          task.no_techs_needed || 'N/A', // NO_TECHS_NEEDED
           task.priority.toUpperCase(), // TASK_PRIORITY
           task.status.toUpperCase(), // TASK_STATUS
           task.technician, // ASSIGNED_TO
@@ -414,6 +424,9 @@ useEffect(() => {
           "Time",
           "Technician",
           "Duration",
+          "Time to Complete",
+          "Tools Needed",
+          "No. of Techs",
           "Status",
           "Priority",
           "Plan ID",
@@ -426,6 +439,9 @@ useEffect(() => {
           taskData.time,
           taskData.technician,
           taskData.duration,
+          taskData.time_to_complete,
+          taskData.tools_needed,
+          taskData.no_techs_needed,
           taskData.status,
           taskData.priority,
           taskData.planId,
@@ -447,6 +463,9 @@ useEffect(() => {
         excelContent += `Scheduled Time,${taskData.time}\n`
         excelContent += `Assigned Technician,${taskData.technician}\n`
         excelContent += `Duration,${taskData.duration}\n`
+        excelContent += `Time to Complete,${taskData.time_to_complete}\n`
+        excelContent += `Tools Needed,${taskData.tools_needed}\n`
+        excelContent += `Number of Technicians,${taskData.no_techs_needed}\n`
         excelContent += `Status,${taskData.status}\n`
         excelContent += `Priority,${taskData.priority}\n`
         excelContent += `Related Plan ID,${taskData.planId}\n`
@@ -486,6 +505,9 @@ useEffect(() => {
         <tr><td>Scheduled Time</td><td>${taskData.time}</td></tr>
         <tr><td>Assigned Technician</td><td>${taskData.technician}</td></tr>
         <tr><td>Duration</td><td>${taskData.duration}</td></tr>
+        <tr><td>Time to Complete</td><td>${taskData.time_to_complete}</td></tr>
+        <tr><td>Tools Needed</td><td>${taskData.tools_needed}</td></tr>
+        <tr><td>Number of Technicians</td><td>${taskData.no_techs_needed}</td></tr>
         <tr><td>Status</td><td>${taskData.status}</td></tr>
         <tr><td>Priority</td><td>${taskData.priority}</td></tr>
         <tr><td>Related Plan ID</td><td>${taskData.planId}</td></tr>
@@ -1216,7 +1238,7 @@ useEffect(() => {
       {/* Export Task Dialog */}
       {showExportDialog && exportingTask && (
         <Dialog open={showExportDialog} onOpenChange={setShowExportDialog}>
-          <DialogContent className="max-w-md">
+          <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>Export Task</DialogTitle>
               <DialogDescription>
@@ -1225,7 +1247,7 @@ useEffect(() => {
             </DialogHeader>
 
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
                 <Button
                   variant="outline"
                   className="h-20 flex flex-col items-center justify-center space-y-2"
@@ -1272,6 +1294,23 @@ useEffect(() => {
                 >
                   <Download className="h-6 w-6" />
                   <span className="text-sm">Word</span>
+                </Button>
+
+                <Button
+                  variant="outline"
+                  className="h-20 flex flex-col items-center justify-center space-y-2"
+                  onClick={() => {
+                    exportMaintenanceTaskToPDF(exportingTask)
+                    toast({
+                      title: "Task Exported Successfully",
+                      description: `Maintenance task for ${exportingTask.asset} has been exported as PDF.`,
+                      variant: "default",
+                    })
+                    setShowExportDialog(false)
+                  }}
+                >
+                  <Download className="h-6 w-6" />
+                  <span className="text-sm">PDF</span>
                 </Button>
               </div>
 
