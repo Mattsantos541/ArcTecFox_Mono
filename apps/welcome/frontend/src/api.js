@@ -197,19 +197,33 @@ export const savePMPlanInput = async (planData) => {
     }
     
     // Step 2: Insert PM plan with the user ID
+    const planInsertData = {
+      asset_name: planData.name,
+      asset_model: planData.model,
+      serial_no: planData.serial,
+      eq_category: planData.category,
+      op_hours: parseInt(planData.hours) || 0,
+      additional_context: planData.additional_context || null,
+      env_desc: planData.environment,
+      plan_start_date: planData.date_of_plan_start || null,
+      created_by: userId, // Use the ID from users table
+    };
+
+    // Add user manual data if provided
+    if (planData.userManual) {
+      planInsertData.user_manual_path = planData.userManual.filePath;
+      planInsertData.user_manual_filename = planData.userManual.fileName;
+      planInsertData.user_manual_original_name = planData.userManual.originalName;
+      planInsertData.user_manual_file_size = planData.userManual.fileSize;
+      planInsertData.user_manual_file_type = planData.userManual.fileType;
+      planInsertData.user_manual_uploaded_at = planData.userManual.uploadedAt;
+      
+      console.log('📎 Including user manual data:', planData.userManual.fileName);
+    }
+
     const { data, error } = await supabase
       .from('pm_plans')
-      .insert([{
-        asset_name: planData.name,
-        asset_model: planData.model,
-        serial_no: planData.serial,
-        eq_category: planData.category,
-        op_hours: parseInt(planData.hours) || 0,
-        additional_context: planData.additional_context || null,
-        env_desc: planData.environment,
-        plan_start_date: planData.date_of_plan_start || null,
-        created_by: userId, // Use the ID from users table
-      }])
+      .insert([planInsertData])
       .select()
       .single();
     

@@ -1,7 +1,7 @@
 // vite.config.js
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
-import path from 'path'
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import path from 'path';
 
 export default defineConfig({
   plugins: [react()],
@@ -10,22 +10,19 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
-  server: {
-    host: '0.0.0.0',
-    port: 5173,
-    hmr: {
-      host: 'localhost', // or your Codespace domain
-      protocol: 'ws',
-    },
+server: {
+  host: '0.0.0.0',
+  port: 5173,
+  hmr: {
+    host: 'jubilant-rotary-phone-4w5v79g67jj374jj-5173.app.github.dev', // REMOVE "https://"
+    protocol: 'wss', // Use "wss" for secure websockets in Codespaces
   },
+},
+
   build: {
     rollupOptions: {
-      input: {
-        main: path.resolve(__dirname, 'index.html'),
-      },
+      input: path.resolve(__dirname, 'index.html'),
     },
   },
-  // ✅ Add this to support client-side routing
-  optimizeDeps: {},
-  appType: 'spa' // ← This is the key!
-})
+  appType: 'spa', // Enable client-side routing for React Router
+});

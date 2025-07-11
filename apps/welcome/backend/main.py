@@ -4,13 +4,21 @@ import json
 import logging
 from datetime import datetime
 from typing import Dict, Any, List, Optional
+import io
+import tempfile
+from pathlib import Path
 
-import openai
+import google.generativeai as genai
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from supabase import create_client, Client
+from PIL import Image
+import PyPDF2
+from docx import Document
+from file_processor import file_processor
 
 # Load environment variables
 load_dotenv()
@@ -36,15 +44,33 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize OpenAI client
-openai_api_key = os.getenv("OPENAI_API_KEY")
-if not openai_api_key:
-    raise ValueError("OPENAI_API_KEY must be set")
+# Initialize Gemini client
+gemini_api_key = os.getenv("GEMINI_API_KEY")
+if not gemini_api_key:
+    raise ValueError("GEMINI_API_KEY must be set")
 
-openai.api_key = openai_api_key
-logger.info(f"🔑 OpenAI key loaded: {'Yes' if openai_api_key else 'No'}")
+genai.configure(api_key=gemini_api_key)
+logger.info(f"🔑 Gemini key loaded: {'Yes' if gemini_api_key else 'No'}")
+
+# Initialize Supabase client for file access
+supabase_url = os.getenv("SUPABASE_URL")
+supabase_key = os.getenv("SUPABASE_ANON_KEY")
+if not supabase_url or not supabase_key:
+    logger.warning("⚠️ Supabase credentials not found - file processing will be disabled")
+    supabase_client = None
+else:
+    supabase_client: Client = create_client(supabase_url, supabase_key)
+    logger.info("🔗 Supabase client initialized for file processing")
 
 # Pydantic models
+class UserManual(BaseModel):
+    filePath: str
+    fileName: str
+    originalName: str
+    fileSize: int
+    fileType: str
+    uploadedAt: str
+
 class PlanData(BaseModel):
     name: str
     model: Optional[str] = None
@@ -54,6 +80,7 @@ class PlanData(BaseModel):
     cycles: Optional[str] = "0"
     environment: Optional[str] = None
     date_of_plan_start: Optional[str] = None
+    userManual: Optional[UserManual] = None
 
 class GenerateAIPlanRequest(BaseModel):
     planData: PlanData
@@ -94,6 +121,19 @@ async def generate_ai_plan(request: GenerateAIPlanRequest):
         if not plan_data.name or not plan_data.category:
             raise HTTPException(status_code=400, detail="Missing required fields: name and category")
 
+        # Extract file content if user manual is provided
+        user_manual_content = ""
+        if plan_data.userManual:
+            logger.info(f"📄 Processing user manual: {plan_data.userManual.fileName}")
+            user_manual_content = await file_processor.extract_text_from_file(
+                plan_data.userManual.filePath, 
+                plan_data.userManual.fileType
+            )
+            if user_manual_content:
+                logger.info(f"✅ Successfully extracted {len(user_manual_content)} characters from user manual")
+            else:
+                logger.warning("⚠️ Failed to extract content from user manual")
+
         prompt = f"""
 Generate a detailed preventive maintenance (PM) plan for the following asset:
 
@@ -106,7 +146,20 @@ Generate a detailed preventive maintenance (PM) plan for the following asset:
 - Environmental Conditions: {plan_data.environment}
 - Date of Plan Start: {plan_data.date_of_plan_start or datetime.now().strftime('%Y-%m-%d')}
 
-Use the manufacturer's user manual to determine recommended maintenance tasks and intervals. If the manual is not available, infer recommendations from best practices for similar assets in the same category. Be as detailed as possible in the instructions.
+{f'''
+**USER MANUAL CONTENT:**
+The following is the extracted content from the uploaded user manual for this asset:
+
+{user_manual_content}
+
+**END OF USER MANUAL CONTENT**
+
+Use the information from the user manual above to determine recommended maintenance tasks and intervals. If specific maintenance procedures are mentioned in the manual, follow those recommendations. If the manual is not available or doesn't contain specific maintenance information, infer recommendations from best practices for similar assets in the same category.
+''' if user_manual_content else '''
+Use the manufacturer's user manual to determine recommended maintenance tasks and intervals. If the manual is not available, infer recommendations from best practices for similar assets in the same category.
+'''}
+
+Be as detailed as possible in the instructions and reference the user manual content when applicable.
 
 **Usage Insights**  
 - Provide a concise write-up (in a field named "usage_insights") that analyzes this asset's current usage profile ({plan_data.hours or 0} hours and {plan_data.cycles or 0} cycles), noting the typical outages or failure modes that occur at this stage in the asset's life.
@@ -135,27 +188,21 @@ For each PM task:
 """
 
         try:
-            response = openai.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are an expert in preventive maintenance planning. Always return pure JSON without any markdown formatting."
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                temperature=0.7,
-                max_tokens=2000,
+            model = genai.GenerativeModel('gemini-2.0-flash-exp')
+            full_prompt = "You are an expert in preventive maintenance planning. Always return pure JSON without any markdown formatting.\n\n" + prompt
+            response = model.generate_content(
+                full_prompt,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.7,
+                    max_output_tokens=8192,
+                )
             )
-        except openai.OpenAIError as oe:
-            logger.error(f"🧠 OpenAI API error: {oe}")
-            raise HTTPException(status_code=502, detail="OpenAI API error")
+        except Exception as ge:
+            logger.error(f"🧠 Gemini API error: {ge}")
+            raise HTTPException(status_code=502, detail="Gemini API error")
 
-        raw_content = response.choices[0].message.content
-        logger.info("🧠 AI response received from OpenAI")
+        raw_content = response.text
+        logger.info("🧠 AI response received from Gemini")
 
         # Clean the response
         raw_content = raw_content.replace("```json", "").replace("```", "").strip()
@@ -184,22 +231,22 @@ For each PM task:
         logger.error("❌ Error generating AI plan:\n%s", traceback.format_exc())
         raise HTTPException(status_code=500, detail="Internal error during plan generation")
 
-# Debug OpenAI connection
-@app.get("/api/debug-openai")
-async def debug_openai():
+# Debug Gemini connection
+@app.get("/api/debug-gemini")
+async def debug_gemini():
     try:
-        models = openai.models.list()
-        model_ids = [m.id for m in models.data[:5]]  # Just first 5 for brevity
+        models = genai.list_models()
+        model_names = [m.name for m in models][:5]  # Just first 5 for brevity
         return JSONResponse(status_code=200, content={
             "success": True, 
-            "models_sample": model_ids,
-            "api_key_set": bool(os.getenv("OPENAI_API_KEY"))
+            "models_sample": model_names,
+            "api_key_set": bool(os.getenv("GEMINI_API_KEY"))
         })
     except Exception as e:
         return JSONResponse(status_code=500, content={
             "success": False, 
             "error": str(e),
-            "api_key_set": bool(os.getenv("OPENAI_API_KEY"))
+            "api_key_set": bool(os.getenv("GEMINI_API_KEY"))
         })
 
 # Dev runner
