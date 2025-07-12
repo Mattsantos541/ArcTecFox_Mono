@@ -174,6 +174,9 @@ For each PM task:
 7. Include an "engineering_rationale" field explaining why this task and interval were selected.
 8. Based on the plan start date, return a list of future dates when this task should be performed over the next 12 months.
 9. In each task object, include the "usage_insights" field (you may repeat or summarize key points if needed).
+10. ALWAYS include "time_to_complete" - estimate how long this task takes (e.g., "2 hours", "45 minutes").
+11. ALWAYS include "tools_needed" - list all tools, equipment, and supplies required.
+12. ALWAYS include "number_of_technicians" - specify how many people are needed (integer).
 
 **IMPORTANT:** Return only a valid JSON object with no markdown or explanation. The JSON must have a key "maintenance_plan" whose value is an array of objects. Each object must include:
 - "task_name" (string)
@@ -185,6 +188,9 @@ For each PM task:
 - "common_failures_prevented" (string)
 - "usage_insights" (string)
 - "scheduled_dates" (array of strings in YYYY-MM-DD format)
+- "time_to_complete" (string, e.g., "2 hours", "30 minutes")
+- "tools_needed" (string, list of tools/equipment needed)
+- "number_of_technicians" (integer, number of technicians required)
 """
 
         try:
@@ -215,12 +221,24 @@ For each PM task:
             logger.error(f"Raw content: {raw_content[:200]}...")
             raise HTTPException(status_code=500, detail="AI returned invalid JSON format")
 
+        # Debug: Log the full first task to see what Gemini returned
+        if parsed_plan:
+            logger.info(f"🔍 FIRST TASK DEBUG: {json.dumps(parsed_plan[0], indent=2)}")
+
         # Add asset metadata to each task
         for task in parsed_plan:
             task["asset_name"] = plan_data.name
             task["asset_model"] = plan_data.model
 
         logger.info(f"✅ Final plan parsed with {len(parsed_plan)} tasks")
+        
+        # Log critical info for debugging
+        if parsed_plan:
+            first_task = parsed_plan[0]
+            has_time = 'time_to_complete' in first_task
+            has_tools = 'tools_needed' in first_task  
+            has_techs = 'number_of_technicians' in first_task
+            logger.info(f"🔍 DEBUG: time_to_complete={has_time}, tools_needed={has_tools}, number_of_technicians={has_techs}")
 
         return AIPlanResponse(success=True, data=parsed_plan)
 
