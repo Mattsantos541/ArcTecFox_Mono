@@ -253,7 +253,10 @@ export const savePMPlanResults = async (pmPlanId, aiGeneratedPlan) => {
       usage_insights: task.usage_insights,
       scheduled_dates: Array.isArray(task.scheduled_dates) 
         ? task.scheduled_dates 
-        : task.scheduled_dates || null
+        : task.scheduled_dates || null,
+      est_minutes: task.time_to_complete || null,
+      tools_needed: task.tools_needed || null,
+      no_techs_needed: task.number_of_technicians || 1
     }));
 
     const { data, error } = await supabase
