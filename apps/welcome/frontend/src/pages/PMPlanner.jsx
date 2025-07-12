@@ -364,9 +364,12 @@ function PMPlanDisplay({ plan, loading = false }) {
         {plan.map((task, index) => (
           <div key={index} className="bg-white rounded-lg p-4 border border-gray-200">
             <h4 className="text-lg font-semibold text-blue-600 mb-2">{task.task_name}</h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
               <Info label="Interval" value={task.maintenance_interval} />
               <Info label="Reason" value={task.reason} />
+              <Info label="Estimated Time" value={task.estimated_time_minutes ? `${task.estimated_time_minutes} minutes` : 'Not specified'} />
+              <Info label="Tools Needed" value={task.tools_needed || 'Standard maintenance tools'} />
+              <Info label="Technicians Required" value={task.number_of_technicians || 1} />
             </div>
             <InfoBlock label="Instructions" value={task.instructions} bg="bg-gray-50" />
             <InfoBlock label="Safety Precautions" value={task.safety_precautions} bg="bg-red-50 text-red-600" />
