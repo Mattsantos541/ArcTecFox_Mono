@@ -1,6 +1,8 @@
-import { Outlet } from "react-router-dom";
+import { Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from '../hooks/useAuth';
 import { AuthLoading } from '../components/loading/LoadingStates';
+import { isUserAdmin, getUserAdminCompanies } from '../api';
+import { useState, useEffect } from 'react';
 
 // GoogleLoginButton Component
 function GoogleLoginButton({ className = "" }) {
@@ -30,9 +32,114 @@ function GoogleLoginButton({ className = "" }) {
   );
 }
 
+// Admin Menu Component
+function AdminMenu({ adminCompanies = [] }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const navigate = useNavigate();
+
+  const handleNavigation = (path) => {
+    navigate(path);
+    setIsOpen(false);
+  };
+
+  const companyNames = adminCompanies.map(ac => ac.companies.name).join(', ');
+  const roleNames = [...new Set(adminCompanies.map(ac => ac.roles.name))].join(', ');
+  const isSuperAdmin = adminCompanies.some(ac => ac.roles.name === 'super_admin');
+  const isCompanyAdmin = adminCompanies.some(ac => ac.roles.name === 'company_admin');
+  const canManageCompanies = isSuperAdmin || isCompanyAdmin;
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex items-center px-3 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-50 rounded-md transition-colors"
+        title={`Admin for: ${companyNames}`}
+      >
+        Admin
+        <svg className="ml-1 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      
+      {isOpen && (
+        <div className="absolute right-0 mt-2 w-64 bg-white rounded-md shadow-lg border border-gray-200 z-10">
+          {adminCompanies.length > 0 && (
+            <div className="px-4 py-2 bg-gray-50 border-b border-gray-200">
+              <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">Admin Access</div>
+              <div className="text-sm text-gray-700 mt-1">
+                <div className="font-medium">{roleNames}</div>
+                <div className="text-xs text-gray-500 truncate">{companyNames}</div>
+              </div>
+            </div>
+          )}
+          <div className="py-1">
+            <button
+              onClick={() => handleNavigation('/')}
+              className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 font-medium"
+            >
+              Dashboard
+            </button>
+            <div className="border-t border-gray-200 my-1"></div>
+            <button
+              onClick={() => handleNavigation('/admin/users')}
+              className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+            >
+              User Management
+            </button>
+            {canManageCompanies && (
+              <button
+                onClick={() => handleNavigation('/admin/companies')}
+                className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+              >
+                Manage Companies
+              </button>
+            )}
+            {isSuperAdmin && (
+              <button
+                onClick={() => handleNavigation('/admin/super-admins')}
+                className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+              >
+                Super Admin Management
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Shared AuthHeader component
 function AuthHeader() {
   const { user, logout, loading } = useAuth();
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [adminCompanies, setAdminCompanies] = useState([]);
+  const [adminCheckLoading, setAdminCheckLoading] = useState(false);
+
+  useEffect(() => {
+    const checkAdminStatus = async () => {
+      if (user?.id) {
+        setAdminCheckLoading(true);
+        try {
+          const [adminStatus, userAdminCompanies] = await Promise.all([
+            isUserAdmin(user.id),
+            getUserAdminCompanies(user.id)
+          ]);
+          
+          setIsAdmin(adminStatus);
+          setAdminCompanies(userAdminCompanies);
+        } catch (error) {
+          console.error('Error checking admin status:', error);
+          setIsAdmin(false);
+          setAdminCompanies([]);
+        } finally {
+          setAdminCheckLoading(false);
+        }
+      }
+    };
+
+    checkAdminStatus();
+  }, [user]);
 
   if (loading) {
     return <AuthLoading />;
@@ -57,12 +164,15 @@ function AuthHeader() {
               <p className="text-sm text-gray-600">{user.email}</p>
             </div>
           </div>
-          <button
-            onClick={logout}
-            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm"
-          >
-            Sign Out
-          </button>
+          <div className="flex items-center space-x-4">
+            {!adminCheckLoading && isAdmin && <AdminMenu adminCompanies={adminCompanies} />}
+            <button
+              onClick={logout}
+              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm"
+            >
+              Sign Out
+            </button>
+          </div>
         </div>
       </div>
     );

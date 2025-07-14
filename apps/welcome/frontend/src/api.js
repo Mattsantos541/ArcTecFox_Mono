@@ -361,6 +361,548 @@ export const fetchMetrics = async () => {
   }
 };
 
+// Fetch user roles based on the database schema
+export const fetchUserRoles = async (userId) => {
+  try {
+    console.log('🔍 Fetching user roles for user:', userId);
+    
+    const { data, error } = await supabase
+      .from('user_roles')
+      .select(`
+        role_id,
+        roles (
+          id,
+          name
+        )
+      `)
+      .eq('user_id', userId);
+    
+    if (error) throw error;
+    
+    // Extract role names from the response
+    const roleNames = data.map(item => item.roles.name);
+    console.log('✅ User roles fetched:', roleNames);
+    return roleNames;
+  } catch (error) {
+    console.error("❌ Error fetching user roles:", error);
+    throw error;
+  }
+};
+
+// Check if user has admin role in any company
+export const isUserAdmin = async (userId) => {
+  try {
+    const { data, error } = await supabase
+      .from('company_users')
+      .select(`
+        role_id,
+        roles!inner (
+          name
+        )
+      `)
+      .eq('user_id', userId)
+      .in('roles.name', ['super_admin', 'company_admin']);
+
+    if (error) {
+      console.error("❌ Error checking admin status:", error);
+      return false;
+    }
+
+    return data && data.length > 0;
+  } catch (error) {
+    console.error("❌ Error checking admin status:", error);
+    return false;
+  }
+};
+
+// Get user's admin companies with role details
+export const getUserAdminCompanies = async (userId) => {
+  try {
+    const { data, error } = await supabase
+      .from('company_users')
+      .select(`
+        company_id,
+        companies!inner (
+          id,
+          name
+        ),
+        roles!inner (
+          id,
+          name
+        )
+      `)
+      .eq('user_id', userId)
+      .in('roles.name', ['super_admin', 'company_admin']);
+
+    if (error) {
+      console.error("❌ Error fetching admin companies:", error);
+      return [];
+    }
+
+    return data || [];
+  } catch (error) {
+    console.error("❌ Error fetching admin companies:", error);
+    return [];
+  }
+};
+
+// Fetch companies that the user is mapped to
+export const fetchUserCompanies = async (userId) => {
+  try {
+    console.log('🏢 Fetching companies for user:', userId);
+    
+    const { data, error } = await supabase
+      .from('company_users')
+      .select(`
+        company_id,
+        companies (
+          id,
+          name
+        )
+      `)
+      .eq('user_id', userId);
+    
+    if (error) throw error;
+    
+    // Extract companies from the response
+    const companies = data.map(item => item.companies).filter(Boolean);
+    console.log('✅ User companies fetched:', companies);
+    return companies;
+  } catch (error) {
+    console.error("❌ Error fetching user companies:", error);
+    throw error;
+  }
+};
+
+// Fetch users and their roles for a specific company
+export const fetchCompanyUsers = async (companyId) => {
+  try {
+    console.log('👥 Fetching users for company:', companyId);
+    
+    const { data, error } = await supabase
+      .from('company_users')
+      .select(`
+        user_id,
+        role_id,
+        roles (
+          id,
+          name
+        ),
+        users (
+          id,
+          email,
+          full_name,
+          created_at
+        )
+      `)
+      .eq('company_id', companyId);
+    
+    if (error) {
+      console.error("❌ Supabase error:", error);
+      console.error("❌ Error details:", JSON.stringify(error, null, 2));
+      throw error;
+    }
+    
+    // Transform data to include role names from company_users table
+    const usersWithRoles = data.map(item => ({
+      ...item.users,
+      roles: item.roles ? [item.roles.name] : [],
+      roleId: item.role_id
+    }));
+    
+    console.log('✅ Company users fetched:', usersWithRoles);
+    return usersWithRoles;
+  } catch (error) {
+    console.error("❌ Error fetching company users:", error);
+    throw error;
+  }
+};
+
+// Fetch all available roles
+export const fetchAllRoles = async () => {
+  try {
+    console.log('🔑 Fetching all roles');
+    
+    const { data, error } = await supabase
+      .from('roles')
+      .select('id, name')
+      .order('name');
+    
+    if (error) throw error;
+    
+    console.log('✅ All roles fetched:', data);
+    return data;
+  } catch (error) {
+    console.error("❌ Error fetching roles:", error);
+    throw error;
+  }
+};
+
+// Add role to user
+export const addUserRole = async (userId, roleId) => {
+  try {
+    console.log('➕ Adding role to user:', { userId, roleId });
+    
+    const { data, error } = await supabase
+      .from('user_roles')
+      .insert([{ user_id: userId, role_id: roleId }])
+      .select();
+    
+    if (error) throw error;
+    
+    console.log('✅ Role added to user:', data);
+    return data;
+  } catch (error) {
+    console.error("❌ Error adding role to user:", error);
+    throw error;
+  }
+};
+
+// Remove role from user
+export const removeUserRole = async (userId, roleId) => {
+  try {
+    console.log('➖ Removing role from user:', { userId, roleId });
+    
+    const { data, error } = await supabase
+      .from('user_roles')
+      .delete()
+      .eq('user_id', userId)
+      .eq('role_id', roleId)
+      .select();
+    
+    if (error) throw error;
+    
+    console.log('✅ Role removed from user:', data);
+    return data;
+  } catch (error) {
+    console.error("❌ Error removing role from user:", error);
+    throw error;
+  }
+};
+
+// Update user details
+export const updateUser = async (userId, updates) => {
+  try {
+    console.log('✏️ Updating user:', { userId, updates });
+    
+    const { data, error } = await supabase
+      .from('users')
+      .update(updates)
+      .eq('id', userId)
+      .select();
+    
+    if (error) throw error;
+    
+    console.log('✅ User updated:', data);
+    return data;
+  } catch (error) {
+    console.error("❌ Error updating user:", error);
+    throw error;
+  }
+};
+
+// Delete user
+export const deleteUser = async (userId) => {
+  try {
+    console.log('🗑️ Deleting user:', userId);
+    
+    // First delete user roles
+    await supabase
+      .from('user_roles')
+      .delete()
+      .eq('user_id', userId);
+    
+    // Then delete user
+    const { data, error } = await supabase
+      .from('users')
+      .delete()
+      .eq('id', userId)
+      .select();
+    
+    if (error) throw error;
+    
+    console.log('✅ User deleted:', data);
+    return data;
+  } catch (error) {
+    console.error("❌ Error deleting user:", error);
+    throw error;
+  }
+};
+
+// Remove user from a specific company
+export const removeUserFromCompany = async (userId, companyId) => {
+  try {
+    console.log('🏢 Removing user from company:', { userId, companyId });
+    
+    const { data, error } = await supabase
+      .from('company_users')
+      .delete()
+      .eq('user_id', userId)
+      .eq('company_id', companyId)
+      .select();
+    
+    if (error) throw error;
+    
+    console.log('✅ User removed from company:', data);
+    return data;
+  } catch (error) {
+    console.error("❌ Error removing user from company:", error);
+    throw error;
+  }
+};
+
+// Update user role in company_users table
+export const updateUserRoleInCompany = async (userId, companyId, roleId) => {
+  try {
+    console.log('🔄 Updating user role in company:', { userId, companyId, roleId });
+    
+    const { data, error } = await supabase
+      .from('company_users')
+      .update({ role_id: roleId })
+      .eq('user_id', userId)
+      .eq('company_id', companyId)
+      .select();
+    
+    if (error) throw error;
+    
+    console.log('✅ User role updated in company:', data);
+    return data;
+  } catch (error) {
+    console.error("❌ Error updating user role in company:", error);
+    throw error;
+  }
+};
+
+// Remove user role from company_users table
+export const removeUserRoleFromCompany = async (userId, companyId) => {
+  try {
+    console.log('🔄 Removing user role from company:', { userId, companyId });
+    
+    const { data, error } = await supabase
+      .from('company_users')
+      .update({ role_id: null })
+      .eq('user_id', userId)
+      .eq('company_id', companyId)
+      .select();
+    
+    if (error) throw error;
+    
+    console.log('✅ User role removed from company:', data);
+    return data;
+  } catch (error) {
+    console.error("❌ Error removing user role from company:", error);
+    throw error;
+  }
+};
+
+// Create new user by email
+export const createUserByEmail = async (email, companyId, fullName = '', roleId = null) => {
+  try {
+    console.log('➕ Creating new user:', { email, companyId, fullName, roleId });
+    
+    // First, check if user with this email already exists
+    const { data: existingUser, error: checkError } = await supabase
+      .from('users')
+      .select('id, email')
+      .eq('email', email)
+      .single();
+    
+    if (checkError && checkError.code !== 'PGRST116') {
+      // PGRST116 means no rows found, which is what we want
+      throw checkError;
+    }
+    
+    let userId;
+    let userData;
+    
+    if (existingUser) {
+      // User already exists, use existing user
+      console.log('👤 User already exists:', existingUser);
+      userId = existingUser.id;
+      userData = [existingUser];
+      
+      // Check if user is already linked to this company
+      const { data: existingLink, error: linkCheckError } = await supabase
+        .from('company_users')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('company_id', companyId)
+        .single();
+      
+      if (linkCheckError && linkCheckError.code !== 'PGRST116') {
+        throw linkCheckError;
+      }
+      
+      if (existingLink) {
+        throw new Error('User is already linked to this company');
+      }
+    } else {
+      // Create new user
+      userId = crypto.randomUUID();
+      
+      const { data: newUserData, error: userError } = await supabase
+        .from('users')
+        .insert([{
+          id: userId,
+          email: email,
+          full_name: fullName,
+          created_at: new Date().toISOString(),
+          profile_completed: false
+        }])
+        .select();
+      
+      if (userError) throw userError;
+      userData = newUserData;
+      console.log('✅ New user created:', userData[0]);
+    }
+    
+    // Create the company-user relationship with role if provided
+    const companyUserData = {
+      user_id: userId,
+      company_id: companyId
+    };
+    
+    if (roleId) {
+      companyUserData.role_id = roleId;
+    }
+    
+    const { data: companyUserResult, error: companyUserError } = await supabase
+      .from('company_users')
+      .insert([companyUserData])
+      .select();
+    
+    if (companyUserError) throw companyUserError;
+    
+    console.log('✅ User linked to company:', companyUserResult[0]);
+    return userData[0];
+  } catch (error) {
+    console.error("❌ Error creating user:", error);
+    throw error;
+  }
+};
+
+// TEMPORARY: Check current user data structure
+export const checkUserDataStructure = async (userId) => {
+  try {
+    console.log('🔍 Checking user data structure for:', userId);
+    
+    // Check users table by ID
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('id, email, full_name, company_id')
+      .eq('id', userId);
+    
+    if (userError) throw userError;
+    
+    // Check users table by email (for comparison)
+    const { data: userByEmail, error: userByEmailError } = await supabase
+      .from('users')
+      .select('id, email, full_name, company_id')
+      .eq('email', 'willisreed17@gmail.com');
+    
+    if (userByEmailError) throw userByEmailError;
+    
+    // Check company_users table by user ID
+    const { data: companyUserData, error: companyUserError } = await supabase
+      .from('company_users')
+      .select('user_id, company_id')
+      .eq('user_id', userId);
+    
+    if (companyUserError) {
+      console.error('❌ Error querying company_users by user_id:', companyUserError);
+    }
+    
+    // Check ALL company_users records to see if table has data
+    const { data: allCompanyUsers, error: allCompanyUsersError } = await supabase
+      .from('company_users')
+      .select('user_id, company_id');
+    
+    if (allCompanyUsersError) {
+      console.error('❌ Error querying all company_users:', allCompanyUsersError);
+    }
+    
+    // Try direct SQL query using RPC function
+    const { data: directQueryResult, error: directQueryError } = await supabase
+      .rpc('get_user_companies', { user_email: 'willisreed17@gmail.com' })
+      .catch(() => ({ data: null, error: 'RPC function not found' }));
+    
+    console.log('📊 User data by ID:', userData);
+    console.log('📊 User data by email:', userByEmail);
+    console.log('📊 Company-user relationships by ID:', companyUserData);
+    console.log('📊 ALL company_users records:', allCompanyUsers);
+    console.log('📊 Direct query result:', directQueryResult);
+    console.log('📊 Direct query error:', directQueryError);
+    
+    return { userData, userByEmail, companyUserData, allCompanyUsers, directQueryResult };
+  } catch (error) {
+    console.error("❌ Error checking user data structure:", error);
+    throw error;
+  }
+};
+
+// TEMPORARY: Migrate user from old structure to new structure
+export const migrateUserToNewStructure = async (userId) => {
+  try {
+    console.log('🔄 Migrating user to new structure:', userId);
+    
+    // Get user's current company_id from users table
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('id, email, company_id')
+      .eq('id', userId)
+      .single();
+    
+    if (userError) throw userError;
+    
+    console.log('📊 User data for migration:', userData);
+    
+    if (!userData.company_id) {
+      console.log('❌ No company_id found for user');
+      return null;
+    }
+    
+    console.log('🔍 Found company_id:', userData.company_id);
+    
+    // Check if relationship already exists in company_users
+    const { data: existingRelation, error: checkError } = await supabase
+      .from('company_users')
+      .select('user_id, company_id')
+      .eq('user_id', userId)
+      .eq('company_id', userData.company_id);
+    
+    if (checkError) throw checkError;
+    
+    console.log('🔍 Existing relations found:', existingRelation);
+    
+    if (existingRelation.length > 0) {
+      console.log('✅ Relationship already exists in company_users');
+      return existingRelation[0];
+    }
+    
+    console.log('➕ Creating new relationship in company_users table');
+    
+    // Create new relationship in company_users table
+    const { data: newRelation, error: insertError } = await supabase
+      .from('company_users')
+      .insert([{
+        user_id: userId,
+        company_id: userData.company_id
+      }])
+      .select();
+    
+    if (insertError) {
+      console.error('❌ Insert error:', insertError);
+      throw insertError;
+    }
+    
+    console.log('✅ User migrated to new structure:', newRelation[0]);
+    return newRelation[0];
+  } catch (error) {
+    console.error("❌ Error migrating user:", error);
+    throw error;
+  }
+};
+
 // Keep other existing functions...
 export async function completeUserProfile(profileData) {
   // Your existing implementation
