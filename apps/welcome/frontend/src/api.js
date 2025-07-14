@@ -196,7 +196,7 @@ export const savePMPlanInput = async (planData) => {
       console.log('✅ Created new user with ID:', userId);
     }
     
-    // Step 2: Insert PM plan with the user ID
+    // Step 2: Insert PM plan with the user ID and company ID
     const planInsertData = {
       asset_name: planData.name,
       asset_model: planData.model,
@@ -207,6 +207,7 @@ export const savePMPlanInput = async (planData) => {
       env_desc: planData.environment,
       plan_start_date: planData.date_of_plan_start || null,
       created_by: userId, // Use the ID from users table
+      company_id: planData.companyId || null, // Add company ID
     };
 
     // Add user manual data if provided
