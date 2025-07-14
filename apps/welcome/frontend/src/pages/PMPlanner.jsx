@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { generatePMPlan, fetchUserCompanies, supabase } from "../api";
@@ -463,6 +463,7 @@ export default function PMPlanner() {
   const [selectedCompany, setSelectedCompany] = useState('');
   const [showCompanySelection, setShowCompanySelection] = useState(false);
   const [companiesLoading, setCompaniesLoading] = useState(true);
+  const lastFetchedUserId = useRef(null);
   
   // Bulk import state variables
   const [bulkProcessing, setBulkProcessing] = useState(false);
@@ -481,12 +482,7 @@ export default function PMPlanner() {
   const fetchAssetCategories = async () => {
     try {
       setCategoriesLoading(true);
-      const { createClient } = await import("@supabase/supabase-js");
-      const supabase = createClient(
-        import.meta.env.VITE_SUPABASE_URL,
-        import.meta.env.VITE_SUPABASE_ANON_KEY
-      );
-
+      
       const { data, error } = await supabase
         .from('dim_assets')
         .select('asset_name')
@@ -508,10 +504,12 @@ export default function PMPlanner() {
 
   // Load categories when component mounts
   // Load categories when component mounts
-  const loadUserCompanies = async () => {
+  const loadUserCompanies = useCallback(async () => {
     try {
-      setCompaniesLoading(true);
-      if (user?.id) {
+      if (user?.id && user.id !== lastFetchedUserId.current) {
+        setCompaniesLoading(true);
+        lastFetchedUserId.current = user.id;
+        
         const companies = await fetchUserCompanies(user.id);
         setUserCompanies(companies);
         
@@ -519,20 +517,30 @@ export default function PMPlanner() {
         if (companies.length === 1) {
           setSelectedCompany(companies[0].id);
         }
+      } else if (!user?.id) {
+        // Reset state when user is not available
+        setUserCompanies([]);
+        setSelectedCompany('');
+        lastFetchedUserId.current = null;
       }
     } catch (error) {
       console.error('Error loading user companies:', error);
       setMessage("❌ Failed to load your companies. Please refresh the page.");
       setMessageType("error");
+      // Reset ref so we can retry later
+      lastFetchedUserId.current = null;
     } finally {
       setCompaniesLoading(false);
     }
-  };
+  }, [user?.id]);
 
   useEffect(() => {
     fetchAssetCategories();
+  }, []); // Only fetch categories once
+
+  useEffect(() => {
     loadUserCompanies();
-  }, [user]);
+  }, [loadUserCompanies]);
 
   const handleBackToDashboard = () => {
     navigate('/');
