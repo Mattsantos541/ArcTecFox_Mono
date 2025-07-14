@@ -139,7 +139,11 @@ export default function MaintenanceSchedule() {
         createdByEmail: task.pm_plans?.users?.email,
         notes: task.notes,
         completedAt: task.completed_at,
-        actualDuration: task.actual_duration
+        actualDuration: task.actual_duration,
+        // New AI fields from pm_tasks table
+        time_to_complete: task.est_minutes ? `${task.est_minutes} minutes` : 'N/A',
+        tools_needed: task.tools_needed || 'N/A',
+        no_techs_needed: task.no_techs_needed || 'N/A'
       }))
 
       setScheduledTasks(transformedTasks)
