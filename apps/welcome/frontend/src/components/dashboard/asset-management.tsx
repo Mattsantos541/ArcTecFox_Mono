@@ -19,6 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Search, Plus, Edit, Trash2, Eye, AlertTriangle } from "lucide-react"
 import { useAssets } from "../app/contexts/asset-context"
 import { useToast } from "@/hooks/use-toast"
+import { AssetPDFExportButton } from "../shared/PDFExportButton"
 
 export default function AssetManagement() {
   const { assets, addAsset, deleteAsset } = useAssets()
@@ -136,14 +137,32 @@ export default function AssetManagement() {
           <h2 className="text-2xl font-bold">Asset Management</h2>
           <p className="text-muted-foreground">Manage your equipment and assets</p>
         </div>
-        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              Add Asset
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-2xl">
+        <div className="flex items-center space-x-2">
+          <AssetPDFExportButton 
+            assets={assets}
+            variant="outline"
+            onExportStart={() => toast({
+              title: "Export Started",
+              description: "Generating PDF export...",
+            })}
+            onExportComplete={() => toast({
+              title: "Export Complete",
+              description: "Assets have been exported to PDF successfully",
+            })}
+            onExportError={(error) => toast({
+              title: "Export Failed",
+              description: error.message,
+              variant: "destructive",
+            })}
+          />
+          <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="h-4 w-4 mr-2" />
+                Add Asset
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>Add New Asset</DialogTitle>
               <DialogDescription>Enter the details for the new asset</DialogDescription>
@@ -235,8 +254,9 @@ export default function AssetManagement() {
               </Button>
               <Button onClick={handleAddAsset}>Add Asset</Button>
             </div>
-          </DialogContent>
-        </Dialog>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       <Card>

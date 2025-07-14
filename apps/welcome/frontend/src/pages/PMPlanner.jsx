@@ -11,7 +11,7 @@ import { pmPlannerSchema, bulkImportRowSchema } from "../lib/validationSchemas";
 import { createStorageService } from "../services/storageService";
 import ComponentErrorBoundary from "../components/ComponentErrorBoundary";
 import { PMPlannerLoading, GeneratedPlanLoading, ProgressiveLoader } from "../components/loading/LoadingStates";
-import { exportPMPlansDataToPDF } from "../utils/pdfExport";
+import PMPlannerPDFExport from "../components/shared/PMPlannerPDFExport";
 
 // Custom components removed - now using standardized UI components from /components/ui/
 
@@ -709,63 +709,6 @@ export default function PMPlanner() {
   }
 };
 
-const handleExportToPDF = async () => {
-  try {
-    setExporting(true);
-    setMessage("");
-    
-    console.log('🔄 Starting PDF export process...');
-    
-    // Check if user is authenticated
-    if (!user) {
-      throw new Error('User not authenticated');
-    }
-    
-    // Create authenticated Supabase client
-    const { createClient } = await import("@supabase/supabase-js");
-    const supabase = createClient(
-      import.meta.env.VITE_SUPABASE_URL,
-      import.meta.env.VITE_SUPABASE_ANON_KEY
-    );
-    
-    // Set the auth session manually
-    const { data: { session } } = await supabase.auth.getSession();
-    console.log('PDF Export session check:', session?.user?.id);
-    
-    const { data, error } = await supabase.rpc('sp_export_recent_task');
-    
-    console.log('RPC result for PDF - data:', data);
-    console.log('RPC result for PDF - error:', error);
-    
-    if (error) {
-      throw new Error(`Database error: ${error.message}`);
-    }
-    
-    if (!data || data.length === 0) {
-      throw new Error('No data found to export');
-    }
-    
-    console.log(`📊 Retrieved ${data.length} records for PDF export`);
-    
-    // Generate PDF using our utility function
-    const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-');
-    const filename = `PM_Tasks_Export_${timestamp}.pdf`;
-    
-    exportPMPlansDataToPDF(data, filename);
-    
-    setMessage(`✅ PDF export completed successfully! Downloaded ${data.length} records to ${filename}`);
-    setMessageType("success");
-    
-    console.log(`✅ PDF export completed: ${filename}`);
-    
-  } catch (error) {
-    console.error("❌ PDF export error:", error);
-    setMessage(`❌ PDF export failed: ${error.message}`);
-    setMessageType("error");
-  } finally {
-    setExporting(false);
-  }
-};
 
   const handleBulkImport = async (parsedAssets) => {
     try {
@@ -1082,27 +1025,24 @@ const handleExportToPDF = async () => {
                  </>
                )}
              </button>
-             <button
-               onClick={handleExportToPDF}
+             <PMPlannerPDFExport
+               user={user}
                disabled={exporting || loading || bulkProcessing}
-               className={`px-8 py-3 rounded-lg font-semibold flex items-center gap-2 justify-center transition-colors ${
-                 exporting || loading || bulkProcessing
-                   ? 'bg-gray-400 text-gray-600 cursor-not-allowed'
-                   : 'bg-red-600 hover:bg-red-700 text-white'
-               }`}
-             >
-               {exporting ? (
-                 <>
-                   <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                   <span>Exporting...</span>
-                 </>
-               ) : (
-                 <>
-                   <span>📄</span>
-                   <span>Export to PDF</span>
-                 </>
-               )}
-             </button>
+               onExportStart={() => {
+                 setExporting(true);
+                 setMessage("");
+               }}
+               onExportComplete={() => {
+                 setMessage(`✅ PDF export completed successfully!`);
+                 setMessageType("success");
+                 setExporting(false);
+               }}
+               onExportError={(error) => {
+                 setMessage(`❌ PDF export failed: ${error.message}`);
+                 setMessageType("error");
+                 setExporting(false);
+               }}
+             />
            </div>
          </div>
        </section>
