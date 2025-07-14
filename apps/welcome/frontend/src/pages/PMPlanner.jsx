@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { generatePMPlan } from "../api";
+import { generatePMPlan, fetchUserCompanies, supabase } from "../api";
 import * as XLSX from 'xlsx';
 import { useAuth } from '../hooks/useAuth';
 import { useNavigate } from "react-router-dom";
@@ -458,6 +458,12 @@ export default function PMPlanner() {
   const [generatedPlan, setGeneratedPlan] = useState(null);
   const [showBulkImport, setShowBulkImport] = useState(false);
   
+  // Company selection state
+  const [userCompanies, setUserCompanies] = useState([]);
+  const [selectedCompany, setSelectedCompany] = useState('');
+  const [showCompanySelection, setShowCompanySelection] = useState(false);
+  const [companiesLoading, setCompaniesLoading] = useState(true);
+  
   // Bulk import state variables
   const [bulkProcessing, setBulkProcessing] = useState(false);
   const [bulkProgress, setBulkProgress] = useState(0);
@@ -502,9 +508,31 @@ export default function PMPlanner() {
 
   // Load categories when component mounts
   // Load categories when component mounts
+  const loadUserCompanies = async () => {
+    try {
+      setCompaniesLoading(true);
+      if (user?.id) {
+        const companies = await fetchUserCompanies(user.id);
+        setUserCompanies(companies);
+        
+        // Auto-select if only one company
+        if (companies.length === 1) {
+          setSelectedCompany(companies[0].id);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading user companies:', error);
+      setMessage("❌ Failed to load your companies. Please refresh the page.");
+      setMessageType("error");
+    } finally {
+      setCompaniesLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchAssetCategories();
-  }, []);
+    loadUserCompanies();
+  }, [user]);
 
   const handleBackToDashboard = () => {
     navigate('/');
@@ -527,6 +555,26 @@ export default function PMPlanner() {
         return;
       }
 
+      // Company validation logic
+      if (companiesLoading) {
+        setMessage("❌ Please wait while we load your company information.");
+        setMessageType("error");
+        return;
+      }
+
+      if (userCompanies.length === 0) {
+        setMessage("❌ You must be a member of at least one company to create PM plans. Please contact your administrator to be added to a company.");
+        setMessageType("error");
+        return;
+      }
+
+      if (userCompanies.length > 1 && !selectedCompany) {
+        setShowCompanySelection(true);
+        setMessage("❌ Please select which company this plan belongs to.");
+        setMessageType("error");
+        return;
+      }
+
       setLoading(true);
       setGeneratedPlan(null);
       setMessage("");
@@ -543,12 +591,17 @@ export default function PMPlanner() {
         }
       }
       
+      // Determine which company to use
+      const companyToUse = userCompanies.length === 1 ? userCompanies[0].id : selectedCompany;
+      const companyName = userCompanies.find(c => c.id === companyToUse)?.name || "Unknown Company";
+
       const formDataWithDefaults = {
         ...data,
         // Use custom category if "Other" is selected, otherwise use the selected category
         category: data.category === "Other" ? customCategory.trim() : data.category,
         email: user?.email || "test@example.com",
-        company: "Test Company",
+        company: companyName,
+        companyId: companyToUse, // Add company ID for database storage
         userManual: userManualData // Include user manual data
       };
       
@@ -817,6 +870,64 @@ export default function PMPlanner() {
     <ComponentErrorBoundary name="PM Planner" fallbackMessage="Unable to load the PM Planner. Please try refreshing the page.">
       <div className="min-h-screen bg-gray-50">
       <LoadingModal isOpen={loading} />
+      
+      {/* Company Selection Modal */}
+      {showCompanySelection && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md mx-4">
+            <h3 className="text-xl font-semibold text-gray-800 mb-4">Select Company</h3>
+            <p className="text-gray-600 mb-4">
+              You belong to multiple companies. Please select which company this PM plan belongs to:
+            </p>
+            
+            <div className="space-y-3 mb-6">
+              {userCompanies.map((company) => (
+                <label key={company.id} className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-gray-50 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="company"
+                    value={company.id}
+                    checked={selectedCompany === company.id}
+                    onChange={(e) => setSelectedCompany(e.target.value)}
+                    className="text-blue-600"
+                  />
+                  <div>
+                    <div className="font-medium text-gray-900">{company.name}</div>
+                    {company.description && (
+                      <div className="text-sm text-gray-500">{company.description}</div>
+                    )}
+                  </div>
+                </label>
+              ))}
+            </div>
+            
+            <div className="flex space-x-3">
+              <button
+                onClick={() => {
+                  if (selectedCompany) {
+                    setShowCompanySelection(false);
+                    setMessage('');
+                    setMessageType('');
+                  } else {
+                    setMessage("❌ Please select a company.");
+                    setMessageType("error");
+                  }
+                }}
+                disabled={!selectedCompany}
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+              >
+                Continue
+              </button>
+              <button
+                onClick={() => setShowCompanySelection(false)}
+                className="flex-1 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       
       <BulkImportProgressModal 
         isOpen={bulkProcessing}
