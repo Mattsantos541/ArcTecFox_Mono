@@ -2,7 +2,7 @@ import { Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from '../hooks/useAuth';
 import { AuthLoading } from '../components/loading/LoadingStates';
 import { isUserAdmin, getUserAdminCompanies } from '../api';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 
 // GoogleLoginButton Component
 function GoogleLoginButton({ className = "" }) {
@@ -115,31 +115,41 @@ function AuthHeader() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminCompanies, setAdminCompanies] = useState([]);
   const [adminCheckLoading, setAdminCheckLoading] = useState(false);
+  const lastCheckedUserId = useRef(null);
+
+  const checkAdminStatus = useCallback(async () => {
+    if (user?.id && user.id !== lastCheckedUserId.current) {
+      setAdminCheckLoading(true);
+      lastCheckedUserId.current = user.id;
+      
+      try {
+        const [adminStatus, userAdminCompanies] = await Promise.all([
+          isUserAdmin(user.id),
+          getUserAdminCompanies(user.id)
+        ]);
+        
+        setIsAdmin(adminStatus);
+        setAdminCompanies(userAdminCompanies);
+      } catch (error) {
+        console.error('Error checking admin status:', error);
+        setIsAdmin(false);
+        setAdminCompanies([]);
+        // Reset the ref so we can retry later
+        lastCheckedUserId.current = null;
+      } finally {
+        setAdminCheckLoading(false);
+      }
+    } else if (!user?.id) {
+      // Reset state when user logs out
+      setIsAdmin(false);
+      setAdminCompanies([]);
+      lastCheckedUserId.current = null;
+    }
+  }, [user?.id]);
 
   useEffect(() => {
-    const checkAdminStatus = async () => {
-      if (user?.id) {
-        setAdminCheckLoading(true);
-        try {
-          const [adminStatus, userAdminCompanies] = await Promise.all([
-            isUserAdmin(user.id),
-            getUserAdminCompanies(user.id)
-          ]);
-          
-          setIsAdmin(adminStatus);
-          setAdminCompanies(userAdminCompanies);
-        } catch (error) {
-          console.error('Error checking admin status:', error);
-          setIsAdmin(false);
-          setAdminCompanies([]);
-        } finally {
-          setAdminCheckLoading(false);
-        }
-      }
-    };
-
     checkAdminStatus();
-  }, [user]);
+  }, [checkAdminStatus]);
 
   if (loading) {
     return <AuthLoading />;
