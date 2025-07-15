@@ -5,17 +5,17 @@ export default function UserStatusBar() {
   const { user, loginWithGoogle, logout, loading } = useAuth();
 
   return (
-    <div className="fixed top-3 right-4 z-[9999]">
-      {loading ? null : user ? (
-        <div className="flex items-center space-x-3 bg-white px-3 py-2 rounded shadow border">
-          {user.user_metadata?.avatar_url && (
-            <img
-              src={user.user_metadata.avatar_url}
-              alt="avatar"
-              className="w-6 h-6 rounded-full"
-            />
-          )}
-          <span className="text-sm text-gray-700">
+    <div className="flex justify-end items-center space-x-4 bg-white px-4 py-2 rounded shadow-sm">
+      {loading ? (
+        <span className="text-sm text-gray-600">Loading...</span>
+      ) : user ? (
+        <div className="flex items-center space-x-3">
+          <img
+            src={user.user_metadata?.avatar_url}
+            alt="avatar"
+            className="w-6 h-6 rounded-full"
+          />
+          <span className="text-sm text-gray-800">
             {user.user_metadata?.full_name || user.email}
           </span>
           <button
@@ -28,9 +28,9 @@ export default function UserStatusBar() {
       ) : (
         <button
           onClick={loginWithGoogle}
-          className="text-sm text-blue-700 hover:underline bg-transparent border-none p-0"
+          className="text-sm text-blue-600 hover:underline"
         >
-          Sign In
+          Returning User?
         </button>
       )}
     </div>

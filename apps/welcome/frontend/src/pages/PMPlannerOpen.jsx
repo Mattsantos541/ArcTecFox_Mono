@@ -10,8 +10,7 @@ export default function PMPlannerOpen({ onGenerate }) {
     additional_context: "",
     environment: "",
     date_of_plan_start: "",
-    email: "",
-    company: "",
+    // ❌ Removed: email, company (they go in the modal)
   });
 
   const [loading, setLoading] = useState(false);
@@ -25,9 +24,8 @@ export default function PMPlannerOpen({ onGenerate }) {
     e.preventDefault();
     setLoading(true);
     try {
-      console.log("📨 Submitting PM Planner:", formData);
-      // You can replace this with Supabase or API call
-      if (onGenerate) onGenerate(formData);
+      console.log("📨 Submitting PM Planner (pre-lead capture):", formData);
+      if (onGenerate) onGenerate(formData); // triggers LeadCaptureModal
     } catch (err) {
       console.error("❌ Failed to generate plan", err);
     } finally {
@@ -36,8 +34,13 @@ export default function PMPlannerOpen({ onGenerate }) {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6 bg-white p-6 rounded-lg shadow-md max-w-3xl mx-auto">
-      <h2 className="text-2xl font-bold text-gray-800 mb-4">Generate Your Free PM Plan</h2>
+    <form
+      onSubmit={handleSubmit}
+      className="space-y-6 bg-white p-6 rounded-lg shadow-md max-w-3xl mx-auto"
+    >
+      <h2 className="text-2xl font-bold text-gray-800 mb-4">
+        Generate Your Free PM Plan
+      </h2>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <input
@@ -109,27 +112,6 @@ export default function PMPlannerOpen({ onGenerate }) {
         onChange={handleChange}
         rows={3}
       />
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <input
-          type="email"
-          name="email"
-          placeholder="Your Email"
-          className="w-full px-4 py-2 border rounded"
-          value={formData.email}
-          onChange={handleChange}
-          required
-        />
-        <input
-          type="text"
-          name="company"
-          placeholder="Company Name"
-          className="w-full px-4 py-2 border rounded"
-          value={formData.company}
-          onChange={handleChange}
-          required
-        />
-      </div>
 
       <button
         type="submit"

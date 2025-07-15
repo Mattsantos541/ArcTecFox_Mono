@@ -1,47 +1,24 @@
 import React from "react";
-import { Link } from "react-scroll";
+import { Link as ScrollLink } from "react-scroll";
 
 export default function NavigationBar() {
   return (
-    <header className="w-full bg-white border-b border-gray-200 shadow-sm sticky top-0 z-50">
+    <header className="w-full bg-white border-b border-gray-200 shadow-sm sticky top-0 z-40">
       <div className="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
-        {/* Left side: Branding */}
-        <div className="text-xl font-semibold text-blue-800">ArcTecFox</div>
-
-        {/* Right side: Nav links */}
-        <nav className="space-x-6 hidden md:flex">
-          <Link
-            to="features"
-            smooth={true}
-            duration={500}
-            className="cursor-pointer text-gray-700 hover:text-blue-600 transition"
-          >
+        <div className="font-bold text-lg text-blue-700">ArcTecFox</div>
+        <nav className="flex space-x-6 text-sm text-gray-700">
+          <ScrollLink to="features" smooth={true} duration={500} className="cursor-pointer hover:text-blue-600">
             Features
-          </Link>
-          <Link
-            to="how-it-works"
-            smooth={true}
-            duration={500}
-            className="cursor-pointer text-gray-700 hover:text-blue-600 transition"
-          >
+          </ScrollLink>
+          <ScrollLink to="how-it-works" smooth={true} duration={500} className="cursor-pointer hover:text-blue-600">
             How It Works
-          </Link>
-          <Link
-            to="about"
-            smooth={true}
-            duration={500}
-            className="cursor-pointer text-gray-700 hover:text-blue-600 transition"
-          >
+          </ScrollLink>
+          <ScrollLink to="about" smooth={true} duration={500} className="cursor-pointer hover:text-blue-600">
             About
-          </Link>
-          <Link
-            to="contact"
-            smooth={true}
-            duration={500}
-            className="cursor-pointer text-gray-700 hover:text-blue-600 transition"
-          >
+          </ScrollLink>
+          <ScrollLink to="contact" smooth={true} duration={500} className="cursor-pointer hover:text-blue-600">
             Contact
-          </Link>
+          </ScrollLink>
         </nav>
       </div>
     </header>
