@@ -54,7 +54,7 @@ You are an expert in preventive maintenance (PM) for industrial assets. Generate
    - "safety_precautions": important safety measures for performing the task safely.
    - "common_failures_prevented": typical failure modes this task prevents. When applicable, highlight **grease points**, **typical failure points**, or wear-prone components.
    - "usage_insights": insights specific to {data.hours} operating hours and the additional context. Do not reference usage cycles.
-   - "estimated_time_minutes": the estimated time to complete the task, in minutes.
+   - "estimated_time_minutes": the estimated time required to complete this specific task. This field must be included for every task.
    - "tools_needed": an array of required tools to perform the task.
    - "number_of_technicians": recommended number of technicians needed to complete the task.
    - "comments": a free-form field for additional comments or considerations.
