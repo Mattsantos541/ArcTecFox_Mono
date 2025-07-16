@@ -367,7 +367,7 @@ function PMPlanDisplay({ plan, loading = false }) {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
               <Info label="Interval" value={task.maintenance_interval} />
               <Info label="Reason" value={task.reason} />
-              <Info label="Estimated Time" value={task.estimated_time_minutes ? `${task.estimated_time_minutes} minutes` : 'Not specified'} />
+              <Info label="Estimated Time" value={task.estimated_time_minutes || 'Not specified'} />
               <Info label="Tools Needed" value={task.tools_needed || 'Standard maintenance tools'} />
               <Info label="Technicians Required" value={task.number_of_technicians || 1} />
               <Info label="Consumables" value={task.consumables || 'None specified'} />
