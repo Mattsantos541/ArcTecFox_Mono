@@ -1,18 +1,14 @@
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
-import google.generativeai as genai
+from openai import OpenAI, APIConnectionError, OpenAIError
 from datetime import datetime
 import logging
 import os
-from typing import Optional
-import sys
-sys.path.append('..')
-from file_processor import file_processor
 
 router = APIRouter()
 logger = logging.getLogger("main")
 
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 
 class PMPlanInput(BaseModel):
@@ -49,36 +45,36 @@ You are an expert in preventive maintenance (PM) for industrial assets. Generate
    - Quarterly
    - Yearly
 
-2. For each task, provide these fields:
-   - "task_name": a clear, specific task name.
-   - "maintenance_interval": one of the frequency groups above.
-   - "instructions": an array of clear, step-by-step instructions to complete the task.
-   - "reason": why this task is necessary for asset reliability, performance, or safety.
-   - "engineering_rationale": a technical explanation considering the asset's operating hours ({data.hours}), criticality ({data.criticality}), category ({data.category}), and **especially the additional context** ({data.additional_context}). If the task addresses the additional context directly, clearly highlight this.
-   - "safety_precautions": important safety measures for performing the task safely.
-   - "common_failures_prevented": typical failure modes this task prevents. When applicable, highlight **grease points**, **typical failure points**, or wear-prone components.
-   - "usage_insights": insights specific to {data.hours} operating hours and the additional context.
-   - "scheduled_dates": an array of specific dates for the next 12 months starting from {today}, based on the task frequency.
-   - "recommended_materials": list specific brands, types, and grades of required materials (e.g., lubricants, filters, belts). Include product examples (e.g., "Mobil SHC 632 gear oil", "SKF LGMT 2 grease") where applicable.
-   - "citations": cite reliable sources for each task—ideally from the manufacturer’s manual. If unavailable, use credible industry references (e.g., ISO, ASTM, API, Mobil, SKF, Shell).
+2. For each task, provide **all** of the following fields. If a field is not applicable, explicitly return a value like "Not applicable". Do not omit fields:
+   - "task_name": A clear, specific name for the maintenance task.
+   - "maintenance_interval": One of the standard frequencies listed above.
+   - "instructions": An array of clear, step-by-step instructions.
+   - "reason": A short explanation of why this task is necessary.
+   - "engineering_rationale": A technical explanation considering operating hours ({data.hours}), criticality ({data.criticality}), category ({data.category}), and especially the **additional context**: "{data.additional_context}". If the task directly addresses something in the additional context, explicitly call that out here.
+   - "safety_precautions": Important safety measures or PPE required.
+   - "common_failures_prevented": Typical failures this task helps avoid. Highlight known failure modes and grease points or wear-prone areas where relevant.
+   - "usage_insights": Usage-based insights related to {data.hours}. Do **not** reference usage cycles.
+   - "scheduled_dates": Array of dates for the next 12 months starting from {today}, based on task frequency.
+   - "tools_needed": List of tools required to complete the task.
+   - "number_of_technicians": How many technicians are typically needed.
+   - "estimated_time_minutes": Estimated time in minutes to complete this task. This field must be included for every task.
+   - "consumables": List of all consumables and supplies needed for this specific task. Include grease, oil, filters, gaskets, rags, sealant, adhesives, disposable gloves, or any single-use items. Be specific about brand, type, and grade (e.g., "Mobil SHC 632 gear oil", "SKF LGMT 2 grease"). This field must be included for every task.
+   - "comments": Any additional notes, edge cases, or special concerns. If nothing to add, return "None" or "No additional comments".
+   - "citations": Cite reliable sources—preferably the manufacturer’s manual. If not available, use credible standards (ISO, ASTM, API) or supplier data (e.g., SKF, Mobil, Shell).
 
-3. If applicable, for lubrication or greasing tasks:
-   - Identify all grease points or lubrication zones.
-   - Recommend lubrication frequency and the exact type/brand of grease or oil.
-   - Explain how proper lubrication prevents wear, overheating, or failure.
-   - Align recommendations with the asset's actual operating conditions and any special notes from the additional context.
+3. You must address all input provided in the "additional_context". If specific tasks are generated as a result, make that connection clear in rationale or comments.
 
 4. Prioritize information from the manufacturer’s manual. If not available, rely on best practices from industry standards and reputable sources.
 
 **Output Format:**
 
-Return a single valid JSON object structured like this:
+Return a single valid JSON object structured like:
 
 ```json
 {{ "maintenance_plan": [ {{task1}}, {{task2}}, ... ] }}
 ```
 
-⚠️ **IMPORTANT:** Return only the raw JSON output. Do not include markdown formatting, explanations, or commentary.
+⚠️ **IMPORTANT:** Return only the raw JSON object. Do not include markdown formatting, commentary, or extra text.
 """
 
 
@@ -88,19 +84,23 @@ async def generate_ai_plan(input: PMPlanInput, request: Request):
     prompt = generate_prompt(input)
 
     try:
-        model = genai.GenerativeModel('gemini-2.0-flash-exp')
-        full_prompt = "You are an expert in preventive maintenance planning.\n\n" + prompt
-        response = model.generate_content(
-            full_prompt,
-            generation_config=genai.types.GenerationConfig(
-                temperature=0.7,
-                max_output_tokens=8192,
-            )
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "You are an expert in preventive maintenance planning."},
+                {"role": "user", "content": prompt}
+            ],
+            timeout=20
         )
-        ai_output = response.text
+        ai_output = response.choices[0].message.content
         logger.info("✅ AI plan generated successfully")
         return {"plan": ai_output}
-
+    except APIConnectionError as e:
+        logger.error(f"🔌 OpenAI connection error: {e}")
+        raise HTTPException(status_code=502, detail="OpenAI connection failed.")
+    except OpenAIError as e:
+        logger.error(f"🧐 OpenAI API error: {e}")
+        raise HTTPException(status_code=500, detail="OpenAI API error.")
     except Exception as e:
-        logger.error(f"❌ Gemini API error: {e}")
-        raise HTTPException(status_code=500, detail="Gemini API error.")
+        logger.error(f"❌ Unexpected error: {e}")
+        raise HTTPException(status_code=500, detail="Unexpected server error.")
