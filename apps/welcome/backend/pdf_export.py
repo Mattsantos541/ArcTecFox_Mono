@@ -99,38 +99,68 @@ def export_maintenance_task_to_pdf(task, output_path=None):
     story.append(Paragraph(task_title, title_style))
     story.append(Spacer(1, 12))
     
-    # Create dynamic 2x3 table layout
-    table_data = []
+    # Create dynamic 2x3 table layout using Paragraphs
+    cell_style = ParagraphStyle(
+        'CellStyle',
+        parent=styles['Normal'],
+        fontSize=9,
+        textColor=colors.black,
+        leftIndent=0,
+        spaceAfter=0
+    )
+    
+    label_style = ParagraphStyle(
+        'LabelStyle',
+        parent=styles['Normal'],
+        fontSize=9,
+        textColor=colors.black,
+        leftIndent=0,
+        spaceAfter=2
+    )
     
     # Row 1
     row1 = [
-        f"<b>Interval:</b><br/>{task.get('duration') or task.get('maintenance_interval', 'Monthly')}",
-        f"<b>Technicians Required:</b><br/>{task.get('no_techs_needed', '1')}",
-        f"<b>Estimated Time:</b><br/>{task.get('time_to_complete') or (str(task.get('est_minutes', 'Not specified')) + ' minutes' if task.get('est_minutes') else 'Not specified')}"
+        [
+            Paragraph("<b>Interval:</b>", label_style),
+            Paragraph(str(task.get('duration') or task.get('maintenance_interval', 'Monthly')), cell_style)
+        ],
+        [
+            Paragraph("<b>Technicians Required:</b>", label_style),
+            Paragraph(str(task.get('no_techs_needed', '1')), cell_style)
+        ],
+        [
+            Paragraph("<b>Estimated Time:</b>", label_style),
+            Paragraph(str(task.get('time_to_complete') or (str(task.get('est_minutes', 'Not specified')) + ' minutes' if task.get('est_minutes') else 'Not specified')), cell_style)
+        ]
     ]
     
-    # Row 2
+    # Row 2  
     row2 = [
-        f"<b>Tools Needed:</b><br/>{task.get('tools_needed', 'Standard maintenance tools')}",
-        f"<b>Reason:</b><br/>{task.get('reason', 'Preventive maintenance to ensure optimal performance')}",
+        [
+            Paragraph("<b>Tools Needed:</b>", label_style),
+            Paragraph(str(task.get('tools_needed', 'Standard maintenance tools')), cell_style)
+        ],
+        [
+            Paragraph("<b>Reason:</b>", label_style),
+            Paragraph(str(task.get('reason', 'Preventive maintenance to ensure optimal performance')), cell_style)
+        ],
         ""  # Empty cell
     ]
     
     table_data = [row1, row2]
     
-    # Create table with white background
-    table = Table(table_data, colWidths=[2.2*inch, 2.2*inch, 2.2*inch])
+    # Create table with white background and borders
+    table = Table(table_data, colWidths=[2.2*inch, 2.2*inch, 2.2*inch], rowHeights=[None, None])
     table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, -1), colors.white),
         ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
         ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
-        ('FONTSIZE', (0, 0), (-1, -1), 8),
         ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('LEFTPADDING', (0, 0), (-1, -1), 3),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 3),
-        ('TOPPADDING', (0, 0), (-1, -1), 3),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+        ('LEFTPADDING', (0, 0), (-1, -1), 8),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+        ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ('GRID', (0, 0), (-1, -1), 1, colors.Color(149/255, 165/255, 166/255)),  # Light grid lines
     ]))
     
     story.append(table)
