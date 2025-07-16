@@ -242,6 +242,12 @@ export const savePMPlanResults = async (pmPlanId, aiGeneratedPlan) => {
   try {
     console.log('💾 Saving PM plan results to database:', { pmPlanId, taskCount: aiGeneratedPlan.length });
     
+    // Debug: Check if consumables are present in AI generated plan
+    console.log('🔍 FRONTEND: Checking consumables in AI plan:');
+    aiGeneratedPlan.forEach((task, index) => {
+      console.log(`  Task ${index + 1}: ${task.task_name} - consumables:`, task.consumables);
+    });
+    
     const resultsToInsert = aiGeneratedPlan.map(task => ({
       pm_plan_id: pmPlanId,
       task_name: task.task_name,
@@ -257,7 +263,8 @@ export const savePMPlanResults = async (pmPlanId, aiGeneratedPlan) => {
         : task.scheduled_dates || null,
       est_minutes: task.time_to_complete || null,
       tools_needed: task.tools_needed || null,
-      no_techs_needed: task.number_of_technicians || 1
+      no_techs_needed: task.number_of_technicians || 1,
+      consumables: task.consumables || null
     }));
 
     const { data, error } = await supabase
@@ -268,6 +275,10 @@ export const savePMPlanResults = async (pmPlanId, aiGeneratedPlan) => {
     if (error) throw error;
     
     console.log('✅ PM plan results saved successfully:', data.length, 'tasks saved');
+    
+    // Debug: Check what was actually saved to database
+    console.log('🔍 FRONTEND: First saved task consumables:', data[0]?.consumables);
+    
     return data;
   } catch (error) {
     console.error("❌ Error saving PM plan results:", error);

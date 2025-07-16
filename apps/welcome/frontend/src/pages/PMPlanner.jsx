@@ -370,6 +370,7 @@ function PMPlanDisplay({ plan, loading = false }) {
               <Info label="Estimated Time" value={task.estimated_time_minutes ? `${task.estimated_time_minutes} minutes` : 'Not specified'} />
               <Info label="Tools Needed" value={task.tools_needed || 'Standard maintenance tools'} />
               <Info label="Technicians Required" value={task.number_of_technicians || 1} />
+              <Info label="Consumables" value={task.consumables || 'None specified'} />
             </div>
             <InfoBlock label="Instructions" value={task.instructions} bg="bg-gray-50" />
             <InfoBlock label="Safety Precautions" value={task.safety_precautions} bg="bg-red-50 text-red-600" />
