@@ -75,18 +75,6 @@ def export_maintenance_task_to_pdf(task, output_path=None):
     story = []
     
     # Custom styles
-    title_style = ParagraphStyle(
-        'TaskTitle',
-        parent=styles['Heading1'],
-        fontSize=12,
-        textColor=colors.white,
-        backColor=colors.Color(25/255, 55/255, 109/255),  # Dark blue
-        alignment=TA_LEFT,
-        leftIndent=10,
-        topPadding=4,
-        bottomPadding=4
-    )
-    
     normal_style = ParagraphStyle(
         'Normal',
         parent=styles['Normal'],
@@ -94,9 +82,33 @@ def export_maintenance_task_to_pdf(task, output_path=None):
         textColor=colors.black
     )
     
-    # Task Name Header
+    # Task Name Header - using table to match width of other sections
     task_title = task.get('task', 'Maintenance Task')
-    story.append(Paragraph(task_title, title_style))
+    header_para = Paragraph(
+        task_title,
+        ParagraphStyle(
+            'HeaderContent',
+            parent=styles['Heading1'],
+            fontSize=12,
+            textColor=colors.white,
+            leftIndent=0,
+            rightIndent=0,
+            topPadding=0,
+            bottomPadding=0
+        )
+    )
+    
+    header_table = Table([[header_para]], colWidths=[6.6*inch])
+    header_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.Color(25/255, 55/255, 109/255)),  # Dark blue
+        ('LEFTPADDING', (0, 0), (-1, -1), 10),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 10),
+        ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    ]))
+    
+    story.append(header_table)
     story.append(Spacer(1, 12))
     
     # Create dynamic 2x3 table layout using Paragraphs
