@@ -35,21 +35,18 @@ class RoundedTableWrapper(Flowable):
         self.table_style = table_style
         self.corner_radius = corner_radius
         
-        # Create the table without background
+        # Create the table with all styling including background
         self.table = Table(table_data, colWidths=col_widths)
         
-        # Get background color and create style without background
+        # Get background color from table style
         self.bg_color = colors.white
-        table_style_commands = []
-        
         for cmd in table_style.getCommands():
             if cmd[0] == 'BACKGROUND' and len(cmd) > 4:
                 self.bg_color = cmd[4]
-            elif cmd[0] != 'BACKGROUND':
-                table_style_commands.append(cmd)
+                break
         
-        # Apply style without background to the table
-        self.table.setStyle(TableStyle(table_style_commands))
+        # Apply the full style to the table
+        self.table.setStyle(table_style)
     
     def wrap(self, availWidth, availHeight):
         """Calculate the space needed"""
@@ -67,13 +64,18 @@ class RoundedTableWrapper(Flowable):
         
         # Draw rounded rectangle background
         canvas.setFillColor(self.bg_color)
-        canvas.setStrokeColor(self.bg_color)
-        canvas.roundRect(0, 0, self.width, self.height, self.corner_radius, fill=1, stroke=1)
+        canvas.roundRect(0, 0, self.width, self.height, self.corner_radius, fill=1, stroke=0)
         
         # Restore canvas state
         canvas.restoreState()
         
-        # Draw table on top
+        # Draw table on top but without background
+        table_style_commands = []
+        for cmd in self.table_style.getCommands():
+            if cmd[0] != 'BACKGROUND':
+                table_style_commands.append(cmd)
+        
+        self.table.setStyle(TableStyle(table_style_commands))
         self.table.drawOn(canvas, 0, 0)
 
 def process_instructions(instructions):
