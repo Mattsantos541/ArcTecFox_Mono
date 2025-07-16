@@ -151,17 +151,11 @@ def export_maintenance_task_to_pdf(task, output_path=None):
     )
     
     # Asset Name - smaller font below task name
-    # Debug: Print task keys to understand data structure
-    print(f"DEBUG: Task keys: {list(task.keys())}")
-    print(f"DEBUG: Task data: {task}")
-    
-    asset_name = (task.get('asset_name') or 
+    asset_name = (task.get('asset') or 
+                  task.get('asset_name') or 
                   task.get('pm_plans', {}).get('asset_name') or
                   task.get('pm_plan', {}).get('asset_name') or
-                  task.get('Asset_name') or 
                   'Unknown Asset')
-    
-    print(f"DEBUG: Final asset_name: {asset_name}")
     asset_para = Paragraph(
         asset_name,
         ParagraphStyle(
@@ -178,7 +172,7 @@ def export_maintenance_task_to_pdf(task, output_path=None):
     
     header_table = RoundedTableWrapper(
         [[header_para], [asset_para]], 
-        [6.48*inch],
+        [6.6*inch],
         TableStyle([
             ('BACKGROUND', (0, 0), (-1, -1), colors.Color(25/255, 55/255, 109/255)),  # Dark blue
             ('LEFTPADDING', (0, 0), (-1, -1), 10),
@@ -299,7 +293,7 @@ def export_maintenance_task_to_pdf(task, output_path=None):
         
         section_table = RoundedTableWrapper(
             [[content_para]], 
-            [6.48*inch],
+            [6.6*inch],
             TableStyle([
                 ('BACKGROUND', (0, 0), (-1, -1), bg_color),
                 ('LEFTPADDING', (0, 0), (-1, -1), 8),
@@ -441,7 +435,7 @@ def export_pm_plans_data_to_pdf(data, output_path=None):
         
         section_table = RoundedTableWrapper(
             [[content_para]], 
-            [6.48*inch],
+            [6.6*inch],
             TableStyle([
                 ('BACKGROUND', (0, 0), (-1, -1), bg_color),
                 ('LEFTPADDING', (0, 0), (-1, -1), 8),
@@ -479,10 +473,10 @@ def export_pm_plans_data_to_pdf(data, output_path=None):
         )
         
         # Asset Name - smaller font below task name
-        asset_name = (task.get('asset_name') or 
+        asset_name = (task.get('asset') or 
+                      task.get('asset_name') or 
                       task.get('pm_plans', {}).get('asset_name') or
                       task.get('pm_plan', {}).get('asset_name') or
-                      task.get('Asset_name') or 
                       'Unknown Asset')
         asset_para = Paragraph(
             asset_name,
@@ -500,7 +494,7 @@ def export_pm_plans_data_to_pdf(data, output_path=None):
         
         header_table = RoundedTableWrapper(
             [[header_para], [asset_para]], 
-            [6.48*inch],
+            [6.6*inch],
             TableStyle([
                 ('BACKGROUND', (0, 0), (-1, -1), colors.Color(25/255, 55/255, 109/255)),  # Dark blue
                 ('LEFTPADDING', (0, 0), (-1, -1), 10),
