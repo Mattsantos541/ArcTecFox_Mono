@@ -26,73 +26,70 @@ COLORS = {
     'black': colors.black
 }
 
-class RoundedTable(Flowable):
-    """Custom Table flowable with rounded corners"""
+class RoundedRectBackground(Flowable):
+    """Custom flowable that draws a rounded rectangle background"""
     
-    def __init__(self, data, colWidths=None, rowHeights=None, style=None, corner_radius=6):
-        self.data = data
-        self.colWidths = colWidths or [None] * len(data[0]) if data else []
-        self.rowHeights = rowHeights or [None] * len(data) if data else []
-        self.style = style or TableStyle()
+    def __init__(self, width, height, bg_color, corner_radius=8):
+        self.width = width
+        self.height = height
+        self.bg_color = bg_color
         self.corner_radius = corner_radius
-        
-        # Calculate table dimensions
-        self.table = Table(data, colWidths=colWidths, rowHeights=rowHeights)
-        self.table.setStyle(style)
-        
-        # Get table width and height
-        self.width = sum(self.colWidths) if all(w is not None for w in self.colWidths) else 0
-        self.height = sum(self.rowHeights) if all(h is not None for h in self.rowHeights) else 0
-        
-        # If dimensions not specified, use table's natural size
-        if self.width == 0 or self.height == 0:
-            self.table.wrap(0, 0)
-            self.width = self.table._width
-            self.height = self.table._height
     
     def wrap(self, availWidth, availHeight):
-        """Calculate the space needed by this flowable"""
-        self.table.wrap(availWidth, availHeight)
-        self.width = self.table._width
-        self.height = self.table._height
         return self.width, self.height
     
     def draw(self):
-        """Draw the table with rounded corners"""
         canvas = self.canv
-        
-        # Get background color from table style
-        bg_color = colors.white  # default
-        for cmd in self.style.getCommands():
-            if cmd[0] == 'BACKGROUND' and len(cmd) > 4:
-                bg_color = cmd[4]
-                break
-        
-        # Draw rounded rectangle background
-        canvas.setFillColor(bg_color)
-        canvas.setStrokeColor(bg_color)
+        canvas.setFillColor(self.bg_color)
+        canvas.setStrokeColor(self.bg_color)
         canvas.setLineWidth(0)
         self._draw_rounded_rect(canvas, 0, 0, self.width, self.height, self.corner_radius)
-        
-        # Draw the table content on top (but remove background style to avoid double background)
-        table_style = TableStyle([cmd for cmd in self.style.getCommands() if cmd[0] != 'BACKGROUND'])
-        self.table.setStyle(table_style)
-        self.table.drawOn(canvas, 0, 0)
     
     def _draw_rounded_rect(self, canvas, x, y, width, height, radius):
-        """Draw a rounded rectangle"""
-        path = canvas.beginPath()
-        path.moveTo(x + radius, y)
-        path.lineTo(x + width - radius, y)
-        path.arcTo(x + width - radius, y, x + width, y + radius, startAng=270, extent=90)
-        path.lineTo(x + width, y + height - radius)
-        path.arcTo(x + width - radius, y + height - radius, x + width, y + height, startAng=0, extent=90)
-        path.lineTo(x + radius, y + height)
-        path.arcTo(x, y + height - radius, x + radius, y + height, startAng=90, extent=90)
-        path.lineTo(x, y + radius)
-        path.arcTo(x, y, x + radius, y + radius, startAng=180, extent=90)
-        path.close()
-        canvas.drawPath(path, fill=1, stroke=0)
+        """Draw a rounded rectangle using canvas drawing methods"""
+        # Start at bottom-left corner (adjusted for radius)
+        canvas.roundRect(x, y, width, height, radius, fill=1, stroke=0)
+
+class RoundedTable(Flowable):
+    """Custom Table flowable with rounded corners"""
+    
+    def __init__(self, data, colWidths=None, rowHeights=None, style=None, corner_radius=8):
+        self.data = data
+        self.colWidths = colWidths
+        self.rowHeights = rowHeights
+        self.style = style or TableStyle()
+        self.corner_radius = corner_radius
+        
+        # Create the actual table
+        self.table = Table(data, colWidths=colWidths, rowHeights=rowHeights)
+        
+        # Get background color from style
+        self.bg_color = colors.white
+        for cmd in self.style.getCommands():
+            if cmd[0] == 'BACKGROUND' and len(cmd) > 4:
+                self.bg_color = cmd[4]
+                break
+        
+        # Create style without background for the table
+        table_style_commands = [cmd for cmd in self.style.getCommands() if cmd[0] != 'BACKGROUND']
+        self.table.setStyle(TableStyle(table_style_commands))
+    
+    def wrap(self, availWidth, availHeight):
+        # Let the table determine its natural size
+        w, h = self.table.wrap(availWidth, availHeight)
+        self.width = w
+        self.height = h
+        return w, h
+    
+    def draw(self):
+        canvas = self.canv
+        
+        # Draw rounded rectangle background
+        canvas.setFillColor(self.bg_color)
+        canvas.roundRect(0, 0, self.width, self.height, self.corner_radius, fill=1, stroke=0)
+        
+        # Draw the table content on top
+        self.table.drawOn(canvas, 0, 0)
 
 def process_instructions(instructions):
     """Process instructions and remove double numbering"""
