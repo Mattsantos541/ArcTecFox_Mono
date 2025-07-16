@@ -106,7 +106,7 @@ def export_maintenance_task_to_pdf(task, output_path=None):
     row1 = [
         f"<b>Interval:</b><br/>{task.get('duration') or task.get('maintenance_interval', 'Monthly')}",
         f"<b>Technicians Required:</b><br/>{task.get('no_techs_needed', '1')}",
-        f"<b>Estimated Time:</b><br/>{task.get('time_to_complete') or (f\"{task.get('est_minutes', 'Not specified')} minutes\" if task.get('est_minutes') else 'Not specified')}"
+        f"<b>Estimated Time:</b><br/>{task.get('time_to_complete') or (str(task.get('est_minutes', 'Not specified')) + ' minutes' if task.get('est_minutes') else 'Not specified')}"
     ]
     
     # Row 2
@@ -350,7 +350,7 @@ def export_pm_plans_data_to_pdf(data, output_path=None):
             task_details = [
                 f"Maintenance Interval: {task.get('maintenance_interval', 'N/A')}",
                 f"Number of Technicians: {task.get('no_techs_needed', 'N/A')}",
-                f"Estimated Time: {task.get('time_to_complete') or (f\"{task.get('est_minutes')} minutes\" if task.get('est_minutes') else 'N/A')}",
+                f"Estimated Time: {task.get('time_to_complete') or (str(task.get('est_minutes')) + ' minutes' if task.get('est_minutes') else 'N/A')}",
                 f"Tools Required: {task.get('tools_needed', 'N/A')}"
             ]
             
