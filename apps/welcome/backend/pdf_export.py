@@ -151,7 +151,7 @@ def export_maintenance_task_to_pdf(task, output_path=None):
     )
     
     # Asset Name - smaller font below task name
-    asset_name = task.get('asset_name', 'Unknown Asset')
+    asset_name = task.get('asset_name') or task.get('pm_plans', {}).get('asset_name', 'Unknown Asset')
     asset_para = Paragraph(
         asset_name,
         ParagraphStyle(
@@ -469,7 +469,7 @@ def export_pm_plans_data_to_pdf(data, output_path=None):
         )
         
         # Asset Name - smaller font below task name
-        asset_name = task.get('asset_name', 'Unknown Asset')
+        asset_name = task.get('asset_name') or task.get('pm_plans', {}).get('asset_name', 'Unknown Asset')
         asset_para = Paragraph(
             asset_name,
             ParagraphStyle(
