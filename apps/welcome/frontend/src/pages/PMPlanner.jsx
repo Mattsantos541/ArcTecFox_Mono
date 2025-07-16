@@ -720,7 +720,22 @@ export default function PMPlanner() {
     console.log('Direct query test - data:', testData);
     console.log('Direct query test - error:', testError);
 
-    const { data, error } = await supabase.rpc('sp_export_recent_task');
+    // Use the same query as Scheduled Maintenance instead of stored procedure
+    const { data, error } = await supabase
+      .from('pm_tasks')
+      .select(`
+        *,
+        pm_plans (
+          id,
+          asset_name,
+          created_by,
+          users (
+            id,
+            email,
+            full_name
+          )
+        )
+      `);
     
     console.log('RPC result - data:', data);
     console.log('RPC result - error:', error);
