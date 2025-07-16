@@ -230,7 +230,10 @@ def export_maintenance_task_to_pdf(task, output_path=None):
             Paragraph("<b>Reason:</b>", label_style),
             Paragraph(str(task.get('reason', 'Preventive maintenance to ensure optimal performance')), cell_style)
         ],
-        ""  # Empty cell
+        [
+            Paragraph("<b>Consumables:</b>", label_style),
+            Paragraph(str(task.get('consumables', 'None specified')), cell_style)
+        ]
     ]
     
     table_data = [row1, row2]
@@ -552,7 +555,10 @@ def export_pm_plans_data_to_pdf(data, output_path=None):
                 Paragraph("<b>Reason:</b>", label_style),
                 Paragraph(str(task.get('reason', 'Preventive maintenance to ensure optimal performance')), cell_style)
             ],
-            ""  # Empty cell
+            [
+                Paragraph("<b>Consumables:</b>", label_style),
+                Paragraph(str(task.get('consumables', 'None specified')), cell_style)
+            ]
         ]
         
         table_data = [row1, row2]
