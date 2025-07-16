@@ -366,6 +366,10 @@ def export_pm_plans_data_to_pdf(data, output_path=None):
     
     # Process each task using the same format as maintenance_task export
     for task_index, task in enumerate(data):
+        # Debug logging to see what fields are available
+        print(f"DEBUG: PM Plans task {task_index + 1} fields:", list(task.keys()))
+        print(f"DEBUG: PM Plans task {task_index + 1} sample data:", {k: str(v)[:100] + ('...' if len(str(v)) > 100 else '') for k, v in task.items()})
+        
         # Add page break between tasks (except for first task)
         if task_index > 0:
             story.append(PageBreak())
@@ -467,39 +471,58 @@ def export_pm_plans_data_to_pdf(data, output_path=None):
         story.append(Spacer(1, 8))
         
         # Instructions Section - Light Grey Background
-        if task.get('instructions'):
-            clean_instructions = process_instructions(task['instructions'])
+        # Try multiple possible field names for instructions
+        instructions_data = task.get('instructions') or task.get('instruction') or task.get('task_instructions')
+        if instructions_data:
+            clean_instructions = process_instructions(instructions_data)
             instructions_text = ""
             for i, instruction in enumerate(clean_instructions, 1):
                 instructions_text += f"{i}. {instruction}<br/><br/>"
             create_colored_section("Instructions", instructions_text, colors.Color(240/255, 240/255, 240/255))
         
         # Safety Precautions Section - Light Red Background
+        # Map PM Plans fields to expected field names
+        safety_data = (task.get('safety_precautions') or 
+                      task.get('safety_precaution') or 
+                      task.get('safety') or 
+                      'No content provided')
         create_colored_section(
             "Safety Precautions", 
-            task.get('safety_precautions', 'No content provided'), 
+            safety_data, 
             colors.Color(255/255, 235/255, 235/255),
             colors.Color(200/255, 0, 0)  # Red text
         )
         
         # Engineering Rationale Section - Light Blue Background
+        engineering_data = (task.get('engineering_rationale') or 
+                           task.get('rationale') or 
+                           task.get('engineering_reason') or 
+                           'No content provided')
         create_colored_section(
             "Engineering Rationale", 
-            task.get('engineering_rationale', 'No content provided'), 
+            engineering_data, 
             colors.Color(235/255, 245/255, 255/255)
         )
         
         # Common Failures Prevented Section - Light Yellow Background
+        failures_data = (task.get('common_failures_prevented') or 
+                        task.get('failures_prevented') or 
+                        task.get('common_failures') or 
+                        'No content provided')
         create_colored_section(
             "Common Failures Prevented", 
-            task.get('common_failures_prevented', 'No content provided'), 
+            failures_data, 
             colors.Color(255/255, 255/255, 235/255)
         )
         
         # Usage Insights Section - Light Green Background
+        insights_data = (task.get('usage_insights') or 
+                        task.get('insights') or 
+                        task.get('usage_notes') or 
+                        'No content provided')
         create_colored_section(
             "Usage Insights", 
-            task.get('usage_insights', 'No content provided'), 
+            insights_data, 
             colors.Color(235/255, 255/255, 235/255)
         )
         
