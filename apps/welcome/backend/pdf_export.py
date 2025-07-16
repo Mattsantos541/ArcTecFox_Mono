@@ -150,15 +150,33 @@ def export_maintenance_task_to_pdf(task, output_path=None):
         )
     )
     
+    # Asset Name - smaller font below task name
+    asset_name = task.get('asset_name', 'Unknown Asset')
+    asset_para = Paragraph(
+        asset_name,
+        ParagraphStyle(
+            'AssetContent',
+            parent=styles['Normal'],
+            fontSize=9,
+            textColor=colors.white,
+            leftIndent=0,
+            rightIndent=0,
+            topPadding=0,
+            bottomPadding=0
+        )
+    )
+    
     header_table = RoundedTableWrapper(
-        [[header_para]], 
+        [[header_para], [asset_para]], 
         [6.6*inch],
         TableStyle([
             ('BACKGROUND', (0, 0), (-1, -1), colors.Color(25/255, 55/255, 109/255)),  # Dark blue
             ('LEFTPADDING', (0, 0), (-1, -1), 10),
             ('RIGHTPADDING', (0, 0), (-1, -1), 10),
-            ('TOPPADDING', (0, 0), (-1, -1), 8),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ('TOPPADDING', (0, 0), (0, 0), 8),
+            ('BOTTOMPADDING', (0, 0), (0, 0), 2),
+            ('TOPPADDING', (0, 1), (0, 1), 2),
+            ('BOTTOMPADDING', (0, 1), (0, 1), 8),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
         ]),
         corner_radius=20
@@ -450,15 +468,33 @@ def export_pm_plans_data_to_pdf(data, output_path=None):
             )
         )
         
+        # Asset Name - smaller font below task name
+        asset_name = task.get('asset_name', 'Unknown Asset')
+        asset_para = Paragraph(
+            asset_name,
+            ParagraphStyle(
+                'AssetContent',
+                parent=styles['Normal'],
+                fontSize=9,
+                textColor=colors.white,
+                leftIndent=0,
+                rightIndent=0,
+                topPadding=0,
+                bottomPadding=0
+            )
+        )
+        
         header_table = RoundedTableWrapper(
-            [[header_para]], 
+            [[header_para], [asset_para]], 
             [6.6*inch],
             TableStyle([
                 ('BACKGROUND', (0, 0), (-1, -1), colors.Color(25/255, 55/255, 109/255)),  # Dark blue
                 ('LEFTPADDING', (0, 0), (-1, -1), 10),
                 ('RIGHTPADDING', (0, 0), (-1, -1), 10),
-                ('TOPPADDING', (0, 0), (-1, -1), 8),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+                ('TOPPADDING', (0, 0), (0, 0), 8),
+                ('BOTTOMPADDING', (0, 0), (0, 0), 2),
+                ('TOPPADDING', (0, 1), (0, 1), 2),
+                ('BOTTOMPADDING', (0, 1), (0, 1), 8),
                 ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ]),
             corner_radius=20
