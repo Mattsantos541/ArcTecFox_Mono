@@ -29,7 +29,7 @@ COLORS = {
 class RoundedTableStyle(TableStyle):
     """Custom TableStyle that adds rounded corners to tables"""
     
-    def __init__(self, cmds=None, corner_radius=8):
+    def __init__(self, cmds=None, corner_radius=20):
         super().__init__(cmds or [])
         self.corner_radius = corner_radius
         
@@ -152,7 +152,7 @@ def export_maintenance_task_to_pdf(task, output_path=None):
         ('TOPPADDING', (0, 0), (-1, -1), 8),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-    ], corner_radius=8))
+    ], corner_radius=20))
     
     story.append(header_table)
     story.append(Spacer(1, 12))
@@ -267,7 +267,7 @@ def export_maintenance_task_to_pdf(task, output_path=None):
             ('TOPPADDING', (0, 0), (-1, -1), 8),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
             ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ], corner_radius=8))
+        ], corner_radius=20))
         
         story.append(section_table)
         story.append(Spacer(1, 8))
@@ -405,7 +405,7 @@ def export_pm_plans_data_to_pdf(data, output_path=None):
             ('TOPPADDING', (0, 0), (-1, -1), 8),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
             ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ], corner_radius=8))
+        ], corner_radius=20))
         
         story.append(section_table)
         story.append(Spacer(1, 8))
@@ -440,7 +440,7 @@ def export_pm_plans_data_to_pdf(data, output_path=None):
             ('TOPPADDING', (0, 0), (-1, -1), 8),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ], corner_radius=8))
+        ], corner_radius=20))
         
         story.append(header_table)
         story.append(Spacer(1, 12))
