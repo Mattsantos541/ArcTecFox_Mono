@@ -17,7 +17,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
 import { useAuth } from "../../hooks/useAuth"
-import { exportMaintenanceTaskToPDF } from "../../utils/pdfExport"
+// Using ReportLab Python backend for PDF generation
 
 export default function MaintenanceSchedule() {
   // Initialize Supabase client once
@@ -1357,13 +1357,52 @@ useEffect(() => {
                 <Button
                   variant="outline"
                   className="h-20 flex flex-col items-center justify-center space-y-2"
-                  onClick={() => {
-                    exportMaintenanceTaskToPDF(exportingTask)
-                    toast({
-                      title: "Task Exported Successfully",
-                      description: `Maintenance task for ${exportingTask.asset} has been exported as PDF.`,
-                      variant: "default",
-                    })
+                  onClick={async () => {
+                    try {
+                      const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-');
+                      const filename = `maintenance-task-${exportingTask.asset?.replace(/[^a-zA-Z0-9]/g, '_') || 'task'}-${timestamp}.pdf`;
+                      
+                      const response = await fetch('https://arctecfox-mono.onrender.com/api/export-pdf', {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                          data: [exportingTask],
+                          filename: filename,
+                          export_type: 'maintenance_task'
+                        })
+                      });
+
+                      if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+                      }
+
+                      const blob = await response.blob();
+                      const url = window.URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.style.display = 'none';
+                      a.href = url;
+                      a.download = filename;
+                      document.body.appendChild(a);
+                      a.click();
+                      window.URL.revokeObjectURL(url);
+                      document.body.removeChild(a);
+
+                      toast({
+                        title: "Task Exported Successfully",
+                        description: `Maintenance task for ${exportingTask.asset} has been exported as PDF.`,
+                        variant: "default",
+                      })
+                    } catch (error) {
+                      console.error("PDF export error:", error);
+                      toast({
+                        title: "Export Failed",
+                        description: `Failed to export PDF: ${error.message}`,
+                        variant: "destructive",
+                      })
+                    }
                     setShowExportDialog(false)
                   }}
                 >
