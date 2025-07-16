@@ -140,10 +140,19 @@ export default function MaintenanceSchedule() {
         notes: task.notes,
         completedAt: task.completed_at,
         actualDuration: task.actual_duration,
-        // New AI fields from pm_tasks table
+        instructions: task.instructions,
+        // AI fields from pm_tasks table
         time_to_complete: task.est_minutes ? `${task.est_minutes} minutes` : 'N/A',
         tools_needed: task.tools_needed || 'N/A',
-        no_techs_needed: task.no_techs_needed || 'N/A'
+        no_techs_needed: task.no_techs_needed || 'N/A',
+        est_minutes: task.est_minutes,
+        // Additional fields for PDF export
+        reason: task.reason,
+        safety_precautions: task.safety_precautions,
+        engineering_rationale: task.engineering_rationale,
+        common_failures_prevented: task.common_failures_prevented,
+        usage_insights: task.usage_insights,
+        scheduled_dates: task.scheduled_dates
       }))
 
       setScheduledTasks(transformedTasks)
@@ -1054,33 +1063,78 @@ useEffect(() => {
 
             <div className="space-y-6">
               {/* Task Overview */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <div className="text-sm text-muted-foreground">Date & Time</div>
-                  <div className="font-medium">
+              <div className="grid grid-cols-3 gap-4 p-4 bg-blue-50 rounded-lg border border-blue-100">
+                <div className="text-center">
+                  <div className="text-xs font-medium text-blue-600 uppercase tracking-wide">Next Date Due</div>
+                  <div className="text-sm font-semibold text-blue-900 mt-1">
                     {viewingTask.date} at {viewingTask.time}
                   </div>
                 </div>
-                <div className="space-y-1">
-                  <div className="text-sm text-muted-foreground">Duration</div>
-                  <div className="font-medium">{viewingTask.duration}</div>
+                <div className="text-center">
+                  <div className="text-xs font-medium text-blue-600 uppercase tracking-wide">Duration</div>
+                  <div className="text-sm font-semibold text-blue-900 mt-1">
+                    {viewingTask.duration}
+                  </div>
                 </div>
-                <div className="space-y-1">
-                  <div className="text-sm text-muted-foreground">Technician</div>
-                  <div className="font-medium">{viewingTask.technician}</div>
+                <div className="text-center">
+                  <div className="text-xs font-medium text-blue-600 uppercase tracking-wide">Priority</div>
+                  <div className="text-sm font-semibold text-blue-900 mt-1">
+                    {viewingTask.priority}
+                  </div>
                 </div>
-                <div className="space-y-1">
-                  <div className="text-sm text-muted-foreground">Priority</div>
-                  <div>
-                    <Badge variant={getPriorityColor(viewingTask.priority)}>{viewingTask.priority}</Badge>
+                <div className="text-center">
+                  <div className="text-xs font-medium text-blue-600 uppercase tracking-wide">Estimated Time to Complete</div>
+                  <div className="text-sm font-semibold text-blue-900 mt-1">
+                    {viewingTask.est_minutes ? `${viewingTask.est_minutes} min` : 'N/A'}
+                  </div>
+                </div>
+                <div className="text-center">
+                  <div className="text-xs font-medium text-blue-600 uppercase tracking-wide">Techs Needed</div>
+                  <div className="text-sm font-semibold text-blue-900 mt-1">
+                    {viewingTask.no_techs_needed || 'N/A'}
+                  </div>
+                </div>
+                <div className="text-center">
+                  <div className="text-xs font-medium text-blue-600 uppercase tracking-wide">Tools Needed</div>
+                  <div className="text-sm font-semibold text-blue-900 mt-1">
+                    {viewingTask.tools_needed || 'N/A'}
                   </div>
                 </div>
               </div>
 
-              {/* Task Details */}
+              {/* Task Instructions */}
               <div className="bg-gray-50 p-4 rounded-lg">
-                <h4 className="font-medium mb-2">Task Description</h4>
-                <p className="text-sm">{viewingTask.task}</p>
+                <h4 className="font-medium mb-2">Task Instructions</h4>
+                {viewingTask.instructions ? (
+                  <div className="text-sm space-y-2">
+                    {Array.isArray(viewingTask.instructions) ? 
+                      viewingTask.instructions.map((instruction, index) => {
+                        const cleanInstruction = instruction.replace(/^\d+\.\s*/, '');
+                        const isNumbered = instruction !== cleanInstruction;
+                        return (
+                          <div key={index} className="flex items-start gap-2">
+                            {!isNumbered && <span className="text-muted-foreground min-w-[20px]">{index + 1}.</span>}
+                            <span className={isNumbered ? 'ml-0' : ''}>{isNumbered ? instruction : cleanInstruction}</span>
+                          </div>
+                        );
+                      }) :
+                      typeof viewingTask.instructions === 'string' ? 
+                        viewingTask.instructions.split('\n').filter(line => line.trim()).map((instruction, index) => {
+                          const cleanInstruction = instruction.replace(/^\d+\.\s*/, '');
+                          const isNumbered = instruction !== cleanInstruction;
+                          return (
+                            <div key={index} className="flex items-start gap-2">
+                              {!isNumbered && <span className="text-muted-foreground min-w-[20px]">{index + 1}.</span>}
+                              <span className={isNumbered ? 'ml-0' : ''}>{isNumbered ? instruction : cleanInstruction}</span>
+                            </div>
+                          );
+                        }) :
+                        <p className="text-muted-foreground">No instructions available</p>
+                    }
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No instructions available</p>
+                )}
               </div>
 
               {/* Related Plan */}
