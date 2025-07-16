@@ -166,135 +166,107 @@ def export_maintenance_task_to_pdf(task, output_path=None):
     story.append(table)
     story.append(Spacer(1, 8))
     
+    # Helper function to create colored section tables that match table width
+    def create_colored_section(title, content, bg_color, text_color=colors.black):
+        # Add section title
+        story.append(Paragraph(f"<b>{title}</b>", styles['Heading2']))
+        
+        # Create single-cell table with same width as main table (6.6 inches)
+        if content:
+            content_para = Paragraph(
+                str(content),
+                ParagraphStyle(
+                    'SectionContent',
+                    parent=normal_style,
+                    fontSize=9,
+                    textColor=text_color,
+                    leftIndent=0,
+                    rightIndent=0,
+                    topPadding=0,
+                    bottomPadding=0
+                )
+            )
+        else:
+            content_para = Paragraph(
+                "No content provided",
+                ParagraphStyle(
+                    'SectionContent',
+                    parent=normal_style,
+                    fontSize=9,
+                    textColor=colors.Color(120/255, 120/255, 120/255),
+                    leftIndent=0,
+                    rightIndent=0,
+                    topPadding=0,
+                    bottomPadding=0
+                )
+            )
+        
+        section_table = Table([[content_para]], colWidths=[6.6*inch])
+        section_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), bg_color),
+            ('LEFTPADDING', (0, 0), (-1, -1), 8),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+            ('TOPPADDING', (0, 0), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ]))
+        
+        story.append(section_table)
+        story.append(Spacer(1, 8))
+    
     # Instructions Section - Light Grey Background
     if task.get('instructions'):
-        story.append(Paragraph("<b>Instructions</b>", styles['Heading2']))
-        
         clean_instructions = process_instructions(task['instructions'])
         instructions_text = ""
         for i, instruction in enumerate(clean_instructions, 1):
             instructions_text += f"{i}. {instruction}<br/><br/>"
-        
-        instructions_para = Paragraph(
-            instructions_text,
-            ParagraphStyle(
-                'Instructions',
-                parent=normal_style,
-                backColor=colors.Color(240/255, 240/255, 240/255),  # Light grey
-                leftIndent=6,
-                rightIndent=6,
-                topPadding=4,
-                bottomPadding=4
-            )
-        )
-        story.append(instructions_para)
-        story.append(Spacer(1, 8))
+        create_colored_section("Instructions", instructions_text, colors.Color(240/255, 240/255, 240/255))
     
     # Safety Precautions Section - Light Red Background
-    story.append(Paragraph("<b>Safety Precautions</b>", styles['Heading2']))
-    safety_content = task.get('safety_precautions', 'No content provided')
-    safety_para = Paragraph(
-        safety_content,
-        ParagraphStyle(
-            'Safety',
-            parent=normal_style,
-            backColor=colors.Color(255/255, 235/255, 235/255),  # Light red
-            textColor=colors.Color(200/255, 0, 0),  # Red text
-            leftIndent=6,
-            rightIndent=6,
-            topPadding=4,
-            bottomPadding=4
-        )
+    create_colored_section(
+        "Safety Precautions", 
+        task.get('safety_precautions', 'No content provided'), 
+        colors.Color(255/255, 235/255, 235/255),
+        colors.Color(200/255, 0, 0)  # Red text
     )
-    story.append(safety_para)
-    story.append(Spacer(1, 8))
     
     # Engineering Rationale Section - Light Blue Background
-    story.append(Paragraph("<b>Engineering Rationale</b>", styles['Heading2']))
-    engineering_content = task.get('engineering_rationale', 'No content provided')
-    engineering_para = Paragraph(
-        engineering_content,
-        ParagraphStyle(
-            'Engineering',
-            parent=normal_style,
-            backColor=colors.Color(235/255, 245/255, 255/255),  # Light blue
-            leftIndent=6,
-            rightIndent=6,
-            topPadding=4,
-            bottomPadding=4
-        )
+    create_colored_section(
+        "Engineering Rationale", 
+        task.get('engineering_rationale', 'No content provided'), 
+        colors.Color(235/255, 245/255, 255/255)
     )
-    story.append(engineering_para)
-    story.append(Spacer(1, 8))
     
     # Common Failures Prevented Section - Light Yellow Background
-    story.append(Paragraph("<b>Common Failures Prevented</b>", styles['Heading2']))
-    failures_content = task.get('common_failures_prevented', 'No content provided')
-    failures_para = Paragraph(
-        failures_content,
-        ParagraphStyle(
-            'Failures',
-            parent=normal_style,
-            backColor=colors.Color(255/255, 255/255, 235/255),  # Light yellow
-            leftIndent=6,
-            rightIndent=6,
-            topPadding=4,
-            bottomPadding=4
-        )
+    create_colored_section(
+        "Common Failures Prevented", 
+        task.get('common_failures_prevented', 'No content provided'), 
+        colors.Color(255/255, 255/255, 235/255)
     )
-    story.append(failures_para)
-    story.append(Spacer(1, 8))
     
     # Usage Insights Section - Light Green Background
-    story.append(Paragraph("<b>Usage Insights</b>", styles['Heading2']))
-    insights_content = task.get('usage_insights', 'No content provided')
-    insights_para = Paragraph(
-        insights_content,
-        ParagraphStyle(
-            'Insights',
-            parent=normal_style,
-            backColor=colors.Color(235/255, 255/255, 235/255),  # Light green
-            leftIndent=6,
-            rightIndent=6,
-            topPadding=4,
-            bottomPadding=4
-        )
+    create_colored_section(
+        "Usage Insights", 
+        task.get('usage_insights', 'No content provided'), 
+        colors.Color(235/255, 255/255, 235/255)
     )
-    story.append(insights_para)
-    story.append(Spacer(1, 8))
     
-    # Scheduled Dates Section
-    story.append(Paragraph("<b>Scheduled Dates (Next 12 months)</b>", styles['Heading2']))
+    # Scheduled Dates Section - Light Grey Background
     if task.get('scheduled_dates') and len(task['scheduled_dates']) > 0:
         dates_to_show = task['scheduled_dates'][:12]
         dates_string = ', '.join(dates_to_show)
-        dates_para = Paragraph(
-            dates_string,
-            ParagraphStyle(
-                'Dates',
-                parent=normal_style,
-                backColor=colors.Color(245/255, 245/255, 245/255),  # Light grey
-                leftIndent=6,
-                rightIndent=6,
-                topPadding=4,
-                bottomPadding=4
-            )
+        create_colored_section(
+            "Scheduled Dates (Next 12 months)", 
+            dates_string, 
+            colors.Color(245/255, 245/255, 245/255)
         )
     else:
-        dates_para = Paragraph(
-            "No scheduled dates available",
-            ParagraphStyle(
-                'DatesEmpty',
-                parent=normal_style,
-                backColor=colors.Color(245/255, 245/255, 245/255),  # Light grey
-                textColor=colors.Color(120/255, 120/255, 120/255),  # Grey text
-                leftIndent=6,
-                rightIndent=6,
-                topPadding=4,
-                bottomPadding=4
-            )
+        create_colored_section(
+            "Scheduled Dates (Next 12 months)", 
+            "No scheduled dates available", 
+            colors.Color(245/255, 245/255, 245/255),
+            colors.Color(120/255, 120/255, 120/255)  # Grey text
         )
-    story.append(dates_para)
     
     # Footer information
     story.append(Spacer(1, 20))
