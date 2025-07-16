@@ -76,7 +76,8 @@ export default function PMPlannerPDFExport({ user, disabled, onExportStart, onEx
       engineering_rationale: task.engineering_rationale,
       common_failures_prevented: task.common_failures_prevented,
       usage_insights: task.usage_insights,
-      scheduled_dates: task.scheduled_dates
+      scheduled_dates: task.scheduled_dates,
+      consumables: task.consumables
     }));
     
     return transformedTasks;
