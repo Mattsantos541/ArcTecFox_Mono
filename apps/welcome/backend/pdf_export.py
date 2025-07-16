@@ -26,51 +26,48 @@ COLORS = {
     'black': colors.black
 }
 
-class RoundedTableStyle(TableStyle):
-    """Custom TableStyle that adds rounded corners to tables"""
+class RoundedTableWrapper(Flowable):
+    """A simple wrapper that draws a rounded rectangle background with a table on top"""
     
-    def __init__(self, cmds=None, corner_radius=20):
-        super().__init__(cmds or [])
+    def __init__(self, table_data, col_widths, table_style, corner_radius=20):
+        self.table_data = table_data
+        self.col_widths = col_widths
+        self.table_style = table_style
         self.corner_radius = corner_radius
         
-    def apply(self, table):
-        """Override apply to add rounded corner drawing"""
-        # First apply the normal table style
-        super().apply(table)
+        # Create the table without background
+        self.table = Table(table_data, colWidths=col_widths)
         
-        # Store the corner radius on the table for later use
-        table._corner_radius = self.corner_radius
+        # Get background color and create style without background
+        self.bg_color = colors.white
+        table_style_commands = []
         
-        # Override the table's draw method to add rounded corners
-        original_draw = table.draw
+        for cmd in table_style.getCommands():
+            if cmd[0] == 'BACKGROUND' and len(cmd) > 4:
+                self.bg_color = cmd[4]
+            elif cmd[0] != 'BACKGROUND':
+                table_style_commands.append(cmd)
         
-        def draw_with_rounded_corners():
-            # Get the canvas
-            canvas = table.canv
-            
-            # Find background color from table style
-            bg_color = None
-            for cmd in self.getCommands():
-                if cmd[0] == 'BACKGROUND':
-                    bg_color = cmd[4]
-                    break
-            
-            if bg_color:
-                # Save canvas state
-                canvas.saveState()
-                
-                # Draw rounded rectangle background
-                canvas.setFillColor(bg_color)
-                canvas.roundRect(0, 0, table._width, table._height, self.corner_radius, fill=1, stroke=0)
-                
-                # Restore canvas state
-                canvas.restoreState()
-            
-            # Call original draw method
-            original_draw()
+        # Apply style without background to the table
+        self.table.setStyle(TableStyle(table_style_commands))
+    
+    def wrap(self, availWidth, availHeight):
+        """Calculate the space needed"""
+        w, h = self.table.wrap(availWidth, availHeight)
+        self.width = w
+        self.height = h
+        return w, h
+    
+    def draw(self):
+        """Draw rounded rectangle background then table on top"""
+        canvas = self.canv
         
-        # Replace the table's draw method
-        table.draw = draw_with_rounded_corners
+        # Draw rounded rectangle background
+        canvas.setFillColor(self.bg_color)
+        canvas.roundRect(0, 0, self.width, self.height, self.corner_radius, fill=1, stroke=0)
+        
+        # Draw table on top
+        self.table.drawOn(canvas, 0, 0)
 
 def process_instructions(instructions):
     """Process instructions and remove double numbering"""
@@ -144,15 +141,19 @@ def export_maintenance_task_to_pdf(task, output_path=None):
         )
     )
     
-    header_table = Table([[header_para]], colWidths=[6.6*inch])
-    header_table.setStyle(RoundedTableStyle([
-        ('BACKGROUND', (0, 0), (-1, -1), colors.Color(25/255, 55/255, 109/255)),  # Dark blue
-        ('LEFTPADDING', (0, 0), (-1, -1), 10),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 10),
-        ('TOPPADDING', (0, 0), (-1, -1), 8),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-    ], corner_radius=20))
+    header_table = RoundedTableWrapper(
+        [[header_para]], 
+        [6.6*inch],
+        TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), colors.Color(25/255, 55/255, 109/255)),  # Dark blue
+            ('LEFTPADDING', (0, 0), (-1, -1), 10),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 10),
+            ('TOPPADDING', (0, 0), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ]),
+        corner_radius=20
+    )
     
     story.append(header_table)
     story.append(Spacer(1, 12))
@@ -259,15 +260,19 @@ def export_maintenance_task_to_pdf(task, output_path=None):
                 )
             )
         
-        section_table = Table([[content_para]], colWidths=[6.6*inch])
-        section_table.setStyle(RoundedTableStyle([
-            ('BACKGROUND', (0, 0), (-1, -1), bg_color),
-            ('LEFTPADDING', (0, 0), (-1, -1), 8),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 8),
-            ('TOPPADDING', (0, 0), (-1, -1), 8),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ], corner_radius=20))
+        section_table = RoundedTableWrapper(
+            [[content_para]], 
+            [6.6*inch],
+            TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), bg_color),
+                ('LEFTPADDING', (0, 0), (-1, -1), 8),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+                ('TOPPADDING', (0, 0), (-1, -1), 8),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ]),
+            corner_radius=20
+        )
         
         story.append(section_table)
         story.append(Spacer(1, 8))
@@ -397,15 +402,19 @@ def export_pm_plans_data_to_pdf(data, output_path=None):
                 )
             )
         
-        section_table = Table([[content_para]], colWidths=[6.6*inch])
-        section_table.setStyle(RoundedTableStyle([
-            ('BACKGROUND', (0, 0), (-1, -1), bg_color),
-            ('LEFTPADDING', (0, 0), (-1, -1), 8),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 8),
-            ('TOPPADDING', (0, 0), (-1, -1), 8),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ], corner_radius=20))
+        section_table = RoundedTableWrapper(
+            [[content_para]], 
+            [6.6*inch],
+            TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), bg_color),
+                ('LEFTPADDING', (0, 0), (-1, -1), 8),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+                ('TOPPADDING', (0, 0), (-1, -1), 8),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ]),
+            corner_radius=20
+        )
         
         story.append(section_table)
         story.append(Spacer(1, 8))
@@ -432,15 +441,19 @@ def export_pm_plans_data_to_pdf(data, output_path=None):
             )
         )
         
-        header_table = Table([[header_para]], colWidths=[6.6*inch])
-        header_table.setStyle(RoundedTableStyle([
-            ('BACKGROUND', (0, 0), (-1, -1), colors.Color(25/255, 55/255, 109/255)),  # Dark blue
-            ('LEFTPADDING', (0, 0), (-1, -1), 10),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 10),
-            ('TOPPADDING', (0, 0), (-1, -1), 8),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ], corner_radius=20))
+        header_table = RoundedTableWrapper(
+            [[header_para]], 
+            [6.6*inch],
+            TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), colors.Color(25/255, 55/255, 109/255)),  # Dark blue
+                ('LEFTPADDING', (0, 0), (-1, -1), 10),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 10),
+                ('TOPPADDING', (0, 0), (-1, -1), 8),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ]),
+            corner_radius=20
+        )
         
         story.append(header_table)
         story.append(Spacer(1, 12))
