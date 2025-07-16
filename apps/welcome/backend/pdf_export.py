@@ -122,7 +122,7 @@ def export_maintenance_task_to_pdf(task, output_path=None):
         temp_fd, output_path = tempfile.mkstemp(suffix='.pdf')
         os.close(temp_fd)
     
-    doc = SimpleDocTemplate(output_path, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.5*inch)
+    doc = SimpleDocTemplate(output_path, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.5*inch, leftMargin=1*inch, rightMargin=1*inch)
     styles = getSampleStyleSheet()
     story = []
     
@@ -151,7 +151,17 @@ def export_maintenance_task_to_pdf(task, output_path=None):
     )
     
     # Asset Name - smaller font below task name
-    asset_name = task.get('asset_name') or task.get('pm_plans', {}).get('asset_name', 'Unknown Asset')
+    # Debug: Print task keys to understand data structure
+    print(f"DEBUG: Task keys: {list(task.keys())}")
+    print(f"DEBUG: Task data: {task}")
+    
+    asset_name = (task.get('asset_name') or 
+                  task.get('pm_plans', {}).get('asset_name') or
+                  task.get('pm_plan', {}).get('asset_name') or
+                  task.get('Asset_name') or 
+                  'Unknown Asset')
+    
+    print(f"DEBUG: Final asset_name: {asset_name}")
     asset_para = Paragraph(
         asset_name,
         ParagraphStyle(
@@ -168,7 +178,7 @@ def export_maintenance_task_to_pdf(task, output_path=None):
     
     header_table = RoundedTableWrapper(
         [[header_para], [asset_para]], 
-        [6.6*inch],
+        [6.5*inch],
         TableStyle([
             ('BACKGROUND', (0, 0), (-1, -1), colors.Color(25/255, 55/255, 109/255)),  # Dark blue
             ('LEFTPADDING', (0, 0), (-1, -1), 10),
@@ -236,7 +246,7 @@ def export_maintenance_task_to_pdf(task, output_path=None):
     table_data = [row1, row2]
     
     # Create table with white background and borders
-    table = Table(table_data, colWidths=[2.2*inch, 2.2*inch, 2.2*inch], rowHeights=[None, None])
+    table = Table(table_data, colWidths=[2.17*inch, 2.17*inch, 2.16*inch], rowHeights=[None, None])
     table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, -1), colors.white),
         ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
@@ -289,7 +299,7 @@ def export_maintenance_task_to_pdf(task, output_path=None):
         
         section_table = RoundedTableWrapper(
             [[content_para]], 
-            [6.6*inch],
+            [6.5*inch],
             TableStyle([
                 ('BACKGROUND', (0, 0), (-1, -1), bg_color),
                 ('LEFTPADDING', (0, 0), (-1, -1), 8),
@@ -382,7 +392,7 @@ def export_pm_plans_data_to_pdf(data, output_path=None):
         temp_fd, output_path = tempfile.mkstemp(suffix='.pdf')
         os.close(temp_fd)
     
-    doc = SimpleDocTemplate(output_path, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.5*inch)
+    doc = SimpleDocTemplate(output_path, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.5*inch, leftMargin=1*inch, rightMargin=1*inch)
     styles = getSampleStyleSheet()
     story = []
     
@@ -431,7 +441,7 @@ def export_pm_plans_data_to_pdf(data, output_path=None):
         
         section_table = RoundedTableWrapper(
             [[content_para]], 
-            [6.6*inch],
+            [6.5*inch],
             TableStyle([
                 ('BACKGROUND', (0, 0), (-1, -1), bg_color),
                 ('LEFTPADDING', (0, 0), (-1, -1), 8),
@@ -469,7 +479,11 @@ def export_pm_plans_data_to_pdf(data, output_path=None):
         )
         
         # Asset Name - smaller font below task name
-        asset_name = task.get('asset_name') or task.get('pm_plans', {}).get('asset_name', 'Unknown Asset')
+        asset_name = (task.get('asset_name') or 
+                      task.get('pm_plans', {}).get('asset_name') or
+                      task.get('pm_plan', {}).get('asset_name') or
+                      task.get('Asset_name') or 
+                      'Unknown Asset')
         asset_para = Paragraph(
             asset_name,
             ParagraphStyle(
@@ -486,7 +500,7 @@ def export_pm_plans_data_to_pdf(data, output_path=None):
         
         header_table = RoundedTableWrapper(
             [[header_para], [asset_para]], 
-            [6.6*inch],
+            [6.5*inch],
             TableStyle([
                 ('BACKGROUND', (0, 0), (-1, -1), colors.Color(25/255, 55/255, 109/255)),  # Dark blue
                 ('LEFTPADDING', (0, 0), (-1, -1), 10),
@@ -554,7 +568,7 @@ def export_pm_plans_data_to_pdf(data, output_path=None):
         table_data = [row1, row2]
         
         # Create table with white background and borders
-        table = Table(table_data, colWidths=[2.2*inch, 2.2*inch, 2.2*inch], rowHeights=[None, None])
+        table = Table(table_data, colWidths=[2.17*inch, 2.17*inch, 2.16*inch], rowHeights=[None, None])
         table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, -1), colors.white),
             ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
