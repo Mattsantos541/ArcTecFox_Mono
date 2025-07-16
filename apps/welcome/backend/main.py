@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="PM Planning AI API", version="1.0.0")
 
 # Environment-based CORS configuration
-cors_origins_env = os.getenv("CORS_ORIGIN", "http://localhost:3000")
+cors_origins_env = os.getenv("CORS_ORIGIN", "https://arctecfox-mono.vercel.app")
 cors_origins = [origin.strip() for origin in cors_origins_env.split(",")]
 
 logger.info(f"🌐 CORS origins configured: {cors_origins}")
