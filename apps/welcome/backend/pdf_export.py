@@ -178,7 +178,7 @@ def export_maintenance_task_to_pdf(task, output_path=None):
     
     header_table = RoundedTableWrapper(
         [[header_para], [asset_para]], 
-        [6.5*inch],
+        [6.48*inch],
         TableStyle([
             ('BACKGROUND', (0, 0), (-1, -1), colors.Color(25/255, 55/255, 109/255)),  # Dark blue
             ('LEFTPADDING', (0, 0), (-1, -1), 10),
@@ -246,7 +246,7 @@ def export_maintenance_task_to_pdf(task, output_path=None):
     table_data = [row1, row2]
     
     # Create table with white background and borders
-    table = Table(table_data, colWidths=[2.17*inch, 2.17*inch, 2.16*inch], rowHeights=[None, None])
+    table = Table(table_data, colWidths=[2.16*inch, 2.16*inch, 2.16*inch], rowHeights=[None, None])
     table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, -1), colors.white),
         ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
@@ -299,7 +299,7 @@ def export_maintenance_task_to_pdf(task, output_path=None):
         
         section_table = RoundedTableWrapper(
             [[content_para]], 
-            [6.5*inch],
+            [6.48*inch],
             TableStyle([
                 ('BACKGROUND', (0, 0), (-1, -1), bg_color),
                 ('LEFTPADDING', (0, 0), (-1, -1), 8),
@@ -441,7 +441,7 @@ def export_pm_plans_data_to_pdf(data, output_path=None):
         
         section_table = RoundedTableWrapper(
             [[content_para]], 
-            [6.5*inch],
+            [6.48*inch],
             TableStyle([
                 ('BACKGROUND', (0, 0), (-1, -1), bg_color),
                 ('LEFTPADDING', (0, 0), (-1, -1), 8),
@@ -500,7 +500,7 @@ def export_pm_plans_data_to_pdf(data, output_path=None):
         
         header_table = RoundedTableWrapper(
             [[header_para], [asset_para]], 
-            [6.5*inch],
+            [6.48*inch],
             TableStyle([
                 ('BACKGROUND', (0, 0), (-1, -1), colors.Color(25/255, 55/255, 109/255)),  # Dark blue
                 ('LEFTPADDING', (0, 0), (-1, -1), 10),
@@ -568,7 +568,7 @@ def export_pm_plans_data_to_pdf(data, output_path=None):
         table_data = [row1, row2]
         
         # Create table with white background and borders
-        table = Table(table_data, colWidths=[2.17*inch, 2.17*inch, 2.16*inch], rowHeights=[None, None])
+        table = Table(table_data, colWidths=[2.16*inch, 2.16*inch, 2.16*inch], rowHeights=[None, None])
         table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, -1), colors.white),
             ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
