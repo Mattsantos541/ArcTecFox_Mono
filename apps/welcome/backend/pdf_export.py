@@ -62,9 +62,16 @@ class RoundedTableWrapper(Flowable):
         """Draw rounded rectangle background then table on top"""
         canvas = self.canv
         
+        # Save canvas state
+        canvas.saveState()
+        
         # Draw rounded rectangle background
         canvas.setFillColor(self.bg_color)
-        canvas.roundRect(0, 0, self.width, self.height, self.corner_radius, fill=1, stroke=0)
+        canvas.setStrokeColor(self.bg_color)
+        canvas.roundRect(0, 0, self.width, self.height, self.corner_radius, fill=1, stroke=1)
+        
+        # Restore canvas state
+        canvas.restoreState()
         
         # Draw table on top
         self.table.drawOn(canvas, 0, 0)
