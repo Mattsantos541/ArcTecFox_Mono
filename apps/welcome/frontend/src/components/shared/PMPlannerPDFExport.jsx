@@ -21,7 +21,22 @@ export default function PMPlannerPDFExport({ user, disabled, onExportStart, onEx
     const { data: { session } } = await supabase.auth.getSession();
     console.log('Export session check:', session?.user?.id);
     
-    const { data, error } = await supabase.rpc('sp_export_recent_task');
+    // Use the same query as Scheduled Maintenance instead of stored procedure
+    const { data, error } = await supabase
+      .from('pm_tasks')
+      .select(`
+        *,
+        pm_plans (
+          id,
+          asset_name,
+          created_by,
+          users (
+            id,
+            email,
+            full_name
+          )
+        )
+      `);
     
     if (error) {
       throw new Error(`Database error: ${error.message}`);
@@ -31,7 +46,40 @@ export default function PMPlannerPDFExport({ user, disabled, onExportStart, onEx
       throw new Error('No data found to export');
     }
     
-    return data;
+    // Transform data to match PDF export expectations (same as Scheduled Maintenance)
+    const transformedTasks = data.map(task => ({
+      id: task.id,
+      task: task.task_name,
+      task_name: task.task_name,
+      asset: task.pm_plans?.asset_name,
+      asset_name: task.pm_plans?.asset_name,
+      status: task.status,
+      priority: task.priority,
+      scheduledDate: task.scheduled_date,
+      scheduled_date: task.scheduled_date,
+      maintenance_interval: task.maintenance_interval,
+      duration: task.maintenance_interval,
+      createdBy: task.pm_plans?.users?.full_name,
+      createdByEmail: task.pm_plans?.users?.email,
+      notes: task.notes,
+      completedAt: task.completed_at,
+      actualDuration: task.actual_duration,
+      instructions: task.instructions,
+      // AI fields from pm_tasks table
+      time_to_complete: task.est_minutes ? `${task.est_minutes} minutes` : 'N/A',
+      tools_needed: task.tools_needed || 'N/A',
+      no_techs_needed: task.no_techs_needed || 'N/A',
+      est_minutes: task.est_minutes,
+      // Additional fields for PDF export - these are the key missing fields!
+      reason: task.reason,
+      safety_precautions: task.safety_precautions,
+      engineering_rationale: task.engineering_rationale,
+      common_failures_prevented: task.common_failures_prevented,
+      usage_insights: task.usage_insights,
+      scheduled_dates: task.scheduled_dates
+    }));
+    
+    return transformedTasks;
   };
 
   const handleExport = async () => {
