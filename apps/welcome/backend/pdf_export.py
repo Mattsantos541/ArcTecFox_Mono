@@ -297,7 +297,7 @@ def export_maintenance_task_to_pdf(task, output_path=None):
     return output_path
 
 def export_pm_plans_data_to_pdf(data, output_path=None):
-    """Export PM Plans data to PDF with asset grouping"""
+    """Export PM Plans data to PDF using same rich format as maintenance tasks"""
     
     if not output_path:
         # Create temp file
@@ -308,88 +308,229 @@ def export_pm_plans_data_to_pdf(data, output_path=None):
     styles = getSampleStyleSheet()
     story = []
     
-    # Add header
-    story.append(Paragraph("Preventive Maintenance Report", styles['Title']))
-    story.append(Paragraph(f"Generated on: {datetime.now().strftime('%m/%d/%Y')}", styles['Normal']))
-    story.append(Spacer(1, 20))
+    # Custom styles
+    normal_style = ParagraphStyle(
+        'Normal',
+        parent=styles['Normal'],
+        fontSize=8,
+        textColor=colors.black
+    )
     
-    # Group data by asset
-    asset_groups = {}
-    for task in data:
-        asset_key = task.get('asset_name', 'Unknown Asset')
-        if asset_key not in asset_groups:
-            asset_groups[asset_key] = {
-                'asset_name': task.get('asset_name', 'Unknown Asset'),
-                'asset_model': task.get('asset_model', 'N/A'),
-                'serial_number': task.get('serial_number', 'N/A'),
-                'tasks': []
-            }
-        asset_groups[asset_key]['tasks'].append(task)
-    
-    for asset_group in asset_groups.values():
-        # Asset Information Header
-        story.append(Paragraph("ASSET INFORMATION", 
-                              ParagraphStyle('AssetHeader', parent=styles['Heading1'], 
-                                           textColor=COLORS['primary'])))
+    # Helper function to create colored section tables that match table width
+    def create_colored_section(title, content, bg_color, text_color=colors.black):
+        # Add section title
+        story.append(Paragraph(f"<b>{title}</b>", styles['Heading2']))
         
-        # Asset details
-        asset_details = [
-            f"Asset Name: {asset_group['asset_name']}",
-            f"Model: {asset_group['asset_model']}",
-            f"Serial Number: {asset_group['serial_number']}"
+        # Create single-cell table with same width as main table (6.6 inches)
+        if content:
+            content_para = Paragraph(
+                str(content),
+                ParagraphStyle(
+                    'SectionContent',
+                    parent=normal_style,
+                    fontSize=9,
+                    textColor=text_color,
+                    leftIndent=0,
+                    rightIndent=0,
+                    topPadding=0,
+                    bottomPadding=0
+                )
+            )
+        else:
+            content_para = Paragraph(
+                "No content provided",
+                ParagraphStyle(
+                    'SectionContent',
+                    parent=normal_style,
+                    fontSize=9,
+                    textColor=colors.Color(120/255, 120/255, 120/255),
+                    leftIndent=0,
+                    rightIndent=0,
+                    topPadding=0,
+                    bottomPadding=0
+                )
+            )
+        
+        section_table = Table([[content_para]], colWidths=[6.6*inch])
+        section_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), bg_color),
+            ('LEFTPADDING', (0, 0), (-1, -1), 8),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+            ('TOPPADDING', (0, 0), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ]))
+        
+        story.append(section_table)
+        story.append(Spacer(1, 8))
+    
+    # Process each task using the same format as maintenance_task export
+    for task_index, task in enumerate(data):
+        # Add page break between tasks (except for first task)
+        if task_index > 0:
+            story.append(PageBreak())
+        
+        # Task Name Header - using table to match width of other sections
+        task_title = task.get('task_name') or task.get('task', f'Maintenance Task {task_index + 1}')
+        header_para = Paragraph(
+            task_title,
+            ParagraphStyle(
+                'HeaderContent',
+                parent=styles['Heading1'],
+                fontSize=12,
+                textColor=colors.white,
+                leftIndent=0,
+                rightIndent=0,
+                topPadding=0,
+                bottomPadding=0
+            )
+        )
+        
+        header_table = Table([[header_para]], colWidths=[6.6*inch])
+        header_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), colors.Color(25/255, 55/255, 109/255)),  # Dark blue
+            ('LEFTPADDING', (0, 0), (-1, -1), 10),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 10),
+            ('TOPPADDING', (0, 0), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
+        
+        story.append(header_table)
+        story.append(Spacer(1, 12))
+        
+        # Create dynamic 2x3 table layout using Paragraphs
+        cell_style = ParagraphStyle(
+            'CellStyle',
+            parent=styles['Normal'],
+            fontSize=9,
+            textColor=colors.black,
+            leftIndent=0,
+            spaceAfter=0
+        )
+        
+        label_style = ParagraphStyle(
+            'LabelStyle',
+            parent=styles['Normal'],
+            fontSize=9,
+            textColor=colors.black,
+            leftIndent=0,
+            spaceAfter=2
+        )
+        
+        # Row 1
+        row1 = [
+            [
+                Paragraph("<b>Interval:</b>", label_style),
+                Paragraph(str(task.get('duration') or task.get('maintenance_interval', 'Monthly')), cell_style)
+            ],
+            [
+                Paragraph("<b>Technicians Required:</b>", label_style),
+                Paragraph(str(task.get('no_techs_needed', '1')), cell_style)
+            ],
+            [
+                Paragraph("<b>Estimated Time:</b>", label_style),
+                Paragraph(str(task.get('time_to_complete') or (str(task.get('est_minutes', 'Not specified')) + ' minutes' if task.get('est_minutes') else 'Not specified')), cell_style)
+            ]
         ]
         
-        for detail in asset_details:
-            story.append(Paragraph(detail, 
-                                 ParagraphStyle('AssetDetail', parent=styles['Normal'],
-                                              backColor=COLORS['light_background'],
-                                              leftIndent=5, topPadding=2, bottomPadding=2)))
+        # Row 2  
+        row2 = [
+            [
+                Paragraph("<b>Tools Needed:</b>", label_style),
+                Paragraph(str(task.get('tools_needed', 'Standard maintenance tools')), cell_style)
+            ],
+            [
+                Paragraph("<b>Reason:</b>", label_style),
+                Paragraph(str(task.get('reason', 'Preventive maintenance to ensure optimal performance')), cell_style)
+            ],
+            ""  # Empty cell
+        ]
         
-        story.append(Spacer(1, 15))
+        table_data = [row1, row2]
         
-        # Maintenance Tasks
-        story.append(Paragraph("MAINTENANCE TASKS", 
-                              ParagraphStyle('TasksHeader', parent=styles['Heading2'], 
-                                           textColor=COLORS['primary'])))
+        # Create table with white background and borders
+        table = Table(table_data, colWidths=[2.2*inch, 2.2*inch, 2.2*inch], rowHeights=[None, None])
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), colors.white),
+            ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('LEFTPADDING', (0, 0), (-1, -1), 8),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+            ('TOPPADDING', (0, 0), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ('GRID', (0, 0), (-1, -1), 1, colors.Color(149/255, 165/255, 166/255)),  # Light grid lines
+        ]))
         
-        for task_index, task in enumerate(asset_group['tasks']):
-            # Task header
-            task_title = f"Task {task_index + 1}: {task.get('task_name', 'Unnamed Task')}"
-            story.append(Paragraph(task_title, 
-                                 ParagraphStyle('TaskTitle', parent=styles['Heading3'],
-                                              backColor=COLORS['background'],
-                                              leftIndent=5, topPadding=2, bottomPadding=2)))
-            
-            # Task details
-            task_details = [
-                f"Maintenance Interval: {task.get('maintenance_interval', 'N/A')}",
-                f"Number of Technicians: {task.get('no_techs_needed', 'N/A')}",
-                f"Estimated Time: {task.get('time_to_complete') or (str(task.get('est_minutes')) + ' minutes' if task.get('est_minutes') else 'N/A')}",
-                f"Tools Required: {task.get('tools_needed', 'N/A')}"
-            ]
-            
-            for detail in task_details:
-                story.append(Paragraph(detail, 
-                                     ParagraphStyle('TaskDetail', parent=styles['Normal'],
-                                                  leftIndent=10, fontSize=10)))
-            
-            # Instructions
-            if task.get('instructions'):
-                story.append(Paragraph("<b>Instructions:</b>", 
-                                     ParagraphStyle('InstructionsHeader', parent=styles['Normal'],
-                                                  leftIndent=10, fontSize=10, 
-                                                  textColor=COLORS['secondary'])))
-                
-                clean_instructions = process_instructions(task['instructions'])
-                for i, instruction in enumerate(clean_instructions, 1):
-                    story.append(Paragraph(f"{i}. {instruction}", 
-                                         ParagraphStyle('InstructionItem', parent=styles['Normal'],
-                                                      leftIndent=20, fontSize=9,
-                                                      textColor=COLORS['text'])))
-            
-            story.append(Spacer(1, 10))
+        story.append(table)
+        story.append(Spacer(1, 8))
         
-        story.append(Spacer(1, 20))
+        # Instructions Section - Light Grey Background
+        if task.get('instructions'):
+            clean_instructions = process_instructions(task['instructions'])
+            instructions_text = ""
+            for i, instruction in enumerate(clean_instructions, 1):
+                instructions_text += f"{i}. {instruction}<br/><br/>"
+            create_colored_section("Instructions", instructions_text, colors.Color(240/255, 240/255, 240/255))
+        
+        # Safety Precautions Section - Light Red Background
+        create_colored_section(
+            "Safety Precautions", 
+            task.get('safety_precautions', 'No content provided'), 
+            colors.Color(255/255, 235/255, 235/255),
+            colors.Color(200/255, 0, 0)  # Red text
+        )
+        
+        # Engineering Rationale Section - Light Blue Background
+        create_colored_section(
+            "Engineering Rationale", 
+            task.get('engineering_rationale', 'No content provided'), 
+            colors.Color(235/255, 245/255, 255/255)
+        )
+        
+        # Common Failures Prevented Section - Light Yellow Background
+        create_colored_section(
+            "Common Failures Prevented", 
+            task.get('common_failures_prevented', 'No content provided'), 
+            colors.Color(255/255, 255/255, 235/255)
+        )
+        
+        # Usage Insights Section - Light Green Background
+        create_colored_section(
+            "Usage Insights", 
+            task.get('usage_insights', 'No content provided'), 
+            colors.Color(235/255, 255/255, 235/255)
+        )
+        
+        # Scheduled Dates Section - Light Grey Background
+        if task.get('scheduled_dates') and len(task['scheduled_dates']) > 0:
+            dates_to_show = task['scheduled_dates'][:12]
+            dates_string = ', '.join(dates_to_show)
+            create_colored_section(
+                "Scheduled Dates (Next 12 months)", 
+                dates_string, 
+                colors.Color(245/255, 245/255, 245/255)
+            )
+        else:
+            create_colored_section(
+                "Scheduled Dates (Next 12 months)", 
+                "No scheduled dates available", 
+                colors.Color(245/255, 245/255, 245/255),
+                colors.Color(120/255, 120/255, 120/255)  # Grey text
+            )
+    
+    # Footer information
+    story.append(Spacer(1, 20))
+    footer_style = ParagraphStyle(
+        'Footer',
+        parent=styles['Normal'],
+        fontSize=8,
+        textColor=colors.Color(100/255, 100/255, 100/255)
+    )
+    
+    footer_text = f"Generated on: {datetime.now().strftime('%m/%d/%Y')} | PM Plans Export ({len(data)} tasks)"
+    story.append(Paragraph(footer_text, footer_style))
     
     # Build PDF
     doc.build(story)
