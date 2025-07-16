@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { FileText, Download } from "lucide-react";
-import { exportPMPlansDataToPDF, exportMaintenanceTaskToPDF, exportAssetsDataToPDF } from "../../utils/pdfExport";
+// Using ReportLab Python backend for PDF generation
 
 interface PDFExportButtonProps {
   data: any[];
@@ -46,27 +46,57 @@ export default function PDFExportButton({
       const defaultFilename = `${exportType}_Export_${timestamp}.pdf`;
       const finalFilename = filename || defaultFilename;
 
+      // Map frontend export types to backend types
+      let backendExportType: string;
       switch (exportType) {
         case "pmPlans":
-          exportPMPlansDataToPDF(data, finalFilename);
+          backendExportType = "pm_plans";
           break;
         case "maintenanceTask":
-          if (data.length === 1) {
-            exportMaintenanceTaskToPDF(data[0], "pdf");
-          } else {
+          backendExportType = "maintenance_task";
+          if (data.length !== 1) {
             throw new Error("Maintenance task export requires exactly one task");
           }
           break;
         case "assets":
-          exportAssetsDataToPDF(data, finalFilename);
+          backendExportType = "assets";
           break;
         case "custom":
-          // For custom exports, we'll use the PM Plans format as default
-          exportPMPlansDataToPDF(data, finalFilename);
+          backendExportType = "pm_plans"; // Default to PM plans format
           break;
         default:
           throw new Error(`Unsupported export type: ${exportType}`);
       }
+
+      // Call the Python backend API
+      const response = await fetch('https://arctecfox-mono.onrender.com/api/export-pdf', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          data: data,
+          filename: finalFilename,
+          export_type: backendExportType
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+      }
+
+      // Download the PDF file
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      a.download = finalFilename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
 
       onExportComplete?.();
     } catch (error) {

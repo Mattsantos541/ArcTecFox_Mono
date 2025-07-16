@@ -12,13 +12,19 @@ import google.generativeai as genai
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel
 from supabase import create_client, Client
 from PIL import Image
 import PyPDF2
 from docx import Document
 from file_processor import file_processor
+from pdf_export import (
+    export_maintenance_task_to_pdf,
+    export_pm_plans_data_to_pdf,
+    export_assets_data_to_pdf,
+    export_detailed_pm_plans_to_pdf
+)
 
 # Load environment variables
 load_dotenv()
@@ -92,6 +98,11 @@ class HealthResponse(BaseModel):
 class AIPlanResponse(BaseModel):
     success: bool
     data: List[Dict[str, Any]]
+
+class PDFExportRequest(BaseModel):
+    data: List[Dict[str, Any]]
+    filename: Optional[str] = None
+    export_type: str  # "maintenance_task", "pm_plans", "assets", "detailed_pm_plans"
 
 # Health check route
 @app.get("/api/health", response_model=HealthResponse)
@@ -248,6 +259,61 @@ For each PM task:
         import traceback
         logger.error("❌ Error generating AI plan:\n%s", traceback.format_exc())
         raise HTTPException(status_code=500, detail="Internal error during plan generation")
+
+# PDF Export endpoint
+@app.post("/api/export-pdf")
+async def export_pdf(request: PDFExportRequest):
+    try:
+        logger.info(f"🖨️ PDF export request received: type={request.export_type}, data_count={len(request.data)}")
+        
+        if not request.data:
+            raise HTTPException(status_code=400, detail="No data provided for export")
+        
+        # Generate filename if not provided
+        if not request.filename:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            request.filename = f"{request.export_type}_export_{timestamp}.pdf"
+        
+        # Ensure filename ends with .pdf
+        if not request.filename.endswith('.pdf'):
+            request.filename += '.pdf'
+        
+        # Call appropriate export function based on type
+        output_path = None
+        if request.export_type == "maintenance_task":
+            if len(request.data) == 1:
+                output_path = export_maintenance_task_to_pdf(request.data[0])
+            else:
+                raise HTTPException(status_code=400, detail="Maintenance task export requires exactly one task")
+        elif request.export_type == "pm_plans":
+            output_path = export_pm_plans_data_to_pdf(request.data)
+        elif request.export_type == "assets":
+            output_path = export_assets_data_to_pdf(request.data)
+        elif request.export_type == "detailed_pm_plans":
+            output_path = export_detailed_pm_plans_to_pdf(request.data)
+        else:
+            raise HTTPException(status_code=400, detail=f"Unknown export type: {request.export_type}")
+        
+        # Verify file was created
+        if not output_path or not os.path.exists(output_path):
+            raise HTTPException(status_code=500, detail="PDF generation failed")
+        
+        logger.info(f"✅ PDF generated successfully: {output_path}")
+        
+        # Return the file as a download
+        return FileResponse(
+            path=output_path,
+            filename=request.filename,
+            media_type='application/pdf',
+            headers={"Content-Disposition": f"attachment; filename={request.filename}"}
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        logger.error("❌ Error generating PDF:\n%s", traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Internal error during PDF generation: {str(e)}")
 
 # Debug Gemini connection
 @app.get("/api/debug-gemini")
