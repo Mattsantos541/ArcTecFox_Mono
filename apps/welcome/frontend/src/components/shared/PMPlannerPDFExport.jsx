@@ -66,7 +66,7 @@ export default function PMPlannerPDFExport({ user, disabled, onExportStart, onEx
       actualDuration: task.actual_duration,
       instructions: task.instructions,
       // AI fields from pm_tasks table
-      time_to_complete: task.est_minutes ? `${task.est_minutes} minutes` : 'N/A',
+      time_to_complete: task.est_minutes || 'N/A',
       tools_needed: task.tools_needed || 'N/A',
       no_techs_needed: task.no_techs_needed || 'N/A',
       est_minutes: task.est_minutes,
