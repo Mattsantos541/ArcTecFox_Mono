@@ -188,6 +188,7 @@ For each PM task:
 10. ALWAYS include "time_to_complete" - estimate how long this task takes (e.g., "2 hours", "45 minutes").
 11. ALWAYS include "tools_needed" - list all tools, equipment, and supplies required.
 12. ALWAYS include "number_of_technicians" - specify how many people are needed (integer).
+13. ALWAYS include "consumables" - list all consumables and supplies needed for this specific task (grease, oil, filters, gaskets, etc.).
 
 **IMPORTANT:** Return only a valid JSON object with no markdown or explanation. The JSON must have a key "maintenance_plan" whose value is an array of objects. Each object must include:
 - "task_name" (string)
@@ -202,6 +203,7 @@ For each PM task:
 - "time_to_complete" (string, e.g., "2 hours", "30 minutes")
 - "tools_needed" (string, list of tools/equipment needed)
 - "number_of_technicians" (integer, number of technicians required)
+- "consumables" (string, list of consumables and supplies needed for this task)
 """
 
         try:
