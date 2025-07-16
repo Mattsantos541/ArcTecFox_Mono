@@ -8,3 +8,4 @@ pydantic-settings
 PyPDF2
 python-docx
 pillow
+reportlab
