@@ -1,4 +1,5 @@
 import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 // Professional color scheme for reports
 const COLORS = {
@@ -12,6 +13,26 @@ const COLORS = {
   lightBackground: [248, 249, 250] // Very light background
 };
 
+// Shared PDF formatting configuration
+const PDF_CONFIG = {
+  styles: {
+    fontSize: 10,
+    cellPadding: 3,
+    overflow: 'linebreak',
+    cellWidth: 'wrap'
+  },
+  headStyles: {
+    fillColor: COLORS.primary,
+    textColor: 255,
+    fontStyle: 'bold'
+  },
+  alternateRowStyles: {
+    fillColor: COLORS.lightBackground
+  },
+  margin: { top: 40, left: 20, right: 20 },
+  tableWidth: 'wrap',
+  startY: 40
+};
 
 // Shared header formatting with professional styling
 const addPDFHeader = (doc, title) => {
@@ -102,288 +123,11 @@ const processInstructions = (instructions) => {
 };
 
 /**
- * Generate PDF export for single maintenance task in the specified format
- * @param {Object} task - Task data object
+ * Generate PDF export for PM Plans data from PMPlanner
+ * @param {Array} data - Array of PM plan data
+ * @param {string} filename - Optional filename for the PDF
  * @returns {void}
  */
-export const exportMaintenanceTaskToPDF = (task) => {
-  const doc = new jsPDF('portrait');
-  
-  let yPosition = 30;
-  const pageHeight = doc.internal.pageSize.height;
-  const margin = 20;
-  const pageWidth = doc.internal.pageSize.width;
-  const contentWidth = pageWidth - 2 * margin;
-  
-  // Task Name Header - Bold Dark Blue with minimal sizing
-  const headerFontSize = 12; // Smaller font size
-  const headerPadding = 4; // Minimal padding
-  const headerHeight = headerFontSize + (headerPadding * 2);
-  const headerSpacing = headerHeight + 2; // Minimal spacing after header
-  
-  doc.setFillColor(25, 55, 109); // Dark blue background
-  doc.rect(margin, yPosition, contentWidth, headerHeight, 'F');
-  doc.setTextColor(255, 255, 255); // White text
-  doc.setFontSize(headerFontSize);
-  doc.setFont(undefined, 'bold');
-  // Calculate perfect vertical center - position baseline so visual center of text is centered
-  const textY = yPosition + (headerHeight / 2) - (headerFontSize * 0.2);
-  doc.text(task.task || 'Maintenance Task', margin + headerPadding, textY);
-   
-  yPosition += headerSpacing;
-  
-  // Dynamic 2x3 table layout with white background
-  const cellWidth = contentWidth / 3;
-  const cellPadding = 3; // Reduced padding
-  const titleSpacing = 4; // Reduced title spacing
-  const lineHeight = 4; // Reduced line height
-  
-  // Prepare all cell content and calculate heights
-  const cellData = [
-    // Row 1
-    [
-      { title: 'Interval:', content: String(task.duration || task.maintenance_interval || 'Monthly') },
-      { title: 'Technicians Required:', content: String(task.no_techs_needed || '1') },
-      { title: 'Estimated Time to Complete:', content: String(task.time_to_complete || (task.est_minutes ? `${task.est_minutes} minutes` : 'Not specified')) }
-    ],
-    // Row 2
-    [
-      { title: 'Tools Needed:', content: String(task.tools_needed || 'Standard maintenance tools') },
-      { title: 'Reason:', content: String(task.reason || 'Preventive maintenance to ensure optimal performance') }
-      // Removed empty cell to prevent extra height
-    ]
-  ];
-  
-  // Calculate dynamic heights for each row
-  const rowHeights = cellData.map(row => {
-    let maxHeight = 0;
-    row.forEach(cell => {
-      if (cell.title && cell.content) {
-        const splitContent = doc.splitTextToSize(cell.content, cellWidth - cellPadding * 2);
-        const cellHeight = titleSpacing + (splitContent.length * lineHeight);
-        maxHeight = Math.max(maxHeight, cellHeight);
-      }
-    });
-    return Math.max(maxHeight, 12); // Much smaller minimum height
-  });
-  
-  const totalTableHeight = rowHeights.reduce((sum, height) => sum + height, 0);
-  
-  // White background section for top info
-  doc.setFillColor(255, 255, 255); // White background
-  doc.rect(margin, yPosition, contentWidth, totalTableHeight, 'F');
-  
-  // Reset text color for content
-  doc.setTextColor(0, 0, 0); // Black text
-  doc.setFontSize(8); // Smaller font to match sections
-  doc.setFont(undefined, 'normal');
-  
-  let currentRowY = yPosition;
-  
-  // Render each row
-  cellData.forEach((row, rowIndex) => {
-    const rowHeight = rowHeights[rowIndex];
-    
-    row.forEach((cell, colIndex) => {
-      if (cell.title && cell.content) {
-        const cellX = margin + (colIndex * cellWidth);
-        const cellY = currentRowY + cellPadding;
-        
-        // Title
-        doc.setFont(undefined, 'bold');
-        doc.text(cell.title, cellX + cellPadding, cellY);
-        
-        // Content
-        doc.setFont(undefined, 'normal');
-        const splitContent = doc.splitTextToSize(cell.content, cellWidth - cellPadding * 2);
-        splitContent.forEach((line, lineIndex) => {
-          doc.text(line, cellX + cellPadding, cellY + titleSpacing + (lineIndex * lineHeight));
-        });
-      }
-    });
-    
-    currentRowY += rowHeight;
-  });
-  
-  // Update yPosition after dynamic table
-  yPosition += totalTableHeight + 1; // Very minimal spacing to Instructions header
-  
-  // Helper function to add colored section with minimal spacing
-  const addColoredSection = (title, content, bgColor, textColor = [0, 0, 0]) => {
-    const headerFontSize = 12;
-    const contentFontSize = 8; // Smaller font for better space usage
-    const lineHeight = 5; // Adjusted for smaller font
-    const headerSpacing = 4; // Very minimal header spacing
-    const sectionPadding = 4; // Reduced padding
-    const minSectionHeight = 16; // Smaller minimum height
-    const textIndent = 6; // Smaller text indent
-    
-    if (content) {
-      // Pre-process content to calculate accurate height first
-      let processedContent = [];
-      
-      if (title === 'Instructions') {
-        const cleanInstructions = processInstructions(content);
-        cleanInstructions.forEach((instruction, index) => {
-          const maxWidth = contentWidth - 20; // Much wider text area
-          const splitText = doc.splitTextToSize(`${index + 1}. ${instruction}`, maxWidth);
-          processedContent.push(...splitText);
-        });
-      } else {
-        const maxWidth = contentWidth - 16; // Much wider text area
-        processedContent = doc.splitTextToSize(String(content), maxWidth);
-      }
-      
-      // Calculate exact content height to match text
-      const contentHeight = Math.max(
-        minSectionHeight, 
-        processedContent.length * lineHeight + sectionPadding // Only top padding, no bottom padding
-      );
-      
-      // Check if we need a new page for the entire section (header + content)
-      if (yPosition + headerSpacing + contentHeight > pageHeight - 20) {
-        doc.addPage();
-        yPosition = 30;
-      }
-      
-      // Section header
-      doc.setTextColor(0, 0, 0); // Black text for headers
-      doc.setFontSize(headerFontSize);
-      doc.setFont(undefined, 'bold');
-      doc.text(title, margin, yPosition);
-      yPosition += headerSpacing;
-      
-      // Background rectangle without border
-      doc.setFillColor(...bgColor);
-      doc.rect(margin, yPosition, contentWidth, contentHeight, 'F');
-      
-      // Content text
-      doc.setTextColor(...textColor);
-      doc.setFontSize(contentFontSize);
-      doc.setFont(undefined, 'normal');
-      
-      let textY = yPosition + sectionPadding;
-      processedContent.forEach(line => {
-        // Boundary check to prevent overflow
-        if (textY > yPosition + contentHeight) return;
-        doc.text(String(line), margin + textIndent, textY);
-        textY += lineHeight;
-      });
-      
-      yPosition += contentHeight + 8; // More spacing after section before next header
-    } else {
-      // Empty section with minimal height
-      const emptyHeight = minSectionHeight;
-      
-      // Check if empty section will fit
-      if (yPosition + headerSpacing + emptyHeight > pageHeight - 20) {
-        doc.addPage();
-        yPosition = 30;
-      }
-      
-      // Section header
-      doc.setTextColor(0, 0, 0); // Black text for headers
-      doc.setFontSize(headerFontSize);
-      doc.setFont(undefined, 'bold');
-      doc.text(title, margin, yPosition);
-      yPosition += headerSpacing;
-      
-      doc.setFillColor(...bgColor);
-      doc.rect(margin, yPosition, contentWidth, emptyHeight, 'F');
-      
-      doc.setTextColor(...textColor);
-      doc.setFontSize(contentFontSize);
-      doc.setFont(undefined, 'normal');
-      doc.text('No content provided', margin + textIndent, yPosition + (emptyHeight / 2));
-      
-      yPosition += emptyHeight + 8; // More spacing after empty section before next header
-    }
-  };
-  
-  // Instructions Section - Light Grey Background
-  addColoredSection(
-    'Instructions',
-    task.instructions,
-    [240, 240, 240], // Light grey
-    [0, 0, 0] // Black text
-  );
-  
-  // Safety Precautions Section - Light Red Background
-  addColoredSection(
-    'Safety Precautions',
-    task.safety_precautions,
-    [255, 235, 235], // Light red
-    [200, 0, 0] // Red text
-  );
-  
-  // Engineering Rationale Section - Light Blue Background
-  addColoredSection(
-    'Engineering Rationale',
-    task.engineering_rationale,
-    [235, 245, 255], // Light blue
-    [0, 0, 0] // Black text
-  );
-  
-  // Common Failures Prevented Section - Light Yellow Background
-  addColoredSection(
-    'Common Failures Prevented',
-    task.common_failures_prevented,
-    [255, 255, 235], // Light yellow
-    [0, 0, 0] // Black text
-  );
-  
-  // Usage Insights Section - Light Green Background
-  addColoredSection(
-    'Usage Insights',
-    task.usage_insights,
-    [235, 255, 235], // Light green
-    [0, 0, 0] // Black text
-  );
-  
-  // Scheduled Dates Section - Simple string format
-  if (task.scheduled_dates && task.scheduled_dates.length > 0) {
-    // Format dates as comma-separated string
-    const datesToShow = task.scheduled_dates.slice(0, 12);
-    const datesString = datesToShow.join(', ');
-    
-    // Use the same colored section format as other sections
-    addColoredSection(
-      'Scheduled Dates (Next 12 months)',
-      datesString,
-      [245, 245, 245], // Light grey background
-      [0, 0, 0] // Black text
-    );
-  } else {
-    // Use the same colored section format for empty dates
-    addColoredSection(
-      'Scheduled Dates (Next 12 months)',
-      'No scheduled dates available',
-      [245, 245, 245], // Light grey background
-      [120, 120, 120] // Grey text
-    );
-  }
-  
-  // Add page footer with generation info - dynamic sizing
-  const footerFontSize = 8;
-  const footerMargin = footerFontSize * 2;
-  const footerY = pageHeight - footerMargin;
-  
-  doc.setTextColor(100, 100, 100);
-  doc.setFontSize(footerFontSize);
-  doc.setFont(undefined, 'normal');
-  doc.text(`Generated on: ${new Date().toLocaleDateString()}`, margin, footerY);
-  
-  // Calculate dynamic position for right-aligned text
-  const taskIdText = `Task ID: ${task.id || 'N/A'}`;
-  const taskIdWidth = doc.getTextWidth(taskIdText);
-  doc.text(taskIdText, pageWidth - margin - taskIdWidth, footerY);
-  
-  // Save the PDF
-  const filename = `maintenance-task-${task.task ? task.task.replace(/[^a-zA-Z0-9]/g, '_') : 'task'}.pdf`;
-  doc.save(filename);
-};
-
-// Export all other existing functions unchanged
 export const exportPMPlansDataToPDF = (data, filename = 'PM_Plans_Export.pdf') => {
   const doc = new jsPDF('portrait');
   
@@ -483,8 +227,8 @@ export const exportPMPlansDataToPDF = (data, filename = 'PM_Plans_Export.pdf') =
       
       const taskDetails = [
         `Maintenance Interval: ${task.maintenance_interval || 'N/A'}`,
-        `Number of Technicians: ${String(task.no_techs_needed || 'N/A')}`,
-        `Estimated Time: ${String(task.time_to_complete || (task.est_minutes ? `${task.est_minutes} minutes` : 'N/A'))}`,
+        `Number of Technicians: ${task.no_techs_needed || 'N/A'}`,
+        `Estimated Time: ${task.time_to_complete || (task.est_minutes ? `${task.est_minutes} minutes` : 'N/A')}`,
         `Tools Required: ${task.tools_needed || 'N/A'}`
       ];
       
@@ -536,7 +280,7 @@ export const exportPMPlansDataToPDF = (data, filename = 'PM_Plans_Export.pdf') =
           const maxWidth = doc.internal.pageSize.width - margin * 2 - 25;
           const splitText = doc.splitTextToSize(instruction, maxWidth);
           
-          splitText.forEach((line) => {
+          splitText.forEach((line, lineIndex) => {
             if (yPosition > pageHeight - 15) { // Better page break detection
               doc.addPage();
               yPosition = 50;
@@ -565,6 +309,12 @@ export const exportPMPlansDataToPDF = (data, filename = 'PM_Plans_Export.pdf') =
   doc.save(filename);
 };
 
+/**
+ * Generate PDF export for Assets data from Asset Management
+ * @param {Array} data - Array of asset data
+ * @param {string} filename - Optional filename for the PDF
+ * @returns {void}
+ */
 export const exportAssetsDataToPDF = (data, filename = 'Assets_Export.pdf') => {
   const doc = new jsPDF('portrait');
   
@@ -623,7 +373,7 @@ export const exportAssetsDataToPDF = (data, filename = 'Assets_Export.pdf') => {
       doc.text(detail.label, margin + 5, yPosition);
       doc.setTextColor(...COLORS.text);
       doc.setFont(undefined, 'normal');
-      doc.text(String(detail.value), margin + 50, yPosition);
+      doc.text(detail.value, margin + 50, yPosition);
       yPosition += 8;
     });
     
@@ -636,6 +386,151 @@ export const exportAssetsDataToPDF = (data, filename = 'Assets_Export.pdf') => {
   doc.save(filename);
 };
 
+/**
+ * Generate PDF export for single maintenance task
+ * @param {Object} task - Task data object
+ * @returns {void}
+ */
+export const exportMaintenanceTaskToPDF = (task) => {
+  const doc = new jsPDF('portrait');
+  
+  addPDFHeader(doc, 'Maintenance Task Report');
+  
+  let yPosition = 50;
+  const pageHeight = doc.internal.pageSize.height;
+  const margin = 20;
+  const lineHeight = 6;
+  
+  // Asset Information Section
+  doc.setTextColor(...COLORS.primary);
+  doc.setFontSize(16);
+  doc.setFont(undefined, 'bold');
+  doc.text('ASSET INFORMATION', margin, yPosition);
+  yPosition += 12;
+  
+  doc.setFillColor(...COLORS.lightBackground);
+  doc.setDrawColor(...COLORS.border);
+  doc.setLineWidth(0.5);
+  doc.rect(margin, yPosition, doc.internal.pageSize.width - 2 * margin, 35, 'FD');
+  yPosition += 10;
+  
+  const assetInfo = [
+    `Asset: ${task.asset || 'N/A'}`,
+    `Date: ${task.date || 'N/A'}`,
+    `Technician: ${task.technician || 'N/A'}`
+  ];
+  
+  doc.setTextColor(...COLORS.text);
+  doc.setFontSize(10);
+  doc.setFont(undefined, 'normal');
+  
+  assetInfo.forEach(info => {
+    doc.text(info, margin + 5, yPosition);
+    yPosition += 8;
+  });
+  
+  yPosition += 20;
+  
+  // Task Details Section
+  doc.setTextColor(...COLORS.primary);
+  doc.setFontSize(16);
+  doc.setFont(undefined, 'bold');
+  doc.text('TASK DETAILS', margin, yPosition);
+  yPosition += 15;
+  
+  doc.setTextColor(...COLORS.secondary);
+  doc.setFontSize(12);
+  doc.setFont(undefined, 'bold');
+  doc.text(`Task: ${task.task || 'Unnamed Task'}`, margin, yPosition);
+  yPosition += 15;
+  
+  // Task specifications
+  doc.setTextColor(...COLORS.text);
+  doc.setFontSize(10);
+  doc.setFont(undefined, 'normal');
+  
+  const taskDetails = [
+    `Duration: ${task.duration || 'N/A'}`,
+    `Estimated Time: ${task.time_to_complete || (task.est_minutes ? `${task.est_minutes} minutes` : 'N/A')}`,
+    `Tools Required: ${task.tools_needed || 'N/A'}`,
+    `Number of Technicians: ${task.no_techs_needed || 'N/A'}`,
+    `Status: ${task.status || 'N/A'}`
+  ];
+  
+  taskDetails.forEach(detail => {
+    if (yPosition > pageHeight - 20) {
+      doc.addPage();
+      yPosition = 50;
+    }
+    doc.text(detail, margin + 5, yPosition);
+    yPosition += lineHeight + 3;
+  });
+  
+  yPosition += 15;
+  
+  // Instructions Section (if available) - FIXED
+  if (task.instructions) {
+    if (yPosition > pageHeight - 30) {
+      doc.addPage();
+      yPosition = 50;
+    }
+    
+    doc.setTextColor(...COLORS.primary);
+    doc.setFontSize(16);
+    doc.setFont(undefined, 'bold');
+    doc.text('INSTRUCTIONS', margin, yPosition);
+    yPosition += 15;
+    
+    doc.setTextColor(...COLORS.text);
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'normal');
+    
+    // Process instructions to remove double numbering
+    const cleanInstructions = processInstructions(task.instructions);
+    
+    cleanInstructions.forEach((instruction, index) => {
+      if (yPosition > pageHeight - 15) {
+        doc.addPage();
+        yPosition = 50;
+      }
+      
+      // Render with proper numbering
+      doc.setTextColor(...COLORS.primary);
+      doc.setFont(undefined, 'bold');
+      doc.text(`${index + 1}.`, margin + 5, yPosition);
+      
+      doc.setTextColor(...COLORS.text);
+      doc.setFont(undefined, 'normal');
+      
+      const maxWidth = doc.internal.pageSize.width - margin * 2 - 20;
+      const splitText = doc.splitTextToSize(instruction, maxWidth);
+      
+      splitText.forEach((line, lineIndex) => {
+        if (yPosition > pageHeight - 10) {
+          doc.addPage();
+          yPosition = 50;
+        }
+        
+        doc.text(line, margin + 20, yPosition);
+        yPosition += lineHeight;
+      });
+      yPosition += 2; // Small gap between instructions
+    });
+  }
+  
+  addPDFFooter(doc);
+  
+  // Save the PDF
+  const filename = `maintenance-task-${task.id || 'task'}.pdf`;
+  doc.save(filename);
+};
+
+/**
+ * Generate PDF export for PM Plans detailed report with task breakdown
+ * @param {Array} plans - Array of PM plan data with tasks
+ * @param {string} filename - Optional filename for the PDF
+ * @returns {void}
+ */
 export const exportDetailedPMPlansToPDF = (plans, filename = 'Detailed_PM_Plans_Report.pdf') => {
   const doc = new jsPDF('landscape');
   
@@ -679,9 +574,9 @@ export const exportDetailedPMPlansToPDF = (plans, filename = 'Detailed_PM_Plans_
         // Task details
         const taskDetails = [
           `Interval: ${task.maintenance_interval || 'N/A'}`,
-          `Time to Complete: ${String(task.time_to_complete || 'N/A')}`,
-          `Tools Needed: ${String(task.tools_needed || 'N/A')}`,
-          `Number of Technicians: ${String(task.no_techs_needed || 'N/A')}`,
+          `Time to Complete: ${task.time_to_complete || 'N/A'}`,
+          `Tools Needed: ${task.tools_needed || 'N/A'}`,
+          `Number of Technicians: ${task.no_techs_needed || 'N/A'}`,
           `Reason: ${task.reason || 'N/A'}`,
           `Safety Precautions: ${task.safety_precautions || 'N/A'}`
         ];
