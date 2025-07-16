@@ -170,21 +170,15 @@ def export_maintenance_task_to_pdf(task, output_path=None):
         )
     )
     
-    header_table = RoundedTableWrapper(
-        [[header_para], [asset_para]], 
-        [6.6*inch],
-        TableStyle([
-            ('BACKGROUND', (0, 0), (-1, -1), colors.Color(25/255, 55/255, 109/255)),  # Dark blue
-            ('LEFTPADDING', (0, 0), (-1, -1), 10),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 10),
-            ('TOPPADDING', (0, 0), (0, 0), 8),
-            ('BOTTOMPADDING', (0, 0), (0, 0), 2),
-            ('TOPPADDING', (0, 1), (0, 1), 2),
-            ('BOTTOMPADDING', (0, 1), (0, 1), 8),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ]),
-        corner_radius=20
-    )
+    header_table = Table([[header_para]], colWidths=[6.6*inch])
+    header_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.Color(25/255, 55/255, 109/255)),  # Dark blue
+        ('LEFTPADDING', (0, 0), (-1, -1), 10),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 10),
+        ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    ]))
     
     story.append(header_table)
     story.append(Spacer(1, 12))
