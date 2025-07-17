@@ -178,8 +178,8 @@ def create_signature_section(story, styles):
     # Completed by section
     signature_data = [
         [
-            Paragraph("<b>Completed by:</b>", signature_style),
-            Paragraph("<b>Confirmed by:</b>", signature_style)
+            Paragraph("<b>Technician:</b>", signature_style),
+            Paragraph("<b>Supervisor:</b>", signature_style)
         ],
         [
             Paragraph("Name: _________________________", signature_style),
