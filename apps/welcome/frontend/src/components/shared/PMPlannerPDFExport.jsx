@@ -21,7 +21,19 @@ export default function PMPlannerPDFExport({ user, disabled, onExportStart, onEx
     const { data: { session } } = await supabase.auth.getSession();
     console.log('Export session check:', session?.user?.id);
     
-    // Use the same query as Scheduled Maintenance instead of stored procedure
+    // First, get the most recent pm_plan ID
+    const { data: latestPlan, error: planError } = await supabase
+      .from('pm_plans')
+      .select('id')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+    
+    if (planError) {
+      throw new Error(`Error fetching latest plan: ${planError.message}`);
+    }
+    
+    // Then fetch only tasks from the most recent pm_plan
     const { data, error } = await supabase
       .from('pm_tasks')
       .select(`
@@ -36,7 +48,8 @@ export default function PMPlannerPDFExport({ user, disabled, onExportStart, onEx
             full_name
           )
         )
-      `);
+      `)
+      .eq('pm_plan_id', latestPlan.id);
     
     if (error) {
       throw new Error(`Database error: ${error.message}`);
