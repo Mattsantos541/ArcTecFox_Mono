@@ -55,7 +55,7 @@ function AdminMenu({ adminCompanies = [] }) {
         className="flex items-center px-3 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-50 rounded-md transition-colors"
         title={`Admin for: ${companyNames}`}
       >
-        Admin
+        Menu
         <svg className="ml-1 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
         </svg>
@@ -78,6 +78,18 @@ function AdminMenu({ adminCompanies = [] }) {
               className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 font-medium"
             >
               Dashboard
+            </button>
+            <button
+              onClick={() => handleNavigation('/terms-of-service')}
+              className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+            >
+              Terms of Service
+            </button>
+            <button
+              onClick={() => handleNavigation('/privacy-policy')}
+              className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+            >
+              Privacy Policy
             </button>
             <div className="border-t border-gray-200 my-1"></div>
             <button
