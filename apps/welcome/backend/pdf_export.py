@@ -6,6 +6,8 @@ from reportlab.lib import colors
 from reportlab.pdfgen import canvas
 from reportlab.platypus.flowables import Flowable
 from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
+from reportlab.platypus.doctemplate import PageTemplate, BaseDocTemplate
+from reportlab.platypus.frames import Frame
 import json
 from datetime import datetime
 import re
@@ -25,6 +27,37 @@ COLORS = {
     'white': colors.white,
     'black': colors.black
 }
+
+class NumberedCanvas(canvas.Canvas):
+    """Custom canvas that adds page numbering"""
+    def __init__(self, *args, **kwargs):
+        canvas.Canvas.__init__(self, *args, **kwargs)
+        self._saved_page_states = []
+
+    def showPage(self):
+        self._saved_page_states.append(dict(self.__dict__))
+        self._startPage()
+
+    def save(self):
+        """Add page numbers to each page"""
+        num_pages = len(self._saved_page_states)
+        for (page_num, page_state) in enumerate(self._saved_page_states):
+            self.__dict__.update(page_state)
+            self.draw_page_number(page_num + 1, num_pages)
+            canvas.Canvas.showPage(self)
+        canvas.Canvas.save(self)
+
+    def draw_page_number(self, page_num, total_pages):
+        """Draw page number in format 'X of Y' at bottom center"""
+        self.setFont("Helvetica", 9)
+        self.setFillColor(colors.Color(100/255, 100/255, 100/255))
+        # Get current page width (works for both portrait and landscape)
+        page_width = self._pagesize[0]
+        page_text = f"{page_num} of {total_pages}"
+        text_width = self.stringWidth(page_text, "Helvetica", 9)
+        x = (page_width - text_width) / 2
+        y = 0.3 * inch
+        self.drawString(x, y, page_text)
 
 class RoundedTableWrapper(Flowable):
     """A simple wrapper that draws a rounded rectangle background with a table on top"""
@@ -114,6 +147,69 @@ def process_instructions(instructions):
         print(f"Error processing instructions: {e}")
         return [str(instructions) if instructions else 'No instructions provided']
 
+def create_signature_section(story, styles):
+    """Create signature section with Completed by and Confirmed by fields"""
+    # Add some space before signature section
+    story.append(Spacer(1, 20))
+    
+    # Signature section title
+    signature_title = Paragraph(
+        "<b>Signatures</b>",
+        ParagraphStyle(
+            'SignatureTitle',
+            parent=styles['Heading2'],
+            fontSize=12,
+            textColor=colors.black,
+            spaceAfter=10
+        )
+    )
+    story.append(signature_title)
+    
+    # Create signature fields
+    signature_style = ParagraphStyle(
+        'SignatureStyle',
+        parent=styles['Normal'],
+        fontSize=10,
+        textColor=colors.black,
+        leftIndent=0,
+        spaceAfter=0
+    )
+    
+    # Completed by section
+    signature_data = [
+        [
+            Paragraph("<b>Completed by:</b>", signature_style),
+            Paragraph("<b>Confirmed by:</b>", signature_style)
+        ],
+        [
+            Paragraph("Name: _________________________", signature_style),
+            Paragraph("Name: _________________________", signature_style)
+        ],
+        [
+            Paragraph("Signature: _________________________", signature_style),
+            Paragraph("Signature: _________________________", signature_style)
+        ],
+        [
+            Paragraph("Date: _________________________", signature_style),
+            Paragraph("Date: _________________________", signature_style)
+        ]
+    ]
+    
+    signature_table = Table(signature_data, colWidths=[3.3*inch, 3.3*inch])
+    signature_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.white),
+        ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 8),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+        ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ('GRID', (0, 0), (-1, -1), 1, colors.Color(149/255, 165/255, 166/255)),
+    ]))
+    
+    story.append(signature_table)
+
 def export_maintenance_task_to_pdf(task, output_path=None):
     """Generate PDF export for single maintenance task"""
     
@@ -122,7 +218,7 @@ def export_maintenance_task_to_pdf(task, output_path=None):
         temp_fd, output_path = tempfile.mkstemp(suffix='.pdf')
         os.close(temp_fd)
     
-    doc = SimpleDocTemplate(output_path, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.5*inch, leftMargin=1*inch, rightMargin=1*inch)
+    doc = SimpleDocTemplate(output_path, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.75*inch, leftMargin=1*inch, rightMargin=1*inch)
     styles = getSampleStyleSheet()
     story = []
     
@@ -373,8 +469,11 @@ def export_maintenance_task_to_pdf(task, output_path=None):
     footer_text = f"Generated on: {datetime.now().strftime('%m/%d/%Y')} | Task ID: {task.get('id', 'N/A')}"
     story.append(Paragraph(footer_text, footer_style))
     
-    # Build PDF
-    doc.build(story)
+    # Add signature section
+    create_signature_section(story, styles)
+    
+    # Build PDF with numbered canvas
+    doc.build(story, canvasmaker=NumberedCanvas)
     return output_path
 
 def export_pm_plans_data_to_pdf(data, output_path=None):
@@ -385,7 +484,7 @@ def export_pm_plans_data_to_pdf(data, output_path=None):
         temp_fd, output_path = tempfile.mkstemp(suffix='.pdf')
         os.close(temp_fd)
     
-    doc = SimpleDocTemplate(output_path, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.5*inch, leftMargin=1*inch, rightMargin=1*inch)
+    doc = SimpleDocTemplate(output_path, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.75*inch, leftMargin=1*inch, rightMargin=1*inch)
     styles = getSampleStyleSheet()
     story = []
     
@@ -646,8 +745,11 @@ def export_pm_plans_data_to_pdf(data, output_path=None):
     footer_text = f"Generated on: {datetime.now().strftime('%m/%d/%Y')} | PM Plans Export ({len(data)} tasks)"
     story.append(Paragraph(footer_text, footer_style))
     
-    # Build PDF
-    doc.build(story)
+    # Add signature section
+    create_signature_section(story, styles)
+    
+    # Build PDF with numbered canvas
+    doc.build(story, canvasmaker=NumberedCanvas)
     return output_path
 
 def export_assets_data_to_pdf(data, output_path=None):
@@ -658,7 +760,7 @@ def export_assets_data_to_pdf(data, output_path=None):
         temp_fd, output_path = tempfile.mkstemp(suffix='.pdf')
         os.close(temp_fd)
     
-    doc = SimpleDocTemplate(output_path, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.5*inch)
+    doc = SimpleDocTemplate(output_path, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.75*inch)
     styles = getSampleStyleSheet()
     story = []
     
@@ -710,8 +812,11 @@ def export_assets_data_to_pdf(data, output_path=None):
         story.append(table)
         story.append(Spacer(1, 15))
     
-    # Build PDF
-    doc.build(story)
+    # Add signature section
+    create_signature_section(story, styles)
+    
+    # Build PDF with numbered canvas
+    doc.build(story, canvasmaker=NumberedCanvas)
     return output_path
 
 def export_detailed_pm_plans_to_pdf(plans, output_path=None):
@@ -722,7 +827,7 @@ def export_detailed_pm_plans_to_pdf(plans, output_path=None):
         temp_fd, output_path = tempfile.mkstemp(suffix='.pdf')
         os.close(temp_fd)
     
-    doc = SimpleDocTemplate(output_path, pagesize=landscape(letter), topMargin=0.5*inch, bottomMargin=0.5*inch)
+    doc = SimpleDocTemplate(output_path, pagesize=landscape(letter), topMargin=0.5*inch, bottomMargin=0.75*inch)
     styles = getSampleStyleSheet()
     story = []
     
@@ -776,6 +881,9 @@ def export_detailed_pm_plans_to_pdf(plans, output_path=None):
         
         story.append(Spacer(1, 15))
     
-    # Build PDF
-    doc.build(story)
+    # Add signature section
+    create_signature_section(story, styles)
+    
+    # Build PDF with numbered canvas
+    doc.build(story, canvasmaker=NumberedCanvas)
     return output_path
