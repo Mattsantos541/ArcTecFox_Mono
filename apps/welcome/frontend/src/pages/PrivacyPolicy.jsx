@@ -2,122 +2,154 @@ import React from 'react';
 
 function PrivacyPolicy() {
   return (
-    <div className="max-w-4xl mx-auto p-8 bg-white rounded-lg shadow-md">
-      <h1 className="text-3xl font-bold text-gray-800 mb-6">Privacy Policy</h1>
-      
-      <div className="space-y-6 text-gray-700">
-        <section>
-          <h2 className="text-xl font-semibold mb-3">1. Introduction</h2>
-          <p>
-            This Privacy Policy describes how we collect, use, and protect your personal information when you use our AI-powered maintenance planning platform and services.
-          </p>
-        </section>
+    <div className="prose max-w-4xl mx-auto p-8">
+      <div className="mb-12">
+        <h1 className="text-4xl font-bold mb-4">Privacy Policy for ArcTecFox</h1>
+        <p className="text-lg text-gray-600">
+          <strong>Effective Date:</strong> July 2025
+        </p>
+      </div>
 
+      <div className="space-y-12">
         <section>
-          <h2 className="text-xl font-semibold mb-3">2. Information We Collect</h2>
-          <div className="space-y-3">
-            <div>
-              <h3 className="font-medium">Personal Information:</h3>
-              <p>Name, email address, contact information, and account credentials.</p>
-            </div>
-            <div>
-              <h3 className="font-medium">Usage Data:</h3>
-              <p>Information about how you use our service, including maintenance plans created, equipment data, and system interactions.</p>
-            </div>
-            <div>
-              <h3 className="font-medium">Technical Information:</h3>
-              <p>IP address, browser type, device information, and cookies.</p>
-            </div>
+          <h2 className="text-2xl font-semibold mb-6">1. Introduction</h2>
+          <div className="ml-8">
+            <p className="text-gray-700 leading-relaxed">
+              ArcTecFox ("we", "our", or "us") is committed to protecting your privacy. This Privacy Policy outlines the types of information we collect, how we use it, how it may be shared, and your rights with respect to your data.
+            </p>
           </div>
         </section>
 
         <section>
-          <h2 className="text-xl font-semibold mb-3">3. How We Use Your Information</h2>
-          <ul className="list-disc pl-6 space-y-2">
-            <li>To provide and maintain our service</li>
-            <li>To notify you about changes to our service</li>
-            <li>To provide customer support</li>
-            <li>To gather analysis or valuable information to improve our service</li>
-            <li>To monitor the usage of our service</li>
-            <li>To detect, prevent and address technical issues</li>
-          </ul>
+          <h2 className="text-2xl font-semibold mb-6">2. Information We Collect</h2>
+          <div className="ml-8">
+            <ul className="space-y-3 text-gray-700">
+              <li>• Contact details: full name, email address, company name</li>
+              <li>• Account login credentials and user settings</li>
+              <li>• Asset and maintenance-related data submitted by users</li>
+              <li>• Log data such as IP address, browser type, and device information</li>
+              <li>• Usage behavior within the ArcTecFox platform</li>
+              <li>• Third-party service connection data (e.g., eMaint CMMS sync info)</li>
+            </ul>
+          </div>
         </section>
 
         <section>
-          <h2 className="text-xl font-semibold mb-3">4. Data Sharing and Disclosure</h2>
-          <p>
-            We do not sell, trade, or otherwise transfer your personal information to third parties without your consent, except as described in this policy. We may share information in the following circumstances:
-          </p>
-          <ul className="list-disc pl-6 space-y-2 mt-3">
-            <li>With service providers who assist us in operating our website</li>
-            <li>To comply with legal obligations</li>
-            <li>To protect and defend our rights and property</li>
-            <li>With your consent</li>
-          </ul>
+          <h2 className="text-2xl font-semibold mb-6">3. Methods of Collection</h2>
+          <div className="ml-8">
+            <ul className="space-y-3 text-gray-700">
+              <li>• User submissions through forms, uploads, and settings</li>
+              <li>• Automated collection through cookies and similar technologies</li>
+              <li>• Authentication systems including Google OAuth</li>
+              <li>• Data from connected integrations and services</li>
+            </ul>
+          </div>
         </section>
 
         <section>
-          <h2 className="text-xl font-semibold mb-3">5. Data Security</h2>
-          <p>
-            We implement appropriate technical and organizational measures to protect your personal information against unauthorized access, alteration, disclosure, or destruction.
-          </p>
+          <h2 className="text-2xl font-semibold mb-6">4. Purpose of Data Collection</h2>
+          <div className="ml-8">
+            <ul className="space-y-3 text-gray-700">
+              <li>• To provide, operate, and maintain the ArcTecFox platform</li>
+              <li>• To generate preventive maintenance plans and analytics</li>
+              <li>• To personalize the user experience</li>
+              <li>• To communicate with users about system updates, releases, and support</li>
+              <li>• To ensure the security and integrity of our systems</li>
+              <li>• To comply with legal obligations and client contracts</li>
+            </ul>
+          </div>
         </section>
 
         <section>
-          <h2 className="text-xl font-semibold mb-3">6. Data Retention</h2>
-          <p>
-            We retain your personal information only for as long as necessary to fulfill the purposes for which it was collected, including for the purposes of satisfying any legal, regulatory, tax, accounting, or reporting requirements.
-          </p>
+          <h2 className="text-2xl font-semibold mb-6">5. Data Sharing and Disclosure</h2>
+          <div className="ml-8">
+            <p className="text-gray-700 leading-relaxed mb-4">
+              We may share personal data only as needed with:
+            </p>
+            <ul className="space-y-3 text-gray-700">
+              <li>• Cloud infrastructure providers (e.g., Supabase, Render, Vercel)</li>
+              <li>• Authentication and identity services (e.g., Google OAuth)</li>
+              <li>• Analytics providers (e.g., Google Analytics)</li>
+              <li>• Authorized client integrations (e.g., CMMS platforms)</li>
+              <li>• Legal authorities if required under law</li>
+            </ul>
+          </div>
         </section>
 
         <section>
-          <h2 className="text-xl font-semibold mb-3">7. Your Rights</h2>
-          <p>
-            Depending on your location, you may have certain rights regarding your personal information, including:
-          </p>
-          <ul className="list-disc pl-6 space-y-2 mt-3">
-            <li>The right to access your personal information</li>
-            <li>The right to rectification of inaccurate data</li>
-            <li>The right to erasure of your personal information</li>
-            <li>The right to restrict processing</li>
-            <li>The right to data portability</li>
-            <li>The right to object to processing</li>
-          </ul>
+          <h2 className="text-2xl font-semibold mb-6">6. Cookies and Tracking Technologies</h2>
+          <div className="ml-8">
+            <p className="text-gray-700 leading-relaxed">
+              We use essential and analytical cookies to improve platform performance and understand usage trends. You can control cookie settings through your browser.
+            </p>
+          </div>
         </section>
 
         <section>
-          <h2 className="text-xl font-semibold mb-3">8. Cookies and Tracking</h2>
-          <p>
-            We use cookies and similar tracking technologies to track activity on our service and store certain information. You can instruct your browser to refuse all cookies or to indicate when a cookie is being sent.
-          </p>
+          <h2 className="text-2xl font-semibold mb-6">7. Data Retention</h2>
+          <div className="ml-8">
+            <p className="text-gray-700 leading-relaxed">
+              We retain data only for as long as necessary to fulfill its intended purpose or comply with our legal obligations. Users may request data deletion at any time.
+            </p>
+          </div>
         </section>
 
         <section>
-          <h2 className="text-xl font-semibold mb-3">9. Children's Privacy</h2>
-          <p>
-            Our service is not intended for use by children under the age of 13. We do not knowingly collect personal information from children under 13.
-          </p>
+          <h2 className="text-2xl font-semibold mb-6">8. Data Security</h2>
+          <div className="ml-8">
+            <ul className="space-y-3 text-gray-700">
+              <li>• Encryption of data in transit and at rest</li>
+              <li>• Role-Based Access Control (RBAC)</li>
+              <li>• Row-Level Security (RLS) for multi-tenant separation</li>
+              <li>• Audit logs of access, actions, and sync activity</li>
+            </ul>
+          </div>
         </section>
 
         <section>
-          <h2 className="text-xl font-semibold mb-3">10. Changes to This Privacy Policy</h2>
-          <p>
-            We may update our Privacy Policy from time to time. We will notify you of any changes by posting the new Privacy Policy on this page and updating the "Last updated" date.
-          </p>
+          <h2 className="text-2xl font-semibold mb-6">9. Your Rights</h2>
+          <div className="ml-8">
+            <p className="text-gray-700 leading-relaxed mb-4">
+              Depending on your jurisdiction, you may have the right to:
+            </p>
+            <ul className="space-y-3 text-gray-700">
+              <li>• Access the data we hold about you</li>
+              <li>• Correct inaccurate information</li>
+              <li>• Request deletion or restriction of processing</li>
+              <li>• Withdraw consent or object to data processing</li>
+            </ul>
+          </div>
         </section>
 
         <section>
-          <h2 className="text-xl font-semibold mb-3">11. Contact Us</h2>
-          <p>
-            If you have any questions about this Privacy Policy, please contact us through the appropriate channels provided on our website.
-          </p>
+          <h2 className="text-2xl font-semibold mb-6">10. International Transfers</h2>
+          <div className="ml-8">
+            <p className="text-gray-700 leading-relaxed">
+              We may transfer your data to systems located in other countries with appropriate safeguards in place (e.g., standard contractual clauses).
+            </p>
+          </div>
         </section>
-      </div>
-      
-      <div className="mt-8 pt-6 border-t border-gray-200">
-        <p className="text-sm text-gray-600">
-          Last updated: {new Date().toLocaleDateString()}
-        </p>
+
+        <section>
+          <h2 className="text-2xl font-semibold mb-6">11. Changes to This Privacy Policy</h2>
+          <div className="ml-8">
+            <p className="text-gray-700 leading-relaxed">
+              We may update this Privacy Policy periodically. If we make material changes, we will notify you via email or a prominent notice on our platform. The effective date will always be displayed above.
+            </p>
+          </div>
+        </section>
+
+        <section>
+          <h2 className="text-2xl font-semibold mb-6">12. Contact Us</h2>
+          <div className="ml-8">
+            <p className="text-gray-700 leading-relaxed">
+              For questions or requests regarding your privacy, please email: 
+              <a href="mailto:support@arctecfox.com" className="text-blue-600 hover:text-blue-800 font-medium ml-1">
+                support@arctecfox.com
+              </a>
+            </p>
+          </div>
+        </section>
       </div>
     </div>
   );
