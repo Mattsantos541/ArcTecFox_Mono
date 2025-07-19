@@ -10,7 +10,7 @@ export default function PMPlannerOpen({ onGenerate }) {
     additional_context: "",
     environment: "",
     date_of_plan_start: "",
-    // ❌ Removed: email, company (they go in the modal)
+    // email and company will be collected after
   });
 
   const [loading, setLoading] = useState(false);
@@ -24,14 +24,30 @@ export default function PMPlannerOpen({ onGenerate }) {
     e.preventDefault();
     setLoading(true);
     try {
-      console.log("📨 Submitting PM Planner (pre-lead capture):", formData);
-      if (onGenerate) onGenerate(formData); // triggers LeadCaptureModal
+      console.log("📨 Submitting PM Planner:", formData);
+      if (onGenerate) onGenerate(formData);
     } catch (err) {
       console.error("❌ Failed to generate plan", err);
     } finally {
       setLoading(false);
     }
   };
+
+  // Calculate filled fields (excluding email & company)
+  const fieldKeys = [
+    "name",
+    "model",
+    "serial",
+    "category",
+    "hours",
+    "additional_context",
+    "environment",
+    "date_of_plan_start",
+  ];
+  const filledFields = fieldKeys.filter(
+    (key) => formData[key] && formData[key].trim() !== ""
+  );
+  const progress = Math.round((filledFields.length / fieldKeys.length) * 100);
 
   return (
     <form
@@ -112,6 +128,22 @@ export default function PMPlannerOpen({ onGenerate }) {
         onChange={handleChange}
         rows={3}
       />
+
+      {/* Progress Bar (only show after 2+ fields filled) */}
+      {filledFields.length >= 2 && (
+        <div className="w-full mb-4">
+          <p className="text-sm text-gray-700 mb-1">
+            You almost have your preventive maintenance plan
+            {formData.name ? ` for "${formData.name}"` : ""}.
+          </p>
+          <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+            <div
+              className="h-2 bg-blue-600 rounded-full transition-all duration-500 ease-in-out"
+              style={{ width: `${progress}%` }}
+            ></div>
+          </div>
+        </div>
+      )}
 
       <button
         type="submit"
