@@ -1,7 +1,9 @@
 import { Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from '../hooks/useAuth';
+import { useToSCheck } from '../hooks/useToSCheck';
 import { AuthLoading } from '../components/loading/LoadingStates';
 import { isUserAdmin, getUserAdminCompanies } from '../api';
+import ToSAcceptanceModal from '../components/ToSAcceptanceModal';
 import { useState, useEffect, useRef, useCallback } from 'react';
 
 // GoogleLoginButton Component
@@ -216,6 +218,27 @@ function AuthHeader() {
 }
 
 export default function MainLayout() {
+  const { user, logout } = useAuth();
+  const { needsToSAcceptance, loading: tosLoading, markToSAsAccepted } = useToSCheck(user);
+
+  const handleToSAccept = () => {
+    markToSAsAccepted();
+  };
+
+  const handleToSReject = async () => {
+    // Log out the user if they reject the Terms of Service
+    await logout();
+  };
+
+  // Show loading while checking ToS status
+  if (user && tosLoading) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+        <AuthLoading />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-100 text-gray-900 font-sans">
       {/* Auth header stays at top of every page */}
@@ -247,6 +270,15 @@ export default function MainLayout() {
       <div className="max-w-6xl mx-auto px-4 py-8">
         <Outlet />
       </div>
+
+      {/* Terms of Service Modal - shown only to authenticated users who haven't accepted */}
+      {user && needsToSAcceptance && (
+        <ToSAcceptanceModal
+          user={user}
+          onAccept={handleToSAccept}
+          onReject={handleToSReject}
+        />
+      )}
     </div>
   );
 }

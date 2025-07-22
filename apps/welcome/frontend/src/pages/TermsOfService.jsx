@@ -98,7 +98,16 @@ function TermsOfService() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold mb-6">8. Account Termination</h2>
+          <h2 className="text-2xl font-semibold mb-6">8. AI and Automation Disclaimer</h2>
+          <div className="ml-8">
+            <p className="text-gray-700 leading-relaxed">
+              ArcTecFox uses artificial intelligence to assist with generating preventive maintenance plans. These outputs are generated based on available inputs and models and are provided "as-is" without warranties of accuracy or fitness.
+            </p>
+          </div>
+        </section>
+
+        <section>
+          <h2 className="text-2xl font-semibold mb-6">9. Account Termination</h2>
           <div className="ml-8">
             <p className="text-gray-700 leading-relaxed">
               We reserve the right to suspend or terminate your access to our Service at any time if you breach these Terms, misuse the Service, or engage in activities that could harm our platform or other users. You may terminate your account at any time by contacting us at support@arctecfox.com. Upon termination, your access to the Service will cease, and we may delete your account data in accordance with our data retention policies.
@@ -107,7 +116,7 @@ function TermsOfService() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold mb-6">9. Service Modifications and Availability</h2>
+          <h2 className="text-2xl font-semibold mb-6">10. Service Modifications and Availability</h2>
           <div className="ml-8">
             <p className="text-gray-700 leading-relaxed">
               We reserve the right to modify, update, suspend, or discontinue any part of our Service at any time, with or without notice. We may perform maintenance, implement new features, or make changes to improve functionality and security. While we strive to provide uninterrupted service, we cannot guarantee continuous availability and are not liable for any service interruptions.
@@ -116,7 +125,7 @@ function TermsOfService() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold mb-6">10. Disclaimers and Warranties</h2>
+          <h2 className="text-2xl font-semibold mb-6">11. Disclaimers and Warranties</h2>
           <div className="ml-8">
             <p className="text-gray-700 leading-relaxed">
               The ArcTecFox platform is provided "as is" and "as available" without warranties of any kind, either express or implied. We do not guarantee uptime, accuracy of results, or the completeness of data. We disclaim all warranties, including but not limited to implied warranties of merchantability, fitness for a particular purpose, and non-infringement. Your use of our Service is at your own risk.
@@ -125,16 +134,16 @@ function TermsOfService() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold mb-6">11. Limitation of Liability</h2>
+          <h2 className="text-2xl font-semibold mb-6">12. Limitation of Liability</h2>
           <div className="ml-8">
             <p className="text-gray-700 leading-relaxed">
-              To the fullest extent permitted by applicable law, ArcTecFox Inc. shall not be liable for any indirect, incidental, special, consequential, or punitive damages, including but not limited to loss of profits, data, use, goodwill, or other intangible losses resulting from your use of or inability to use our Service. Our total liability to you for all claims shall not exceed the amount paid by you to ArcTecFox in the twelve months preceding the claim.
+              To the maximum extent permitted by law, ArcTecFox shall not be liable for indirect, incidental, special, consequential, or punitive damages, or for any loss of profits or revenue, whether incurred directly or indirectly.
             </p>
           </div>
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold mb-6">12. Changes to These Terms</h2>
+          <h2 className="text-2xl font-semibold mb-6">13. Changes to These Terms</h2>
           <div className="ml-8">
             <p className="text-gray-700 leading-relaxed">
               We may revise and update these Terms of Service from time to time to reflect changes in our Service, legal requirements, or business practices. We will notify you of material changes via email or through a prominent notice on our platform. Your continued use of the Service after such changes constitutes your acceptance of the revised Terms. We encourage you to review these Terms periodically.
@@ -143,7 +152,7 @@ function TermsOfService() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold mb-6">13. Governing Law and Dispute Resolution</h2>
+          <h2 className="text-2xl font-semibold mb-6">14. Governing Law and Dispute Resolution</h2>
           <div className="ml-8">
             <p className="text-gray-700 leading-relaxed">
               These Terms are governed by and construed in accordance with the laws of the State of Delaware, United States, without regard to conflict of law principles. Any disputes arising out of or relating to these Terms or your use of our Service shall be resolved through binding arbitration in accordance with the rules of the American Arbitration Association, except that either party may seek injunctive relief in court for intellectual property violations.
@@ -152,7 +161,7 @@ function TermsOfService() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold mb-6">14. Contact Information</h2>
+          <h2 className="text-2xl font-semibold mb-6">15. Contact Information</h2>
           <div className="ml-8">
             <p className="text-gray-700 leading-relaxed">
               For questions about these Terms of Service, technical support, or other inquiries, please contact us at:
