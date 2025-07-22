@@ -2,7 +2,7 @@ import { Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from '../hooks/useAuth';
 import { useToSCheck } from '../hooks/useToSCheck';
 import { AuthLoading } from '../components/loading/LoadingStates';
-import { isUserAdmin, getUserAdminCompanies } from '../api';
+import { isUserSiteAdmin, getUserAdminSites } from '../api';
 import ToSAcceptanceModal from '../components/ToSAcceptanceModal';
 import { useState, useEffect, useRef, useCallback } from 'react';
 
@@ -35,7 +35,7 @@ function GoogleLoginButton({ className = "" }) {
 }
 
 // Admin Menu Component
-function AdminMenu({ adminCompanies = [] }) {
+function AdminMenu({ adminSites = [] }) {
   const [isOpen, setIsOpen] = useState(false);
   const navigate = useNavigate();
 
@@ -44,10 +44,10 @@ function AdminMenu({ adminCompanies = [] }) {
     setIsOpen(false);
   };
 
-  const companyNames = adminCompanies.map(ac => ac.companies.name).join(', ');
-  const roleNames = [...new Set(adminCompanies.map(ac => ac.roles.name))].join(', ');
-  const isSuperAdmin = adminCompanies.some(ac => ac.roles.name === 'super_admin');
-  const isCompanyAdmin = adminCompanies.some(ac => ac.roles.name === 'company_admin');
+  const siteNames = adminSites.map(ac => `${ac.sites?.companies?.name || 'Unknown Company'} - ${ac.sites?.name || 'Unknown Site'}`).join(', ');
+  const roleNames = [...new Set(adminSites.map(ac => ac.roles?.name).filter(Boolean))].join(', ');
+  const isSuperAdmin = adminSites.some(ac => ac.roles?.name === 'super_admin');
+  const isCompanyAdmin = adminSites.some(ac => ac.roles?.name === 'company_admin');
   const canManageCompanies = isSuperAdmin || isCompanyAdmin;
 
   return (
@@ -55,7 +55,7 @@ function AdminMenu({ adminCompanies = [] }) {
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center px-3 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-50 rounded-md transition-colors"
-        title={`Admin for: ${companyNames}`}
+        title={`Admin for: ${siteNames}`}
       >
         Menu
         <svg className="ml-1 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -65,12 +65,12 @@ function AdminMenu({ adminCompanies = [] }) {
       
       {isOpen && (
         <div className="absolute right-0 mt-2 w-64 bg-white rounded-md shadow-lg border border-gray-200 z-10">
-          {adminCompanies.length > 0 && (
+          {adminSites.length > 0 && (
             <div className="px-4 py-2 bg-gray-50 border-b border-gray-200">
               <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">Admin Access</div>
               <div className="text-sm text-gray-700 mt-1">
                 <div className="font-medium">{roleNames}</div>
-                <div className="text-xs text-gray-500 truncate">{companyNames}</div>
+                <div className="text-xs text-gray-500 truncate">{siteNames}</div>
               </div>
             </div>
           )}
@@ -105,7 +105,7 @@ function AdminMenu({ adminCompanies = [] }) {
                 onClick={() => handleNavigation('/admin/companies')}
                 className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
               >
-                Manage Companies
+                Manage Companies/Sites
               </button>
             )}
             {isSuperAdmin && (
@@ -127,7 +127,7 @@ function AdminMenu({ adminCompanies = [] }) {
 function AuthHeader() {
   const { user, logout, loading } = useAuth();
   const [isAdmin, setIsAdmin] = useState(false);
-  const [adminCompanies, setAdminCompanies] = useState([]);
+  const [adminSites, setAdminSites] = useState([]);
   const [adminCheckLoading, setAdminCheckLoading] = useState(false);
   const lastCheckedUserId = useRef(null);
 
@@ -137,17 +137,17 @@ function AuthHeader() {
       lastCheckedUserId.current = user.id;
       
       try {
-        const [adminStatus, userAdminCompanies] = await Promise.all([
-          isUserAdmin(user.id),
-          getUserAdminCompanies(user.id)
+        const [adminStatus, userAdminSites] = await Promise.all([
+          isUserSiteAdmin(user.id),
+          getUserAdminSites(user.id)
         ]);
         
         setIsAdmin(adminStatus);
-        setAdminCompanies(userAdminCompanies);
+        setAdminSites(userAdminSites);
       } catch (error) {
         console.error('Error checking admin status:', error);
         setIsAdmin(false);
-        setAdminCompanies([]);
+        setAdminSites([]);
         // Reset the ref so we can retry later
         lastCheckedUserId.current = null;
       } finally {
@@ -156,7 +156,7 @@ function AuthHeader() {
     } else if (!user?.id) {
       // Reset state when user logs out
       setIsAdmin(false);
-      setAdminCompanies([]);
+      setAdminSites([]);
       lastCheckedUserId.current = null;
     }
   }, [user?.id]);
@@ -189,7 +189,7 @@ function AuthHeader() {
             </div>
           </div>
           <div className="flex items-center space-x-4">
-            {!adminCheckLoading && isAdmin && <AdminMenu adminCompanies={adminCompanies} />}
+            {!adminCheckLoading && isAdmin && <AdminMenu adminSites={adminSites} />}
             <button
               onClick={logout}
               className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm"

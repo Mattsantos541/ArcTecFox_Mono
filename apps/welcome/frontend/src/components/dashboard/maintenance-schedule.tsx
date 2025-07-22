@@ -17,32 +17,19 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
 import { useAuth } from "../../hooks/useAuth"
-// Using ReportLab Python backend for PDF generation
+import { supabase, isUserSiteAdmin, getUserAdminSites } from "../../api" // Import the shared client
 
 export default function MaintenanceSchedule() {
-  // Initialize Supabase client once
-  const [supabaseClient, setSupabaseClient] = useState(null);
-  
-  useEffect(() => {
-    const initSupabase = async () => {
-      const { createClient } = await import("@supabase/supabase-js");
-      const client = createClient(
-        import.meta.env.VITE_SUPABASE_URL,
-        import.meta.env.VITE_SUPABASE_ANON_KEY
-      );
-      setSupabaseClient(client);
-    };
-    initSupabase();
-  }, []);
-
+  // Remove the local Supabase client initialization - use the shared one
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
   const [currentMonth, setCurrentMonth] = useState(new Date())
   const [calendarView, setCalendarView] = useState('month') // 'month' or 'single'
   
-// Debug selectedDate changes
+  // Debug selectedDate changes
   useEffect(() => {
     console.log('selectedDate changed:', selectedDate, 'type:', typeof selectedDate);
   }, [selectedDate])
+  
   const [viewMode, setViewMode] = useState("list")
   const [scheduledTasks, setScheduledTasks] = useState([])
   const [loading, setLoading] = useState(true)
@@ -67,7 +54,7 @@ export default function MaintenanceSchedule() {
   const [editedDate, setEditedDate] = useState("")
   const [editedTime, setEditedTime] = useState("")
 
-// Fetch tasks from database
+  // Fetch tasks from database
   const fetchTasks = async () => {
     console.log('=== FETCH TASKS CALLED ===');
     if (!user) return
@@ -77,15 +64,12 @@ export default function MaintenanceSchedule() {
       setLoading(true)
       setError(null)
       
-      console.log('=== ABOUT TO GET SUPABASE CLIENT ===');
+      console.log('=== USING SHARED SUPABASE CLIENT ===');
       
-      if (!supabaseClient) return;
-      const supabase = supabaseClient;
       const { data: { session } } = await supabase.auth.getSession();
       console.log('Current session:', session?.user?.id);
-      console.log('=== USING EXISTING SUPABASE CLIENT ===');
       
-     // Debug: Check current user info
+      // Debug: Check current user info
       try {
         const { data: { user }, error: userError } = await supabase.auth.getUser();
         console.log('=== AUTH DEBUG ===');
@@ -105,6 +89,7 @@ export default function MaintenanceSchedule() {
         console.log('Error in auth debug:', e);
       }
       
+      // FIXED: Use a simpler query that works with your current permissions
       const { data, error } = await supabase
         .from('pm_tasks')
         .select(`
@@ -119,10 +104,12 @@ export default function MaintenanceSchedule() {
               full_name
             )
           )
-        `)
-        // No sorting for now
+        `);
 
-      if (error) throw error
+      if (error) {
+        console.error('Supabase error:', error);
+        throw error;
+      }
 
       // Transform data to match component expectations
       const transformedTasks = data.map(task => ({
@@ -132,9 +119,9 @@ export default function MaintenanceSchedule() {
         date: (task.scheduled_dates && task.scheduled_dates.length > 0) ? task.scheduled_dates[0] : 'No date',
         time: '09:00',
         technician: task.pm_plans?.users?.full_name || 'Unassigned',
-        duration: task.maintenance_interval || 'Unknown',
+        duration: task.est_minutes ? `${task.est_minutes} min` : (task.maintenance_interval || 'Unknown'),
         status: 'Pending',
-        priority: 'Medium',
+        priority: 'High', // Default to High priority for maintenance tasks
         planId: task.pm_plan_id,
         createdByEmail: task.pm_plans?.users?.email,
         notes: task.notes,
@@ -172,34 +159,43 @@ export default function MaintenanceSchedule() {
 
   // Update task in database
   const updateTask = async (taskId, updates) => {
-    // Debug: Check current user info
-      try {
-        const { data: { user }, error: userError } = await supabase.auth.getUser();
-        console.log('=== AUTH DEBUG ===');
-        console.log('Current authenticated user email:', user?.email);
-        console.log('Current authenticated user ID:', user?.id);
-        
-        // Check what's in users table for this email
-        const { data: dbUser } = await supabase
-          .from('users')
-          .select('id, email')
-          .eq('email', user?.email)
-          .single();
-        console.log('Database user record:', dbUser);
-        console.log('IDs match?', user?.id === dbUser?.id);
-        console.log('==================');
-      } catch (e) {
-        console.log('Error getting user:', e);
-      }
+    try {
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      console.log('=== AUTH DEBUG ===');
+      console.log('Current authenticated user email:', user?.email);
+      console.log('Current authenticated user ID:', user?.id);
+      
+      // Check what's in users table for this email
+      const { data: dbUser } = await supabase
+        .from('users')
+        .select('id, email')
+        .eq('email', user?.email)
+        .single();
+      console.log('Database user record:', dbUser);
+      console.log('IDs match?', user?.id === dbUser?.id);
+      console.log('==================');
+      
+      const { data, error } = await supabase
+        .from('pm_tasks')
+        .update(updates)
+        .eq('id', taskId)
+        .select();
+
+      if (error) throw error;
+      
+      // Refresh tasks after successful update
+      await fetchTasks();
+      return { success: true, data };
+    } catch (e) {
+      console.log('Error updating task:', e);
+      return { success: false, error: e.message };
+    }
   }
 
   // Delete task from database
   const deleteTaskFromDB = async (taskId) => {
     try {
-    const supabase = supabaseClient;
-      console.log('=== USING EXISTING SUPABASE CLIENT ===');
-      
-      console.log('=== GOT SUPABASE CLIENT ===');
+      console.log('=== USING SHARED SUPABASE CLIENT ===');
       
       // Debug: Check current user info
       try {
@@ -238,17 +234,16 @@ export default function MaintenanceSchedule() {
   }
 
   // Load data when component mounts
-useEffect(() => {
+  useEffect(() => {
     console.log('=== USE EFFECT TRIGGERED ===');
     console.log('user:', !!user);
-    console.log('supabaseClient:', !!supabaseClient);
-    if (user && supabaseClient) {
+    if (user) {
       console.log('=== CALLING FETCH TASKS FROM USE EFFECT ===');
       fetchTasks()
     } else {
-      console.log('=== NOT CALLING FETCH TASKS - MISSING USER OR CLIENT ===');
+      console.log('=== NOT CALLING FETCH TASKS - MISSING USER ===');
     }
-  }, [user, supabaseClient])
+  }, [user]) // Removed supabaseClient dependency since we're using the shared client
 
   // Calculate weekly view data from real tasks
   const getWeeklyView = () => {
@@ -679,770 +674,757 @@ useEffect(() => {
     <ComponentErrorBoundary name="Maintenance Schedule" fallbackMessage="Unable to load the maintenance schedule. Please try refreshing the page.">
       <TooltipProvider>
         <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold">Maintenance Schedule</h2>
-          <p className="text-muted-foreground">View and manage scheduled maintenance tasks</p>
-        </div>
-        <button
-          onClick={handleCreateNewPlans}
-          className="px-6 py-2 sm:px-8 sm:py-3 rounded-lg font-semibold text-white text-sm sm:text-base bg-blue-600 hover:bg-blue-700 transition-colors flex items-center gap-2"
-        >
-          <CalendarDays className="h-4 w-4" />
-          Generate New Plans
-        </button>
-      </div>
-
-      <Tabs value={viewMode} onValueChange={setViewMode} className="space-y-6">
-        <TabsList>
-          <TabsTrigger value="list">List View</TabsTrigger>
-          <TabsTrigger value="calendar">Calendar View</TabsTrigger>
-          <TabsTrigger value="weekly">Weekly View</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="list" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Scheduled Maintenance Tasks ({scheduledTasks.length})</CardTitle>
-              <CardDescription>All upcoming and recent maintenance activities</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {scheduledTasks.length === 0 ? (
-                <div className="text-center py-8">
-                  <CalendarDays className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                  <p className="text-lg font-medium text-gray-600">No maintenance tasks found</p>
-                  <p className="text-gray-500 mb-4">Create your first maintenance plan to get started</p>
-                  <button
-                    onClick={handleCreateNewPlans}
-                    className="px-6 py-2 sm:px-8 sm:py-3 rounded-lg font-semibold text-white text-sm sm:text-base bg-blue-600 hover:bg-blue-700 transition-colors"
-                  >
-                    Generate New Plans
-                  </button>
-                </div>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Asset</TableHead>
-                      <TableHead>Task</TableHead>
-                      <TableHead>Date & Time</TableHead>
-                      <TableHead>Technician</TableHead>
-                      <TableHead>Duration</TableHead>
-                      <TableHead>Priority</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {scheduledTasks.map((task) => (
-                      <TableRow key={task.id}>
-                        <TableCell className="font-medium">{task.asset}</TableCell>
-                        <TableCell>{task.task}</TableCell>
-                        <TableCell>
-                          <div className="space-y-1">
-                            <div>{task.date}</div>
-                            <div className="text-sm text-muted-foreground">{task.time}</div>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center space-x-2">
-                            <User className="h-4 w-4" />
-                            <span>{task.technician}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center space-x-2">
-                            <Clock className="h-4 w-4" />
-                            <span>{task.duration}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={getPriorityColor(task.priority)}>{task.priority}</Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center space-x-2">
-                            {getStatusIcon(task.status)}
-                            <Badge variant={getStatusColor(task.status)}>{task.status}</Badge>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center space-x-1">
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button variant="ghost" size="sm" onClick={() => handleViewTask(task)}>
-                                  <Eye className="h-4 w-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>View task details</p>
-                              </TooltipContent>
-                            </Tooltip>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button variant="ghost" size="sm" onClick={() => handleEditTask(task)}>
-                                  <Edit className="h-4 w-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Edit task</p>
-                              </TooltipContent>
-                            </Tooltip>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button variant="ghost" size="sm" onClick={() => handleDeleteTask(task)}>
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Delete task</p>
-                              </TooltipContent>
-                            </Tooltip>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button variant="ghost" size="sm" onClick={() => handleExportTask(task)}>
-                                  <Download className="h-4 w-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Export task</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="calendar" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between">
-                <span>Calendar View</span>
-                <div className="flex items-center space-x-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => navigateMonth(-1)}
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
-                  <span className="text-lg font-semibold min-w-[180px] text-center">
-                    {formatMonthYear(currentMonth)}
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => navigateMonth(1)}
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </div>
-              </CardTitle>
-              <CardDescription>View all scheduled maintenance tasks for the month</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="w-full">
-                {/* Calendar Header */}
-                <div className="grid grid-cols-7 gap-1 mb-2">
-                  {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
-                    <div key={day} className="p-2 text-center text-sm font-medium text-muted-foreground">
-                      {day}
-                    </div>
-                  ))}
-                </div>
-                
-                {/* Calendar Grid */}
-                <div className="grid grid-cols-7 gap-1">
-                  {getDaysInMonth(currentMonth).map((day, index) => {
-                    if (day === null) {
-                      return <div key={`empty-${index}`} className="p-2 min-h-[100px]" />
-                    }
-                    
-                    const cellDate = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day)
-                    const tasksForDay = getTasksForDate(cellDate)
-                    const isToday = cellDate.toDateString() === new Date().toDateString()
-                    const isSelected = cellDate.toDateString() === new Date(selectedDate + 'T12:00:00').toDateString()
-                    
-                    return (
-                      <div
-                        key={day}
-                        className={`border p-2 min-h-[100px] cursor-pointer transition-colors ${
-                          isToday ? 'bg-blue-50 border-blue-200' : 'hover:bg-gray-50'
-                        } ${isSelected ? 'ring-2 ring-blue-500' : ''}`}
-                        onClick={() => setSelectedDate(cellDate.toISOString().split('T')[0])}
-                      >
-                        <div className="font-medium text-sm mb-1">{day}</div>
-                        <div className="space-y-1">
-                          {tasksForDay.slice(0, 3).map((task) => (
-                            <div
-                              key={task.id}
-                              className={`text-xs p-1 rounded text-white truncate ${
-                                task.priority === 'High' ? 'bg-red-500' :
-                                task.priority === 'Medium' ? 'bg-yellow-500' :
-                                'bg-green-500'
-                              }`}
-                              title={`${task.asset} - ${task.task}`}
-                            >
-                              {task.asset}
-                            </div>
-                          ))}
-                          {tasksForDay.length > 3 && (
-                            <div className="text-xs text-muted-foreground">
-                              +{tasksForDay.length - 3} more
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          
-          {/* Selected Date Details */}
-          {selectedDate && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Tasks for {new Date(selectedDate + 'T12:00:00').toLocaleDateString()}</CardTitle>
-                <CardDescription>Scheduled maintenance activities</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {scheduledTasks
-                    .filter((task) => task.date === selectedDate)
-                    .map((task) => (
-                      <div key={task.id} className="border rounded-lg p-4">
-                        <div className="flex items-center justify-between mb-2">
-                          <h4 className="font-semibold">{task.asset}</h4>
-                          <div className="flex items-center space-x-2">
-                            <Badge variant={getPriorityColor(task.priority)}>{task.priority}</Badge>
-                            <Badge variant={getStatusColor(task.status)}>{task.status}</Badge>
-                          </div>
-                        </div>
-                        <p className="text-sm text-muted-foreground mb-2">{task.task}</p>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center space-x-4 text-sm">
-                            <span className="flex items-center space-x-1">
-                              <Clock className="h-4 w-4" />
-                              <span>{task.time} ({task.duration})</span>
-                            </span>
-                            <span className="flex items-center space-x-1">
-                              <User className="h-4 w-4" />
-                              <span>{task.technician}</span>
-                            </span>
-                          </div>
-                          <div className="flex items-center space-x-1">
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button variant="ghost" size="sm" onClick={() => handleViewTask(task)}>
-                                  <Eye className="h-4 w-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>View task details</p>
-                              </TooltipContent>
-                            </Tooltip>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button variant="ghost" size="sm" onClick={() => handleEditTask(task)}>
-                                  <Edit className="h-4 w-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Edit task</p>
-                              </TooltipContent>
-                            </Tooltip>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button variant="ghost" size="sm" onClick={() => handleDeleteTask(task)}>
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Delete task</p>
-                              </TooltipContent>
-                            </Tooltip>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button variant="ghost" size="sm" onClick={() => handleExportTask(task)}>
-                                  <Download className="h-4 w-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Export task</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  {scheduledTasks.filter((task) => task.date === selectedDate).length === 0 && (
-                    <div className="text-center py-8 text-muted-foreground">
-                      No tasks scheduled for this date
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-        </TabsContent>
-
-        <TabsContent value="weekly" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Weekly Overview</CardTitle>
-              <CardDescription>Maintenance tasks distribution for the week</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-7 gap-4">
-                {weeklyView.map((day, index) => (
-                  <div key={`week-${index}`} className="text-center">
-                    <div className="font-medium mb-2">{day.date}</div>
-                    <div className="bg-blue-100 rounded-lg p-4 min-h-[100px] flex flex-col items-center justify-center">
-                      <div className="text-2xl font-bold text-blue-600">{day.tasks}</div>
-                      <div className="text-sm text-muted-foreground">{day.tasks === 1 ? "task" : "tasks"}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>This Week</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-blue-600">{stats.total}</div>
-                <p className="text-sm text-muted-foreground">Total tasks scheduled</p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Completed</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-green-600">{stats.completed}</div>
-                <p className="text-sm text-muted-foreground">Tasks completed</p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Overdue</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-red-600">{stats.overdue}</div>
-                <p className="text-sm text-muted-foreground">Tasks overdue</p>
-              </CardContent>
-            </Card>
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-2xl font-bold">Maintenance Schedule</h2>
+              <p className="text-muted-foreground">View and manage scheduled maintenance tasks</p>
+            </div>
+            <button
+              onClick={handleCreateNewPlans}
+              className="px-6 py-2 sm:px-8 sm:py-3 rounded-lg font-semibold text-white text-sm sm:text-base bg-blue-600 hover:bg-blue-700 transition-colors flex items-center gap-2"
+            >
+              <CalendarDays className="h-4 w-4" />
+              Generate New Plans
+            </button>
           </div>
-        </TabsContent>
-      </Tabs>
 
-      {/* View Task Dialog */}
-      {showViewDialog && viewingTask && (
-        <Dialog open={showViewDialog} onOpenChange={setShowViewDialog}>
-          <DialogContent className="max-w-3xl">
-            <DialogHeader>
-              <DialogTitle className="flex items-center justify-between">
-                <span>Task Details: {viewingTask.task}</span>
-                <Badge variant={getStatusColor(viewingTask.status)}>{viewingTask.status}</Badge>
-              </DialogTitle>
-              <DialogDescription>
-                Asset: {viewingTask.asset} | Plan ID: {viewingTask.planId}
-              </DialogDescription>
-            </DialogHeader>
+          <Tabs value={viewMode} onValueChange={setViewMode} className="space-y-6">
+            <TabsList>
+              <TabsTrigger value="list">List View</TabsTrigger>
+              <TabsTrigger value="calendar">Calendar View</TabsTrigger>
+              <TabsTrigger value="weekly">Weekly View</TabsTrigger>
+            </TabsList>
 
-            <div className="space-y-6">
-              {/* Task Overview */}
-              <div className="grid grid-cols-3 gap-4 p-4 bg-blue-50 rounded-lg border border-blue-100">
-                <div className="text-center">
-                  <div className="text-xs font-medium text-blue-600 uppercase tracking-wide">Next Date Due</div>
-                  <div className="text-sm font-semibold text-blue-900 mt-1">
-                    {viewingTask.date} at {viewingTask.time}
-                  </div>
-                </div>
-                <div className="text-center">
-                  <div className="text-xs font-medium text-blue-600 uppercase tracking-wide">Duration</div>
-                  <div className="text-sm font-semibold text-blue-900 mt-1">
-                    {viewingTask.duration}
-                  </div>
-                </div>
-                <div className="text-center">
-                  <div className="text-xs font-medium text-blue-600 uppercase tracking-wide">Priority</div>
-                  <div className="text-sm font-semibold text-blue-900 mt-1">
-                    {viewingTask.priority}
-                  </div>
-                </div>
-                <div className="text-center">
-                  <div className="text-xs font-medium text-blue-600 uppercase tracking-wide">Estimated Time to Complete</div>
-                  <div className="text-sm font-semibold text-blue-900 mt-1">
-                    {viewingTask.est_minutes ? `${viewingTask.est_minutes} min` : 'N/A'}
-                  </div>
-                </div>
-                <div className="text-center">
-                  <div className="text-xs font-medium text-blue-600 uppercase tracking-wide">Techs Needed</div>
-                  <div className="text-sm font-semibold text-blue-900 mt-1">
-                    {viewingTask.no_techs_needed || 'N/A'}
-                  </div>
-                </div>
-                <div className="text-center">
-                  <div className="text-xs font-medium text-blue-600 uppercase tracking-wide">Tools Needed</div>
-                  <div className="text-sm font-semibold text-blue-900 mt-1">
-                    {viewingTask.tools_needed || 'N/A'}
-                  </div>
-                </div>
-              </div>
-
-              {/* Task Instructions */}
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <h4 className="font-medium mb-2">Task Instructions</h4>
-                {viewingTask.instructions ? (
-                  <div className="text-sm space-y-2">
-                    {Array.isArray(viewingTask.instructions) ? 
-                      viewingTask.instructions.map((instruction, index) => {
-                        const cleanInstruction = instruction.replace(/^\d+\.\s*/, '');
-                        const isNumbered = instruction !== cleanInstruction;
-                        return (
-                          <div key={index} className="flex items-start gap-2">
-                            {!isNumbered && <span className="text-muted-foreground min-w-[20px]">{index + 1}.</span>}
-                            <span className={isNumbered ? 'ml-0' : ''}>{isNumbered ? instruction : cleanInstruction}</span>
-                          </div>
-                        );
-                      }) :
-                      typeof viewingTask.instructions === 'string' ? 
-                        viewingTask.instructions.split('\n').filter(line => line.trim()).map((instruction, index) => {
-                          const cleanInstruction = instruction.replace(/^\d+\.\s*/, '');
-                          const isNumbered = instruction !== cleanInstruction;
-                          return (
-                            <div key={index} className="flex items-start gap-2">
-                              {!isNumbered && <span className="text-muted-foreground min-w-[20px]">{index + 1}.</span>}
-                              <span className={isNumbered ? 'ml-0' : ''}>{isNumbered ? instruction : cleanInstruction}</span>
-                            </div>
-                          );
-                        }) :
-                        <p className="text-muted-foreground">No instructions available</p>
-                    }
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground">No instructions available</p>
-                )}
-              </div>
-
-              {/* Related Plan */}
-              <div>
-                <h4 className="font-medium mb-2">Related Maintenance Plan</h4>
-                <div className="border rounded-lg p-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="font-medium">Plan ID: {viewingTask.planId}</div>
-                      <div className="text-sm text-muted-foreground">Asset: {viewingTask.asset}</div>
+            <TabsContent value="list" className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Scheduled Maintenance Tasks ({scheduledTasks.length})</CardTitle>
+                  <CardDescription>All upcoming and recent maintenance activities</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {scheduledTasks.length === 0 ? (
+                    <div className="text-center py-8">
+                      <CalendarDays className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                      <p className="text-lg font-medium text-gray-600">No maintenance tasks found</p>
+                      <p className="text-gray-500 mb-4">Create your first maintenance plan to get started</p>
+                      <button
+                        onClick={handleCreateNewPlans}
+                        className="px-6 py-2 sm:px-8 sm:py-3 rounded-lg font-semibold text-white text-sm sm:text-base bg-blue-600 hover:bg-blue-700 transition-colors"
+                      >
+                        Generate New Plans
+                      </button>
                     </div>
-                    <Button variant="outline" size="sm">
-                      View Plan
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Asset</TableHead>
+                          <TableHead>Task</TableHead>
+                          <TableHead>Date & Time</TableHead>
+                          <TableHead>Duration</TableHead>
+                          <TableHead>Priority</TableHead>
+                          <TableHead>Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {scheduledTasks.map((task) => (
+                          <TableRow key={task.id}>
+                            <TableCell className="font-medium whitespace-nowrap">{task.asset}</TableCell>
+                            <TableCell>{task.task}</TableCell>
+                            <TableCell>
+                              <div className="space-y-1">
+                                <div>{task.date}</div>
+                                <div className="text-sm text-muted-foreground">{task.time}</div>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center space-x-2">
+                                <Clock className="h-4 w-4" />
+                                <span>{task.duration}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={getPriorityColor(task.priority)}>{task.priority}</Badge>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center space-x-1">
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button variant="ghost" size="sm" onClick={() => handleViewTask(task)}>
+                                      <Eye className="h-4 w-4" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>View task details</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button variant="ghost" size="sm" onClick={() => handleEditTask(task)}>
+                                      <Edit className="h-4 w-4" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>Edit task</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button variant="ghost" size="sm" onClick={() => handleDeleteTask(task)}>
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>Delete task</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button variant="ghost" size="sm" onClick={() => handleExportTask(task)}>
+                                      <Download className="h-4 w-4" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>Export task</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="calendar" className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center justify-between">
+                    <span>Calendar View</span>
+                    <div className="flex items-center space-x-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => navigateMonth(-1)}
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </Button>
+                      <span className="text-lg font-semibold min-w-[180px] text-center">
+                        {formatMonthYear(currentMonth)}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => navigateMonth(1)}
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </CardTitle>
+                  <CardDescription>View all scheduled maintenance tasks for the month</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="w-full">
+                    {/* Calendar Header */}
+                    <div className="grid grid-cols-7 gap-1 mb-2">
+                      {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+                        <div key={day} className="p-2 text-center text-sm font-medium text-muted-foreground">
+                          {day}
+                        </div>
+                      ))}
+                    </div>
+                    
+                    {/* Calendar Grid */}
+                    <div className="grid grid-cols-7 gap-1">
+                      {getDaysInMonth(currentMonth).map((day, index) => {
+                        if (day === null) {
+                          return <div key={`empty-${index}`} className="p-2 min-h-[100px]" />
+                        }
+                        
+                        const cellDate = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day)
+                        const tasksForDay = getTasksForDate(cellDate)
+                        const isToday = cellDate.toDateString() === new Date().toDateString()
+                        const isSelected = cellDate.toDateString() === new Date(selectedDate + 'T12:00:00').toDateString()
+                        
+                        return (
+                          <div
+                            key={day}
+                            className={`border p-2 min-h-[100px] cursor-pointer transition-colors ${
+                              isToday ? 'bg-blue-50 border-blue-200' : 'hover:bg-gray-50'
+                            } ${isSelected ? 'ring-2 ring-blue-500' : ''}`}
+                            onClick={() => setSelectedDate(cellDate.toISOString().split('T')[0])}
+                          >
+                            <div className="font-medium text-sm mb-1">{day}</div>
+                            <div className="space-y-1">
+                              {tasksForDay.slice(0, 3).map((task) => (
+                                <div
+                                  key={task.id}
+                                  className={`text-xs p-1 rounded text-white truncate ${
+                                    task.priority === 'High' ? 'bg-red-500' :
+                                    task.priority === 'Medium' ? 'bg-yellow-500' :
+                                    'bg-green-500'
+                                  }`}
+                                  title={`${task.asset} - ${task.task}`}
+                                >
+                                  {task.asset}
+                                </div>
+                              ))}
+                              {tasksForDay.length > 3 && (
+                                <div className="text-xs text-muted-foreground">
+                                  +{tasksForDay.length - 3} more
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              
+              {/* Selected Date Details */}
+              {selectedDate && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Tasks for {new Date(selectedDate + 'T12:00:00').toLocaleDateString()}</CardTitle>
+                    <CardDescription>Scheduled maintenance activities</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      {scheduledTasks
+                        .filter((task) => task.date === selectedDate)
+                        .map((task) => (
+                          <div key={task.id} className="border rounded-lg p-4">
+                            <div className="flex items-center justify-between mb-2">
+                              <h4 className="font-semibold">{task.asset}</h4>
+                              <div className="flex items-center space-x-2">
+                                <Badge variant={getPriorityColor(task.priority)}>{task.priority}</Badge>
+                                <Badge variant={getStatusColor(task.status)}>{task.status}</Badge>
+                              </div>
+                            </div>
+                            <p className="text-sm text-muted-foreground mb-2">{task.task}</p>
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center space-x-4 text-sm">
+                                <span className="flex items-center space-x-1">
+                                  <Clock className="h-4 w-4" />
+                                  <span>{task.time} ({task.duration})</span>
+                                </span>
+                                <span className="flex items-center space-x-1">
+                                  <User className="h-4 w-4" />
+                                  <span>{task.technician}</span>
+                                </span>
+                              </div>
+                              <div className="flex items-center space-x-1">
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button variant="ghost" size="sm" onClick={() => handleViewTask(task)}>
+                                      <Eye className="h-4 w-4" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>View task details</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button variant="ghost" size="sm" onClick={() => handleEditTask(task)}>
+                                      <Edit className="h-4 w-4" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>Edit task</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button variant="ghost" size="sm" onClick={() => handleDeleteTask(task)}>
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>Delete task</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button variant="ghost" size="sm" onClick={() => handleExportTask(task)}>
+                                      <Download className="h-4 w-4" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>Export task</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      {scheduledTasks.filter((task) => task.date === selectedDate).length === 0 && (
+                        <div className="text-center py-8 text-muted-foreground">
+                          No tasks scheduled for this date
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </TabsContent>
+
+            <TabsContent value="weekly" className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Weekly Overview</CardTitle>
+                  <CardDescription>Maintenance tasks distribution for the week</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-7 gap-4">
+                    {weeklyView.map((day, index) => (
+                      <div key={`week-${index}`} className="text-center">
+                        <div className="font-medium mb-2">{day.date}</div>
+                        <div className="bg-blue-100 rounded-lg p-4 min-h-[100px] flex flex-col items-center justify-center">
+                          <div className="text-2xl font-bold text-blue-600">{day.tasks}</div>
+                          <div className="text-sm text-muted-foreground">{day.tasks === 1 ? "task" : "tasks"}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>This Week</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-3xl font-bold text-blue-600">{stats.total}</div>
+                    <p className="text-sm text-muted-foreground">Total tasks scheduled</p>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Completed</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-3xl font-bold text-green-600">{stats.completed}</div>
+                    <p className="text-sm text-muted-foreground">Tasks completed</p>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Overdue</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-3xl font-bold text-red-600">{stats.overdue}</div>
+                    <p className="text-sm text-muted-foreground">Tasks overdue</p>
+                  </CardContent>
+                </Card>
+              </div>
+            </TabsContent>
+          </Tabs>
+
+          {/* All the dialog components remain the same */}
+          {/* View Task Dialog */}
+          {showViewDialog && viewingTask && (
+            <Dialog open={showViewDialog} onOpenChange={setShowViewDialog}>
+              <DialogContent className="max-w-3xl">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center justify-between">
+                    <span>Task Details: {viewingTask.task}</span>
+                    <Badge variant={getStatusColor(viewingTask.status)}>{viewingTask.status}</Badge>
+                  </DialogTitle>
+                  <DialogDescription>
+                    Asset: {viewingTask.asset} | Plan ID: {viewingTask.planId}
+                  </DialogDescription>
+                </DialogHeader>
+
+                <div className="space-y-6">
+                  {/* Task Overview */}
+                  <div className="grid grid-cols-3 gap-4 p-4 bg-blue-50 rounded-lg border border-blue-100">
+                    <div className="text-center">
+                      <div className="text-xs font-medium text-blue-600 uppercase tracking-wide">Next Date Due</div>
+                      <div className="text-sm font-semibold text-blue-900 mt-1">
+                        {viewingTask.date} at {viewingTask.time}
+                      </div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-xs font-medium text-blue-600 uppercase tracking-wide">Duration</div>
+                      <div className="text-sm font-semibold text-blue-900 mt-1">
+                        {viewingTask.duration}
+                      </div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-xs font-medium text-blue-600 uppercase tracking-wide">Priority</div>
+                      <div className="text-sm font-semibold text-blue-900 mt-1">
+                        {viewingTask.priority}
+                      </div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-xs font-medium text-blue-600 uppercase tracking-wide">Estimated Time to Complete</div>
+                      <div className="text-sm font-semibold text-blue-900 mt-1">
+                        {viewingTask.est_minutes ? `${viewingTask.est_minutes} min` : 'N/A'}
+                      </div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-xs font-medium text-blue-600 uppercase tracking-wide">Techs Needed</div>
+                      <div className="text-sm font-semibold text-blue-900 mt-1">
+                        {viewingTask.no_techs_needed || 'N/A'}
+                      </div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-xs font-medium text-blue-600 uppercase tracking-wide">Tools Needed</div>
+                      <div className="text-sm font-semibold text-blue-900 mt-1">
+                        {viewingTask.tools_needed || 'N/A'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Task Instructions */}
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <h4 className="font-medium mb-2">Task Instructions</h4>
+                    {viewingTask.instructions ? (
+                      <div className="text-sm space-y-2">
+                        {Array.isArray(viewingTask.instructions) ? 
+                          viewingTask.instructions.map((instruction, index) => {
+                            const cleanInstruction = instruction.replace(/^\d+\.\s*/, '');
+                            const isNumbered = instruction !== cleanInstruction;
+                            return (
+                              <div key={index} className="flex items-start gap-2">
+                                {!isNumbered && <span className="text-muted-foreground min-w-[20px]">{index + 1}.</span>}
+                                <span className={isNumbered ? 'ml-0' : ''}>{isNumbered ? instruction : cleanInstruction}</span>
+                              </div>
+                            );
+                          }) :
+                          typeof viewingTask.instructions === 'string' ? 
+                            viewingTask.instructions.split('\n').filter(line => line.trim()).map((instruction, index) => {
+                              const cleanInstruction = instruction.replace(/^\d+\.\s*/, '');
+                              const isNumbered = instruction !== cleanInstruction;
+                              return (
+                                <div key={index} className="flex items-start gap-2">
+                                  {!isNumbered && <span className="text-muted-foreground min-w-[20px]">{index + 1}.</span>}
+                                  <span className={isNumbered ? 'ml-0' : ''}>{isNumbered ? instruction : cleanInstruction}</span>
+                                </div>
+                              );
+                            }) :
+                            <p className="text-muted-foreground">No instructions available</p>
+                        }
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">No instructions available</p>
+                    )}
+                  </div>
+
+                  {/* Related Plan */}
+                  <div>
+                    <h4 className="font-medium mb-2">Related Maintenance Plan</h4>
+                    <div className="border rounded-lg p-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="font-medium">Plan ID: {viewingTask.planId}</div>
+                          <div className="text-sm text-muted-foreground">Asset: {viewingTask.asset}</div>
+                        </div>
+                        <Button variant="outline" size="sm">
+                          View Plan
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-end space-x-2 mt-6">
+                  <Button variant="outline" onClick={() => handleExportTask(viewingTask)}>
+                    <Download className="h-4 w-4 mr-2" />
+                    Export Task
+                  </Button>
+                  <Button variant="outline" onClick={() => setShowViewDialog(false)}>
+                    Close
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      setShowViewDialog(false)
+                      handleEditTask(viewingTask)
+                    }}
+                  >
+                    Edit Task
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+          )}
+
+          {/* Edit Task Dialog */}
+          {showEditDialog && editingTask && (
+            <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+              <DialogContent className="max-w-2xl">
+                <DialogHeader>
+                  <DialogTitle>Edit Task: {editingTask.task}</DialogTitle>
+                  <DialogDescription>Modify task details and schedule</DialogDescription>
+                </DialogHeader>
+
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Status</Label>
+                      <Select value={editedStatus} onValueChange={setEditedStatus}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Scheduled">Scheduled</SelectItem>
+                          <SelectItem value="In Progress">In Progress</SelectItem>
+                          <SelectItem value="Completed">Completed</SelectItem>
+                          <SelectItem value="Overdue">Overdue</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Technician</Label>
+                      <Select value={editedTechnician} onValueChange={setEditedTechnician}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="John Smith">John Smith</SelectItem>
+                          <SelectItem value="Sarah Johnson">Sarah Johnson</SelectItem>
+                          <SelectItem value="Mike Wilson">Mike Wilson</SelectItem>
+                          <SelectItem value="Emily Davis">Emily Davis</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Date</Label>
+                      <Input type="date" value={editedDate} onChange={(e) => setEditedDate(e.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Time</Label>
+                      <Input type="time" value={editedTime} onChange={(e) => setEditedTime(e.target.value)} />
+                    </div>
+                  </div>
+
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <h4 className="font-medium mb-2">Task Summary</h4>
+                    <div className="text-sm text-muted-foreground space-y-1">
+                      <div>Asset: {editingTask.asset}</div>
+                      <div>Task: {editingTask.task}</div>
+                      <div>Duration: {editingTask.duration}</div>
+                      <div>Priority: {editingTask.priority}</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-end space-x-2 mt-6">
+                  <Button variant="outline" onClick={() => setShowEditDialog(false)}>
+                    Cancel
+                  </Button>
+                  <Button onClick={saveTaskChanges}>Save Changes</Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+          )}
+
+          {/* Delete Confirmation Dialog */}
+          {showDeleteDialog && deletingTask && (
+            <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle className="flex items-center space-x-2">
+                    <AlertCircle className="h-5 w-5 text-red-500" />
+                    <span>Confirm Deletion</span>
+                  </DialogTitle>
+                  <DialogDescription>
+                    Are you sure you want to delete the maintenance task "{deletingTask.task}" for{" "}
+                    <strong>{deletingTask.asset}</strong>? This action cannot be undone.
+                  </DialogDescription>
+                </DialogHeader>
+
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4 my-4">
+                  <div className="flex items-start space-x-3">
+                    <AlertCircle className="h-5 w-5 text-red-500 mt-0.5 flex-shrink-0" />
+                    <div className="text-sm">
+                      <div className="font-medium text-red-800">This will permanently delete:</div>
+                      <ul className="mt-1 text-red-700 space-y-1">
+                        <li>• Task: {deletingTask.task}</li>
+                        <li>
+                          • Scheduled for: {deletingTask.date} at {deletingTask.time}
+                        </li>
+                        <li>• Assigned to: {deletingTask.technician}</li>
+                        <li>• Related to plan: {deletingTask.planId}</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-end space-x-2">
+                  <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>
+                    Cancel
+                  </Button>
+                  <Button variant="destructive" onClick={confirmDeleteTask}>
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete Task
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+          )}
+
+          {/* Export Task Dialog */}
+          {showExportDialog && exportingTask && (
+            <Dialog open={showExportDialog} onOpenChange={setShowExportDialog}>
+              <DialogContent className="max-w-2xl">
+                <DialogHeader>
+                  <DialogTitle>Export Task</DialogTitle>
+                  <DialogDescription>
+                    Choose the format to export the maintenance task for {exportingTask.asset}
+                  </DialogDescription>
+                </DialogHeader>
+
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+                    <Button
+                      variant="outline"
+                      className="h-20 flex flex-col items-center justify-center space-y-2"
+                      onClick={() => {
+                        exportTaskData(exportingTask, "emaint-x5")
+                        setShowExportDialog(false)
+                      }}
+                    >
+                      <Download className="h-6 w-6" />
+                      <span className="text-sm">eMaint X5</span>
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      className="h-20 flex flex-col items-center justify-center space-y-2"
+                      onClick={() => {
+                        exportTaskData(exportingTask, "csv")
+                        setShowExportDialog(false)
+                      }}
+                    >
+                      <Download className="h-6 w-6" />
+                      <span className="text-sm">CSV</span>
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      className="h-20 flex flex-col items-center justify-center space-y-2"
+                      onClick={() => {
+                        exportTaskData(exportingTask, "excel")
+                        setShowExportDialog(false)
+                      }}
+                    >
+                      <Download className="h-6 w-6" />
+                      <span className="text-sm">Excel</span>
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      className="h-20 flex flex-col items-center justify-center space-y-2"
+                      onClick={() => {
+                        exportTaskData(exportingTask, "word")
+                        setShowExportDialog(false)
+                      }}
+                    >
+                      <Download className="h-6 w-6" />
+                      <span className="text-sm">Word</span>
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      className="h-20 flex flex-col items-center justify-center space-y-2"
+                      onClick={async () => {
+                        try {
+                          const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-');
+                          const filename = `maintenance-task-${exportingTask.asset?.replace(/[^a-zA-Z0-9]/g, '_') || 'task'}-${timestamp}.pdf`;
+                          
+                          const response = await fetch('https://arctecfox-mono.onrender.com/api/export-pdf', {
+                            method: 'POST',
+                            headers: {
+                              'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({
+                              data: [exportingTask],
+                              filename: filename,
+                              export_type: 'maintenance_task'
+                            })
+                          });
+
+                          if (!response.ok) {
+                            const errorData = await response.json();
+                            throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+                          }
+
+                          const blob = await response.blob();
+                          const url = window.URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.style.display = 'none';
+                          a.href = url;
+                          a.download = filename;
+                          document.body.appendChild(a);
+                          a.click();
+                          window.URL.revokeObjectURL(url);
+                          document.body.removeChild(a);
+
+                          toast({
+                            title: "Task Exported Successfully",
+                            description: `Maintenance task for ${exportingTask.asset} has been exported as PDF.`,
+                            variant: "default",
+                          })
+                        } catch (error) {
+                          console.error("PDF export error:", error);
+                          toast({
+                            title: "Export Failed",
+                            description: `Failed to export PDF: ${error.message}`,
+                            variant: "destructive",
+                          })
+                        }
+                        setShowExportDialog(false)
+                      }}
+                    >
+                      <Download className="h-6 w-6" />
+                      <span className="text-sm">PDF</span>
                     </Button>
                   </div>
-                </div>
-              </div>
-            </div>
 
-            <div className="flex justify-end space-x-2 mt-6">
-              <Button variant="outline" onClick={() => handleExportTask(viewingTask)}>
-                <Download className="h-4 w-4 mr-2" />
-                Export Task
-              </Button>
-              <Button variant="outline" onClick={() => setShowViewDialog(false)}>
-                Close
-              </Button>
-              <Button
-                onClick={() => {
-                  setShowViewDialog(false)
-                  handleEditTask(viewingTask)
-                }}
-              >
-                Edit Task
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
+                  <div className="bg-gray-50 p-3 rounded-lg">
+                    <h4 className="font-medium text-sm mb-1">Export Details</h4>
+                    <div className="text-xs text-muted-foreground space-y-1">
+                      <div>Task: {exportingTask.task}</div>
+                      <div>Asset: {exportingTask.asset}</div>
+                      <div>Date: {exportingTask.date}</div>
+                    </div>
+                  </div>
 
-      {/* Edit Task Dialog */}
-      {showEditDialog && editingTask && (
-        <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>Edit Task: {editingTask.task}</DialogTitle>
-              <DialogDescription>Modify task details and schedule</DialogDescription>
-            </DialogHeader>
-
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Status</Label>
-                  <Select value={editedStatus} onValueChange={setEditedStatus}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Scheduled">Scheduled</SelectItem>
-                      <SelectItem value="In Progress">In Progress</SelectItem>
-                      <SelectItem value="Completed">Completed</SelectItem>
-                      <SelectItem value="Overdue">Overdue</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Technician</Label>
-                  <Select value={editedTechnician} onValueChange={setEditedTechnician}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="John Smith">John Smith</SelectItem>
-                      <SelectItem value="Sarah Johnson">Sarah Johnson</SelectItem>
-                      <SelectItem value="Mike Wilson">Mike Wilson</SelectItem>
-                      <SelectItem value="Emily Davis">Emily Davis</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Date</Label>
-                  <Input type="date" value={editedDate} onChange={(e) => setEditedDate(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Time</Label>
-                  <Input type="time" value={editedTime} onChange={(e) => setEditedTime(e.target.value)} />
-                </div>
-              </div>
-
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <h4 className="font-medium mb-2">Task Summary</h4>
-                <div className="text-sm text-muted-foreground space-y-1">
-                  <div>Asset: {editingTask.asset}</div>
-                  <div>Task: {editingTask.task}</div>
-                  <div>Duration: {editingTask.duration}</div>
-                  <div>Priority: {editingTask.priority}</div>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-end space-x-2 mt-6">
-              <Button variant="outline" onClick={() => setShowEditDialog(false)}>
-                Cancel
-              </Button>
-              <Button onClick={saveTaskChanges}>Save Changes</Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
-
-      {/* Delete Confirmation Dialog */}
-      {showDeleteDialog && deletingTask && (
-        <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle className="flex items-center space-x-2">
-                <AlertCircle className="h-5 w-5 text-red-500" />
-                <span>Confirm Deletion</span>
-              </DialogTitle>
-              <DialogDescription>
-                Are you sure you want to delete the maintenance task "{deletingTask.task}" for{" "}
-                <strong>{deletingTask.asset}</strong>? This action cannot be undone.
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4 my-4">
-              <div className="flex items-start space-x-3">
-                <AlertCircle className="h-5 w-5 text-red-500 mt-0.5 flex-shrink-0" />
-                <div className="text-sm">
-                  <div className="font-medium text-red-800">This will permanently delete:</div>
-                  <ul className="mt-1 text-red-700 space-y-1">
-                    <li>• Task: {deletingTask.task}</li>
-                    <li>
-                      • Scheduled for: {deletingTask.date} at {deletingTask.time}
-                    </li>
-                    <li>• Assigned to: {deletingTask.technician}</li>
-                    <li>• Related to plan: {deletingTask.planId}</li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-end space-x-2">
-              <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>
-                Cancel
-              </Button>
-              <Button variant="destructive" onClick={confirmDeleteTask}>
-                <Trash2 className="h-4 w-4 mr-2" />
-                Delete Task
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
-
-      {/* Export Task Dialog */}
-      {showExportDialog && exportingTask && (
-        <Dialog open={showExportDialog} onOpenChange={setShowExportDialog}>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>Export Task</DialogTitle>
-              <DialogDescription>
-                Choose the format to export the maintenance task for {exportingTask.asset}
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-                <Button
-                  variant="outline"
-                  className="h-20 flex flex-col items-center justify-center space-y-2"
-                  onClick={() => {
-                    exportTaskData(exportingTask, "emaint-x5")
-                    setShowExportDialog(false)
-                  }}
-                >
-                  <Download className="h-6 w-6" />
-                  <span className="text-sm">eMaint X5</span>
-                </Button>
-
-                <Button
-                  variant="outline"
-                  className="h-20 flex flex-col items-center justify-center space-y-2"
-                  onClick={() => {
-                    exportTaskData(exportingTask, "csv")
-                    setShowExportDialog(false)
-                  }}
-                >
-                  <Download className="h-6 w-6" />
-                  <span className="text-sm">CSV</span>
-                </Button>
-
-                <Button
-                  variant="outline"
-                  className="h-20 flex flex-col items-center justify-center space-y-2"
-                  onClick={() => {
-                    exportTaskData(exportingTask, "excel")
-                    setShowExportDialog(false)
-                  }}
-                >
-                  <Download className="h-6 w-6" />
-                  <span className="text-sm">Excel</span>
-                </Button>
-
-                <Button
-                  variant="outline"
-                  className="h-20 flex flex-col items-center justify-center space-y-2"
-                  onClick={() => {
-                    exportTaskData(exportingTask, "word")
-                    setShowExportDialog(false)
-                  }}
-                >
-                  <Download className="h-6 w-6" />
-                  <span className="text-sm">Word</span>
-                </Button>
-
-                <Button
-                  variant="outline"
-                  className="h-20 flex flex-col items-center justify-center space-y-2"
-                  onClick={async () => {
-                    try {
-                      const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-');
-                      const filename = `maintenance-task-${exportingTask.asset?.replace(/[^a-zA-Z0-9]/g, '_') || 'task'}-${timestamp}.pdf`;
-                      
-                      const response = await fetch('https://arctecfox-mono.onrender.com/api/export-pdf', {
-                        method: 'POST',
-                        headers: {
-                          'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({
-                          data: [exportingTask],
-                          filename: filename,
-                          export_type: 'maintenance_task'
-                        })
-                      });
-
-                      if (!response.ok) {
-                        const errorData = await response.json();
-                        throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
-                      }
-
-                      const blob = await response.blob();
-                      const url = window.URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.style.display = 'none';
-                      a.href = url;
-                      a.download = filename;
-                      document.body.appendChild(a);
-                      a.click();
-                      window.URL.revokeObjectURL(url);
-                      document.body.removeChild(a);
-
-                      toast({
-                        title: "Task Exported Successfully",
-                        description: `Maintenance task for ${exportingTask.asset} has been exported as PDF.`,
-                        variant: "default",
-                      })
-                    } catch (error) {
-                      console.error("PDF export error:", error);
-                      toast({
-                        title: "Export Failed",
-                        description: `Failed to export PDF: ${error.message}`,
-                        variant: "destructive",
-                      })
-                    }
-                    setShowExportDialog(false)
-                  }}
-                >
-                  <Download className="h-6 w-6" />
-                  <span className="text-sm">PDF</span>
-                </Button>
-              </div>
-
-              <div className="bg-gray-50 p-3 rounded-lg">
-                <h4 className="font-medium text-sm mb-1">Export Details</h4>
-                <div className="text-xs text-muted-foreground space-y-1">
-                  <div>Task: {exportingTask.task}</div>
-                  <div>Asset: {exportingTask.asset}</div>
-                  <div>Date: {exportingTask.date}</div>
-                </div>
-              </div>
-
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                <div className="flex items-start space-x-2">
-                  <Info className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
-                  <div className="text-xs text-blue-700">
-                    <p className="font-medium">eMaint X5 Import Template</p>
-                    <p>
-                      Export in eMaint X5 format for direct import into your CMMS system. Includes task details,
-                      scheduling information, and assignments in the required format.
-                    </p>
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                    <div className="flex items-start space-x-2">
+                      <Info className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                      <div className="text-xs text-blue-700">
+                        <p className="font-medium">eMaint X5 Import Template</p>
+                        <p>
+                          Export in eMaint X5 format for direct import into your CMMS system. Includes task details,
+                          scheduling information, and assignments in the required format.
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </div>
 
-            <div className="flex justify-end space-x-2">
-              <Button variant="outline" onClick={() => setShowExportDialog(false)}>
-                Cancel
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
+                <div className="flex justify-end space-x-2">
+                  <Button variant="outline" onClick={() => setShowExportDialog(false)}>
+                    Cancel
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+          )}
         </div>
       </TooltipProvider>
     </ComponentErrorBoundary>
