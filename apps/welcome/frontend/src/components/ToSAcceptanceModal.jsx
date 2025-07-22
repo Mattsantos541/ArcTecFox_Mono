@@ -164,7 +164,7 @@ const ToSAcceptanceModal = ({ user, onAccept, onReject }) => {
               <h2 className="text-2xl font-semibold mb-6">9. Account Termination</h2>
               <div className="ml-8">
                 <p className="text-gray-700 leading-relaxed">
-                  We reserve the right to suspend or terminate your access to our Service at any time if you breach these Terms, misuse the Service, or engage in activities that could harm our platform or other users. You may terminate your account at any time by contacting us at support@arctecfox.com. Upon termination, your access to the Service will cease, and we may delete your account data in accordance with our data retention policies.
+                  We reserve the right to suspend or terminate your access to our Service at any time if you breach these Terms, misuse the Service, or engage in activities that could harm our platform or other users. You may terminate your account at any time by contacting us at support@arctecfox.co. Upon termination, your access to the Service will cease, and we may delete your account data in accordance with our data retention policies.
                 </p>
               </div>
             </section>
@@ -219,8 +219,8 @@ const ToSAcceptanceModal = ({ user, onAccept, onReject }) => {
               <div className="ml-8">
                 <p className="text-gray-700 leading-relaxed">
                   For questions about these Terms of Service, technical support, or other inquiries, please contact us at:
-                  <a href="mailto:support@arctecfox.com" className="text-blue-600 hover:text-blue-800 font-medium ml-1">
-                    support@arctecfox.com
+                  <a href="mailto:support@arctecfox.co" className="text-blue-600 hover:text-blue-800 font-medium ml-1">
+                    support@arctecfox.co
                   </a>
                 </p>
               </div>

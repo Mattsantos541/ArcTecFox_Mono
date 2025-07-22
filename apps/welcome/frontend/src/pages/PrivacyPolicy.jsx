@@ -144,8 +144,8 @@ function PrivacyPolicy() {
           <div className="ml-8">
             <p className="text-gray-700 leading-relaxed">
               For questions or requests regarding your privacy, please email: 
-              <a href="mailto:support@arctecfox.com" className="text-blue-600 hover:text-blue-800 font-medium ml-1">
-                support@arctecfox.com
+              <a href="mailto:support@arctecfox.co" className="text-blue-600 hover:text-blue-800 font-medium ml-1">
+                support@arctecfox.co
               </a>
             </p>
           </div>

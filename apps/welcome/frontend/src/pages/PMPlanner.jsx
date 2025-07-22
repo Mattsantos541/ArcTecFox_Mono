@@ -393,7 +393,7 @@ function PlanLimitOverrideModal({ isOpen, onClose, onProceed, limitData, isSuper
           
           <p className="text-gray-600 mb-6">
             Creating this plan will exceed the site's plan limit of {limitData.planLimit}. 
-            {!isSuperAdmin && ' Please contact support@arctecfox.com for assistance.'}
+            {!isSuperAdmin && ' Please contact support@arctecfox.co for assistance.'}
           </p>
           
           <div className="flex space-x-3">
