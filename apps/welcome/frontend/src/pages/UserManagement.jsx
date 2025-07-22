@@ -1,26 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { 
-  fetchUserCompanies, 
-  fetchCompanyUsers, 
-  fetchAllRoles, 
-  addUserRole, 
-  removeUserRole, 
-  updateUser, 
-  deleteUser,
-  removeUserFromCompany,
-  updateUserRoleInCompany,
-  removeUserRoleFromCompany,
-  createUserByEmail,
-  checkUserDataStructure,
-  migrateUserToNewStructure,
+  fetchUserSites, 
+  fetchSiteUsers, 
+  fetchAllRoles,
+  fetchAllSitesWithCompanies,
+  updateUser,
+  removeUserFromSite,
+  updateUserRoleInSite,
+  createUserForSite,
+  isUserSiteAdmin,
+  getUserAdminSites,
   supabase
 } from '../api';
 
 const UserManagement = () => {
   const { user } = useAuth();
-  const [companies, setCompanies] = useState([]);
-  const [selectedCompany, setSelectedCompany] = useState('');
+  const [sites, setSites] = useState([]);
+  const [selectedSite, setSelectedSite] = useState('');
   const [users, setUsers] = useState([]);
   const [allRoles, setAllRoles] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -35,17 +32,29 @@ const UserManagement = () => {
   const [allSystemUsers, setAllSystemUsers] = useState([]);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
 
+  // Helper function to convert role names to display labels
+  const getRoleDisplayName = (roleName) => {
+    switch (roleName) {
+      case 'company_admin':
+        return 'Admin';
+      case 'user':
+        return 'User';
+      default:
+        return 'User'; // Default to User for any other roles
+    }
+  };
+
   useEffect(() => {
-    loadCompanies();
+    loadSites();
     loadAllRoles();
     loadAllSystemUsers();
   }, [user]);
 
   useEffect(() => {
-    if (selectedCompany) {
-      loadCompanyUsers();
+    if (selectedSite) {
+      loadSiteUsers();
     }
-  }, [selectedCompany]);
+  }, [selectedSite]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -62,95 +71,53 @@ const UserManagement = () => {
 
   const checkIfUserIsSuperAdmin = async () => {
     try {
-      const { data, error } = await supabase
-        .from('company_users')
-        .select(`
-          roles!inner (
-            name
-          )
-        `)
-        .eq('user_id', user.id)
-        .eq('roles.name', 'super_admin');
-
-      if (error) throw error;
-      return data && data.length > 0;
+      const adminSites = await getUserAdminSites(user.id);
+      return adminSites.some(site => site.roles.name === 'super_admin');
     } catch (err) {
       console.error('Error checking super admin status:', err);
       return false;
     }
   };
 
-  const loadAllCompanies = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('companies')
-        .select('id, name')
-        .order('name');
-
-      if (error) throw error;
-      return data || [];
-    } catch (err) {
-      console.error('Error loading all companies:', err);
-      return [];
-    }
-  };
-
-  const loadCompanies = async () => {
+  const loadSites = async () => {
     try {
       setLoading(true);
       
       // Check if user is super admin
       const userIsSuperAdmin = await checkIfUserIsSuperAdmin();
+      const isAdmin = await isUserSiteAdmin(user.id);
       setIsSuperAdmin(userIsSuperAdmin);
       
-      let companiesData;
+      if (!isAdmin) {
+        setError('You do not have permission to manage users');
+        setLoading(false);
+        return;
+      }
+
+      let sitesData;
       if (userIsSuperAdmin) {
-        // Super admin sees all companies
-        companiesData = await loadAllCompanies();
+        // Super admin sees all sites
+        sitesData = await fetchAllSitesWithCompanies();
       } else {
-        // Regular users see only their assigned companies
-        companiesData = await fetchUserCompanies(user.id);
+        // Regular admins see only their assigned sites
+        const adminSites = await getUserAdminSites(user.id);
+        sitesData = adminSites.map(adminSite => ({
+          id: adminSite.sites.id,
+          name: adminSite.sites.name,
+          companies: adminSite.sites.companies
+        }));
       }
       
-      setCompanies(companiesData);
-      if (companiesData.length > 0) {
-        setSelectedCompany(companiesData[0].id);
+      setSites(sitesData);
+      if (sitesData.length > 0) {
+        setSelectedSite(sitesData[0].id);
       } else {
-        setSelectedCompany('');
+        setSelectedSite('');
         setUsers([]);
       }
     } catch (err) {
-      setError('Failed to load companies');
+      setError('Failed to load sites');
       console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleCheckUserData = async () => {
-    try {
-      const result = await checkUserDataStructure(user.id);
-      console.log('User data structure check result:', result);
-    } catch (err) {
-      console.error('Error checking user data:', err);
-    }
-  };
-
-  const handleMigrateUser = async () => {
-    try {
-      setLoading(true);
-      const result = await migrateUserToNewStructure(user.id);
-      console.log('Migration result:', result);
-      if (result) {
-        setError('Migration successful! Reloading companies...');
-        // Reload companies after migration
-        await loadCompanies();
-      } else {
-        setError('No migration needed or migration failed');
-      }
-    } catch (err) {
-      console.error('Error migrating user:', err);
-      setError(`Failed to migrate user data: ${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -184,11 +151,11 @@ const UserManagement = () => {
     setNewUserEmail(value);
     
     if (value.length >= 3) {
-      const currentCompanyUserEmails = users.map(u => u.email);
+      const currentSiteUserEmails = users.map(u => u.email);
       const filtered = allSystemUsers
         .filter(user => 
           user.email.toLowerCase().includes(value.toLowerCase()) &&
-          !currentCompanyUserEmails.includes(user.email)
+          !currentSiteUserEmails.includes(user.email)
         )
         .slice(0, 5);
       
@@ -207,18 +174,18 @@ const UserManagement = () => {
     setShowEmailSuggestions(false);
   };
 
-  const loadCompanyUsers = async () => {
-    if (!selectedCompany) return;
+  const loadSiteUsers = async () => {
+    if (!selectedSite) return;
     
     setLoading(true);
     try {
-      const usersData = await fetchCompanyUsers(selectedCompany);
+      const usersData = await fetchSiteUsers(selectedSite);
       setUsers(usersData);
-      setError(null); // Clear any previous errors
+      setError(null);
     } catch (err) {
       setError(`Failed to load users: ${err.message}`);
-      console.error('Error loading company users:', err);
-      setUsers([]); // Reset users on error
+      console.error('Error loading site users:', err);
+      setUsers([]);
     } finally {
       setLoading(false);
     }
@@ -226,8 +193,8 @@ const UserManagement = () => {
 
   const handleAddRole = async (userId, roleId) => {
     try {
-      await updateUserRoleInCompany(userId, selectedCompany, roleId);
-      loadCompanyUsers();
+      await updateUserRoleInSite(userId, selectedSite, roleId);
+      loadSiteUsers();
       setShowAddRole(null);
       setError(null);
     } catch (err) {
@@ -236,10 +203,10 @@ const UserManagement = () => {
     }
   };
 
-  const handleRemoveRole = async (userId, roleId) => {
+  const handleRemoveRole = async (userId) => {
     try {
-      await removeUserRoleFromCompany(userId, selectedCompany);
-      loadCompanyUsers();
+      await updateUserRoleInSite(userId, selectedSite, null);
+      loadSiteUsers();
       setError(null);
     } catch (err) {
       setError('Failed to remove role');
@@ -250,7 +217,7 @@ const UserManagement = () => {
   const handleUpdateUser = async (userId, updates) => {
     try {
       await updateUser(userId, updates);
-      loadCompanyUsers();
+      loadSiteUsers();
       setEditingUser(null);
     } catch (err) {
       setError('Failed to update user');
@@ -259,13 +226,13 @@ const UserManagement = () => {
   };
 
   const handleDeleteUser = async (userId) => {
-    if (window.confirm('Are you sure you want to remove this user from the company?')) {
+    if (window.confirm('Are you sure you want to remove this user from the site?')) {
       try {
-        await removeUserFromCompany(userId, selectedCompany);
-        loadCompanyUsers();
+        await removeUserFromSite(userId, selectedSite);
+        loadSiteUsers();
         setError(null);
       } catch (err) {
-        setError('Failed to remove user from company');
+        setError('Failed to remove user from site');
         console.error(err);
       }
     }
@@ -273,14 +240,14 @@ const UserManagement = () => {
 
   const handleCreateUser = async (e) => {
     e.preventDefault();
-    if (!newUserEmail || !selectedCompany) {
-      setError('Email and company are required');
+    if (!newUserEmail || !selectedSite) {
+      setError('Email and site are required');
       return;
     }
 
     try {
-      await createUserByEmail(newUserEmail, selectedCompany, newUserName);
-      loadCompanyUsers();
+      await createUserForSite(newUserEmail, selectedSite, newUserName);
+      loadSiteUsers();
       setShowAddUser(false);
       setNewUserEmail('');
       setNewUserName('');
@@ -288,8 +255,8 @@ const UserManagement = () => {
       setShowEmailSuggestions(false);
       setError(null);
     } catch (err) {
-      if (err.message === 'User is already linked to this company') {
-        setError('This user is already a member of the selected company');
+      if (err.message === 'User is already linked to this site') {
+        setError('This user is already a member of the selected site');
       } else {
         setError(`Failed to create user: ${err.message}`);
       }
@@ -297,41 +264,31 @@ const UserManagement = () => {
     }
   };
 
-  const getUserAvailableRoles = (userId) => {
-    const userRoles = users.find(u => u.id === userId)?.roles || [];
-    // Only show 'user' and 'company_admin' roles in the dropdown
-    return allRoles.filter(role => 
-      (role.name === 'user' || role.name === 'company_admin') && 
-      !userRoles.includes(role.name)
-    );
+  const getSelectedSiteInfo = () => {
+    const site = sites.find(s => s.id === selectedSite);
+    return site ? `${site.companies.name} - ${site.name}` : '';
   };
 
-  const getRoleIdByName = (roleName) => {
-    return allRoles.find(role => role.name === roleName)?.id;
-  };
-
-  const getFriendlyRoleName = (roleName) => {
-    switch (roleName) {
-      case 'user':
-        return 'User';
-      case 'company_admin':
-        return 'Admin';
-      case 'super_admin':
-        return 'Super Admin';
-      default:
-        return roleName;
-    }
-  };
-
-  if (loading && companies.length === 0) {
+  if (loading) {
     return (
       <div className="max-w-6xl mx-auto p-6">
         <div className="bg-white rounded-lg shadow-md p-6">
           <h1 className="text-2xl font-bold text-gray-800 mb-6">User Management</h1>
-          
-
           <div className="flex justify-center items-center h-64">
             <div className="text-lg">Loading...</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error && error.includes('permission')) {
+    return (
+      <div className="max-w-6xl mx-auto p-6">
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h1 className="text-2xl font-bold text-gray-800 mb-6">User Management</h1>
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+            {error}
           </div>
         </div>
       </div>
@@ -341,118 +298,99 @@ const UserManagement = () => {
   return (
     <div className="max-w-6xl mx-auto p-6">
       <div className="bg-white rounded-lg shadow-md p-6">
-        <h1 className="text-2xl font-bold text-gray-800 mb-6">User Management</h1>
-        
-        {error && (
+        <div className="flex justify-between items-center mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-800">User Management</h1>
+            <p className="text-sm text-gray-600 mt-1">
+              {isSuperAdmin ? 'Manage users across all sites' : 'Manage users for your assigned sites'}
+            </p>
+          </div>
+        </div>
+
+        {error && !error.includes('permission') && (
           <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
             {error}
           </div>
         )}
 
-
-        {/* Company Selection */}
-        <div className="mb-6">
-          <div className="flex items-center gap-2 mb-2">
-            <label className="block text-sm font-medium text-gray-700">
-              Select Company
+        {/* Site Selection */}
+        <div className="mb-6 flex items-center space-x-4">
+          <div className="flex-1">
+            <label htmlFor="site-select" className="block text-sm font-medium text-gray-700 mb-2">
+              Select Site to Manage Users
             </label>
-            {isSuperAdmin && (
-              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                Super Admin - All Companies
-              </span>
-            )}
+            <select
+              id="site-select"
+              value={selectedSite}
+              onChange={(e) => setSelectedSite(e.target.value)}
+              className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="">Select a site...</option>
+              {sites.map((site) => (
+                <option key={site.id} value={site.id}>
+                  {site.companies.name} - {site.name}
+                </option>
+              ))}
+            </select>
           </div>
-          {companies.length === 0 ? (
-            <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-              <p className="text-red-700">No companies found for this user. Please use the migration tools above to fix this issue.</p>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-2">
-              <select
-                value={selectedCompany}
-                onChange={(e) => setSelectedCompany(e.target.value)}
-                className="block w-full max-w-xs px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="">Select a company</option>
-                {companies.map(company => (
-                  <option key={company.id} value={company.id}>
-                    {company.name}
-                  </option>
-                ))}
-              </select>
-              {isSuperAdmin && companies.length > 0 && (
-                <p className="text-xs text-gray-600 max-w-xs">
-                  As a Super Admin, you can view and manage users for all {companies.length} companies in the system.
-                </p>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Add User Button */}
-        {selectedCompany && (
-          <div className="mb-4 flex justify-between items-center">
-            <h2 className="text-lg font-semibold text-gray-800">
-              Users for {companies.find(c => c.id === selectedCompany)?.name}
-            </h2>
+          {selectedSite && (
             <button
               onClick={() => setShowAddUser(true)}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+              className="mt-6 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
             >
               Add User
             </button>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Add User Form */}
         {showAddUser && (
-          <div className="mb-6 p-4 bg-gray-50 rounded-lg border">
-            <h3 className="text-lg font-medium text-gray-800 mb-4">Add New User</h3>
+          <div className="mb-6 p-4 bg-blue-50 rounded-lg border">
+            <h3 className="text-lg font-medium text-gray-800 mb-4">
+              Add User to {getSelectedSiteInfo()}
+            </h3>
             <form onSubmit={handleCreateUser} className="space-y-4">
-              <div className="relative email-autocomplete-container">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Email Address *
-                </label>
-                <input
-                  type="email"
-                  value={newUserEmail}
-                  onChange={(e) => handleEmailChange(e.target.value)}
-                  onFocus={() => newUserEmail.length >= 3 && setShowEmailSuggestions(emailSuggestions.length > 0)}
-                  className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="Type email to search existing users..."
-                  required
-                />
-                
-                {showEmailSuggestions && emailSuggestions.length > 0 && (
-                  <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-48 overflow-y-auto">
-                    <div className="px-3 py-2 text-xs text-gray-500 bg-gray-50 border-b">
-                      Existing users:
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="email-autocomplete-container">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Email Address *
+                  </label>
+                  <input
+                    type="email"
+                    value={newUserEmail}
+                    onChange={(e) => handleEmailChange(e.target.value)}
+                    onFocus={() => newUserEmail.length >= 3 && setShowEmailSuggestions(emailSuggestions.length > 0)}
+                    className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                    required
+                  />
+                  {showEmailSuggestions && emailSuggestions.length > 0 && (
+                    <div className="absolute z-10 w-full bg-white border border-gray-300 rounded-md shadow-lg mt-1 max-h-60 overflow-y-auto">
+                      {emailSuggestions.map((suggestion, index) => (
+                        <div
+                          key={index}
+                          className="px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                          onClick={() => handleEmailSuggestionSelect(suggestion)}
+                        >
+                          <div className="font-medium text-sm text-gray-900">{suggestion.email}</div>
+                          {suggestion.full_name && (
+                            <div className="text-xs text-gray-600">{suggestion.full_name}</div>
+                          )}
+                        </div>
+                      ))}
                     </div>
-                    {emailSuggestions.map(suggestion => (
-                      <div
-                        key={suggestion.id}
-                        onClick={() => handleEmailSuggestionSelect(suggestion)}
-                        className="px-3 py-2 hover:bg-gray-100 cursor-pointer border-b border-gray-100 last:border-b-0"
-                      >
-                        <div className="font-medium text-gray-900">{suggestion.email}</div>
-                        {suggestion.full_name && (
-                          <div className="text-sm text-gray-500">{suggestion.full_name}</div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Full Name (optional)
-                </label>
-                <input
-                  type="text"
-                  value={newUserName}
-                  onChange={(e) => setNewUserName(e.target.value)}
-                  className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                />
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Full Name (optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={newUserName}
+                    onChange={(e) => setNewUserName(e.target.value)}
+                    className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
               </div>
               <div className="flex space-x-2">
                 <button
@@ -469,6 +407,7 @@ const UserManagement = () => {
                     setNewUserName('');
                     setEmailSuggestions([]);
                     setShowEmailSuggestions(false);
+                    setError(null);
                   }}
                   className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm"
                 >
@@ -480,112 +419,130 @@ const UserManagement = () => {
         )}
 
         {/* Users Table */}
-        {selectedCompany && (
-          <div className="overflow-x-auto">
-            <table className="min-w-full bg-white border border-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Name
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Email
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Roles
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {users.map(userData => (
-                  <tr key={userData.id}>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {editingUser === userData.id ? (
-                        <input
-                          type="text"
-                          defaultValue={userData.full_name || ''}
-                          className="border rounded px-2 py-1 w-full"
-                          onBlur={(e) => handleUpdateUser(userData.id, { full_name: e.target.value })}
-                          onKeyPress={(e) => {
-                            if (e.key === 'Enter') {
-                              handleUpdateUser(userData.id, { full_name: e.target.value });
-                            }
-                          }}
-                        />
-                      ) : (
-                        <div className="text-sm font-medium text-gray-900">
-                          {userData.full_name || 'No name'}
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">{userData.email}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex flex-wrap gap-1">
-                        {userData.roles.map(role => (
-                          <span
-                            key={role}
-                            className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
-                          >
-                            {getFriendlyRoleName(role)}
-                            <button
-                              onClick={() => handleRemoveRole(userData.id, getRoleIdByName(role))}
-                              className="ml-1 text-blue-600 hover:text-blue-800"
-                            >
-                              ×
-                            </button>
-                          </span>
-                        ))}
-                        {showAddRole === userData.id ? (
-                          <select
-                            onChange={(e) => handleAddRole(userData.id, e.target.value)}
-                            className="text-xs border rounded px-1 py-1"
-                          >
-                            <option value="">Add role...</option>
-                            {getUserAvailableRoles(userData.id).map(role => (
-                              <option key={role.id} value={role.id}>
-                                {getFriendlyRoleName(role.name)}
-                              </option>
-                            ))}
-                          </select>
-                        ) : (
-                          <button
-                            onClick={() => setShowAddRole(userData.id)}
-                            className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800 hover:bg-gray-200"
-                          >
-                            + Add Role
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <button
-                        onClick={() => setEditingUser(editingUser === userData.id ? null : userData.id)}
-                        className="text-blue-600 hover:text-blue-900 mr-3"
-                      >
-                        {editingUser === userData.id ? 'Cancel' : 'Edit'}
-                      </button>
-                      <button
-                        onClick={() => handleDeleteUser(userData.id)}
-                        className="text-red-600 hover:text-red-900"
-                      >
-                        Delete
-                      </button>
-                    </td>
+        {selectedSite && (
+          <div>
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold text-gray-800">
+                Users in {getSelectedSiteInfo()}
+              </h2>
+              <div className="text-sm text-gray-600">
+                {users.length} user{users.length !== 1 ? 's' : ''}
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="min-w-full bg-white border border-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      User
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Role
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Joined
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Actions
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {users.map((userData) => (
+                    <tr key={userData.id}>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div>
+                          <div className="text-sm font-medium text-gray-900">
+                            {userData.full_name || userData.email}
+                          </div>
+                          <div className="text-sm text-gray-500">{userData.email}</div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        {showAddRole === userData.id ? (
+                          <div className="flex space-x-2">
+                            <select
+                              onChange={(e) => {
+                                if (e.target.value) {
+                                  handleAddRole(userData.id, e.target.value);
+                                }
+                              }}
+                              className="text-sm border border-gray-300 rounded px-2 py-1"
+                            >
+                              <option value="">Select role...</option>
+                              {allRoles.filter(role => role.name !== 'super_admin').map((role) => (
+                                <option key={role.id} value={role.id}>
+                                  {getRoleDisplayName(role.name)}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              onClick={() => setShowAddRole(null)}
+                              className="text-gray-600 hover:text-gray-800"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center space-x-2">
+                            {userData.roles && userData.roles.length > 0 ? (
+                              <div className="flex items-center space-x-2">
+                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                  {getRoleDisplayName(userData.roles[0])}
+                                </span>
+                                <button
+                                  onClick={() => handleRemoveRole(userData.id)}
+                                  className="text-red-600 hover:text-red-800 text-xs"
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => setShowAddRole(userData.id)}
+                                className="text-blue-600 hover:text-blue-800 text-sm"
+                              >
+                                Add Role
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {new Date(userData.created_at).toLocaleDateString()}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
+                        <button
+                          onClick={() => handleDeleteUser(userData.id)}
+                          className="text-red-600 hover:text-red-900"
+                        >
+                          Remove from Site
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              
+              {users.length === 0 && (
+                <div className="text-center py-8 text-gray-500">
+                  No users found for this site.
+                </div>
+              )}
+            </div>
           </div>
         )}
 
-        {selectedCompany && users.length === 0 && !loading && (
+        {!selectedSite && sites.length > 0 && (
           <div className="text-center py-8 text-gray-500">
-            No users found for this company.
+            Please select a site to view and manage users.
+          </div>
+        )}
+
+        {sites.length === 0 && (
+          <div className="text-center py-8 text-gray-500">
+            No sites available for user management.
           </div>
         )}
       </div>

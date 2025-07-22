@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { generatePMPlan, fetchUserCompanies, supabase } from "../api";
+import { generatePMPlan, fetchUserSitesForPlanning, checkSitePlanLimit, isUserSuperAdmin, supabase } from "../api";
 import * as XLSX from 'xlsx';
 import { useAuth } from '../hooks/useAuth';
 import { useNavigate } from "react-router-dom";
@@ -351,6 +351,88 @@ function BulkImportModal({ isOpen, onClose, onBulkImport }) {
   );
 }
 
+// Plan Limit Override Modal Component
+function PlanLimitOverrideModal({ isOpen, onClose, onProceed, limitData, isSuperAdmin }) {
+  if (!isOpen || !limitData) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 max-w-md mx-4 w-full">
+        <div className="text-center">
+          <div className="mx-auto flex items-center justify-center w-12 h-12 rounded-full bg-red-100 mb-4">
+            <span className="text-red-600 text-2xl">⚠️</span>
+          </div>
+          
+          <h3 className="text-xl font-semibold text-gray-800 mb-4">Plan Limit Exceeded</h3>
+          
+          <div className="text-left bg-gray-50 rounded-lg p-4 mb-6">
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-600">Site:</span>
+                <span className="font-medium">{limitData.siteName}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Current Plans:</span>
+                <span className="font-medium">{limitData.currentPlans}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Plan Limit:</span>
+                <span className="font-medium">{limitData.planLimit}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">New Plans:</span>
+                <span className="font-medium">{limitData.newPlans}</span>
+              </div>
+              <hr className="my-2" />
+              <div className="flex justify-between text-red-600 font-semibold">
+                <span>Total After Creation:</span>
+                <span>{limitData.totalAfterNew}</span>
+              </div>
+            </div>
+          </div>
+          
+          <p className="text-gray-600 mb-6">
+            Creating this plan will exceed the site's plan limit of {limitData.planLimit}. 
+            {!isSuperAdmin && ' Please contact support@arctecfox.com for assistance.'}
+          </p>
+          
+          <div className="flex space-x-3">
+            {isSuperAdmin ? (
+              <>
+                <button
+                  onClick={onProceed}
+                  className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
+                >
+                  Override as Admin
+                </button>
+                <button
+                  onClick={onClose}
+                  className="flex-1 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                >
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={onClose}
+                className="w-full px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+              >
+                Close
+              </button>
+            )}
+          </div>
+          
+          {isSuperAdmin && (
+            <p className="text-xs text-gray-500 mt-3">
+              As a Super Admin, you can override plan limits. Use this carefully.
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PMPlanDisplay({ plan, loading = false }) {
   if (loading) {
     return <GeneratedPlanLoading />;
@@ -459,12 +541,19 @@ export default function PMPlanner() {
   const [generatedPlan, setGeneratedPlan] = useState(null);
   const [showBulkImport, setShowBulkImport] = useState(false);
   
-  // Company selection state
-  const [userCompanies, setUserCompanies] = useState([]);
-  const [selectedCompany, setSelectedCompany] = useState('');
-  const [showCompanySelection, setShowCompanySelection] = useState(false);
-  const [companiesLoading, setCompaniesLoading] = useState(true);
+  // Site selection state
+  const [userSites, setUserSites] = useState([]);
+  const [selectedSite, setSelectedSite] = useState('');
+  const [showSiteSelection, setShowSiteSelection] = useState(false);
+  const [sitesLoading, setSitesLoading] = useState(true);
   const lastFetchedUserId = useRef(null);
+  
+  // Plan limit override state
+  const [showPlanLimitModal, setShowPlanLimitModal] = useState(false);
+  const [planLimitData, setPlanLimitData] = useState(null);
+  const [pendingFormData, setPendingFormData] = useState(null);
+  const [pendingBulkAssets, setPendingBulkAssets] = useState(null);
+  const [isUserSuperAdminState, setIsUserSuperAdminState] = useState(false);
   
   // Bulk import state variables
   const [bulkProcessing, setBulkProcessing] = useState(false);
@@ -505,33 +594,34 @@ export default function PMPlanner() {
 
   // Load categories when component mounts
   // Load categories when component mounts
-  const loadUserCompanies = useCallback(async () => {
+  const loadUserSites = useCallback(async () => {
     try {
       if (user?.id && user.id !== lastFetchedUserId.current) {
-        setCompaniesLoading(true);
+        setSitesLoading(true);
         lastFetchedUserId.current = user.id;
         
-        const companies = await fetchUserCompanies(user.id);
-        setUserCompanies(companies);
+        const sites = await fetchUserSitesForPlanning(user.id);
+        setUserSites(sites);
         
-        // Auto-select if only one company
-        if (companies.length === 1) {
-          setSelectedCompany(companies[0].id);
+        // Auto-select if only one site
+        if (sites.length === 1) {
+          setSelectedSite(sites[0].id);
         }
+        setShowSiteSelection(sites.length > 1);
       } else if (!user?.id) {
         // Reset state when user is not available
-        setUserCompanies([]);
-        setSelectedCompany('');
+        setUserSites([]);
+        setSelectedSite('');
         lastFetchedUserId.current = null;
       }
     } catch (error) {
-      console.error('Error loading user companies:', error);
-      setMessage("❌ Failed to load your companies. Please refresh the page.");
+      console.error('Error loading user sites:', error);
+      setMessage("❌ Failed to load your sites. Please refresh the page.");
       setMessageType("error");
       // Reset ref so we can retry later
       lastFetchedUserId.current = null;
     } finally {
-      setCompaniesLoading(false);
+      setSitesLoading(false);
     }
   }, [user?.id]);
 
@@ -540,8 +630,8 @@ export default function PMPlanner() {
   }, []); // Only fetch categories once
 
   useEffect(() => {
-    loadUserCompanies();
-  }, [loadUserCompanies]);
+    loadUserSites();
+  }, [loadUserSites]);
 
   const handleBackToDashboard = () => {
     navigate('/');
@@ -554,41 +644,14 @@ export default function PMPlanner() {
     }
   }, [user, setValue]);
 
-  // Form submission handler
-  const onSubmit = async (data) => {
+  // Extracted plan creation logic that can be called from onSubmit or modal override
+  const createPMPlan = async (data) => {
+    setLoading(true);
+    setGeneratedPlan(null);
+    setMessage("");
+    setMessageType("");
+    
     try {
-      // Validate custom category if "Other" is selected
-      if (data.category === "Other" && !customCategory.trim()) {
-        setMessage("❌ Please enter a custom category when 'Other' is selected.");
-        setMessageType("error");
-        return;
-      }
-
-      // Company validation logic
-      if (companiesLoading) {
-        setMessage("❌ Please wait while we load your company information.");
-        setMessageType("error");
-        return;
-      }
-
-      if (userCompanies.length === 0) {
-        setMessage("❌ You must be a member of at least one company to create PM plans. Please contact your administrator to be added to a company.");
-        setMessageType("error");
-        return;
-      }
-
-      if (userCompanies.length > 1 && !selectedCompany) {
-        setShowCompanySelection(true);
-        setMessage("❌ Please select which company this plan belongs to.");
-        setMessageType("error");
-        return;
-      }
-
-      setLoading(true);
-      setGeneratedPlan(null);
-      setMessage("");
-      setMessageType("");
-      
       let userManualData = null;
       
       // Upload user manual if provided
@@ -600,17 +663,18 @@ export default function PMPlanner() {
         }
       }
       
-      // Determine which company to use
-      const companyToUse = userCompanies.length === 1 ? userCompanies[0].id : selectedCompany;
-      const companyName = userCompanies.find(c => c.id === companyToUse)?.name || "Unknown Company";
+      // Determine which site to use
+      const siteToUse = userSites.length === 1 ? userSites[0].id : selectedSite;
+      const siteData = userSites.find(s => s.id === siteToUse);
+      const siteName = siteData?.displayName || "Unknown Site";
 
       const formDataWithDefaults = {
         ...data,
         // Use custom category if "Other" is selected, otherwise use the selected category
         category: data.category === "Other" ? customCategory.trim() : data.category,
         email: user?.email || "test@example.com",
-        company: companyName,
-        companyId: companyToUse, // Add company ID for database storage
+        company: siteData?.company?.name || "Unknown Company",
+        siteId: siteToUse, // Add site ID for database storage
         userManual: userManualData // Include user manual data
       };
       
@@ -638,6 +702,99 @@ export default function PMPlanner() {
       setMessageType("error");
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Plan limit modal handlers
+  const handlePlanLimitOverride = async () => {
+    setShowPlanLimitModal(false);
+    
+    if (pendingFormData) {
+      // Single plan creation
+      await createPMPlan(pendingFormData);
+    } else if (pendingBulkAssets) {
+      // Bulk import
+      await executeBulkImport(pendingBulkAssets);
+    }
+    
+    // Clear pending data
+    setPlanLimitData(null);
+    setPendingFormData(null);
+    setPendingBulkAssets(null);
+  };
+
+  const handlePlanLimitCancel = () => {
+    setShowPlanLimitModal(false);
+    
+    // Clear pending data
+    setPlanLimitData(null);
+    setPendingFormData(null);
+    setPendingBulkAssets(null);
+    
+    const operationType = pendingBulkAssets ? "Bulk import" : "Plan creation";
+    setMessage(`${operationType} cancelled.`);
+    setMessageType("error");
+  };
+
+  // Form submission handler
+  const onSubmit = async (data) => {
+    try {
+      // Validate custom category if "Other" is selected
+      if (data.category === "Other" && !customCategory.trim()) {
+        setMessage("❌ Please enter a custom category when 'Other' is selected.");
+        setMessageType("error");
+        return;
+      }
+
+      // Site validation logic
+      if (sitesLoading) {
+        setMessage("❌ Please wait while we load your site information.");
+        setMessageType("error");
+        return;
+      }
+
+      if (userSites.length === 0) {
+        setMessage("❌ You must be a member of at least one site to create PM plans. Please contact your administrator to be added to a site.");
+        setMessageType("error");
+        return;
+      }
+
+      if (userSites.length > 1 && !selectedSite) {
+        setShowSiteSelection(true);
+        setMessage("❌ Please select which site this plan belongs to.");
+        setMessageType("error");
+        return;
+      }
+
+      // Plan limit validation
+      const currentSiteId = selectedSite || (userSites.length === 1 ? userSites[0].id : null);
+      if (currentSiteId) {
+        try {
+          const planLimitCheck = await checkSitePlanLimit(currentSiteId, 1);
+          if (!planLimitCheck.canCreate) {
+            const isSuperAdmin = await isUserSuperAdmin(user.id);
+            
+            // Show modal for everyone (including super admin)
+            setPlanLimitData(planLimitCheck);
+            setIsUserSuperAdminState(isSuperAdmin);
+            setPendingFormData(data);
+            setShowPlanLimitModal(true);
+            return; // Stop execution here, let the modal handle the decision
+          }
+        } catch (error) {
+          console.error('Error checking plan limit:', error);
+          setMessage("❌ Unable to verify plan limits. Please try again.");
+          setMessageType("error");
+          return;
+        }
+      }
+
+      // If we get here, plan limit check passed, proceed with plan creation
+      await createPMPlan(data);
+    } catch (error) {
+      console.error("❌ Form validation error:", error);
+      setMessage(`❌ Error: ${error.message}`);
+      setMessageType("error");
     }
   };
 
@@ -787,19 +944,21 @@ export default function PMPlanner() {
 };
 
 
-  const handleBulkImport = async (parsedAssets) => {
+  // Extracted bulk import execution logic
+  const executeBulkImport = async (parsedAssets) => {
+    setBulkProcessing(true);
+    setBulkProgress(0);
+    setBulkTotal(parsedAssets.length);
+    setMessage("");
+    setGeneratedPlan(null);
+
+    console.log(`🚀 Starting bulk import of ${parsedAssets.length} assets`);
+
+    const results = [];
+    const errors = [];
+    const currentSiteId = selectedSite || (userSites.length === 1 ? userSites[0].id : null);
+
     try {
-      setBulkProcessing(true);
-      setBulkProgress(0);
-      setBulkTotal(parsedAssets.length);
-      setMessage("");
-      setGeneratedPlan(null);
-
-      console.log(`🚀 Starting bulk import of ${parsedAssets.length} assets`);
-
-      const results = [];
-      const errors = [];
-
       for (let i = 0; i < parsedAssets.length; i++) {
         const asset = parsedAssets[i];
         
@@ -809,6 +968,8 @@ export default function PMPlanner() {
           
           console.log(`📝 Processing asset ${i + 1}/${parsedAssets.length}:`, asset.name);
 
+          const siteData = userSites.find(s => s.id === currentSiteId);
+          
           const assetData = {
             name: asset.name || '',
             model: asset.model || '',
@@ -819,7 +980,8 @@ export default function PMPlanner() {
             environment: asset.environment || '',
             date_of_plan_start: asset.date_of_plan_start || '',
             email: user?.email || "bulk-import@example.com",
-            company: "Bulk Import Company"
+            company: siteData?.company?.name || "Bulk Import Company",
+            siteId: currentSiteId
           };
 
           const aiGeneratedPlan = await generatePMPlan(assetData);
@@ -881,6 +1043,60 @@ export default function PMPlanner() {
     }
   };
 
+  const handleBulkImport = async (parsedAssets) => {
+    try {
+      // Site validation logic (same as single plan)
+      if (sitesLoading) {
+        setMessage("❌ Please wait while we load your site information.");
+        setMessageType("error");
+        return;
+      }
+
+      if (userSites.length === 0) {
+        setMessage("❌ You must be a member of at least one site to create PM plans. Please contact your administrator to be added to a site.");
+        setMessageType("error");
+        return;
+      }
+
+      if (userSites.length > 1 && !selectedSite) {
+        setShowSiteSelection(true);
+        setMessage("❌ Please select which site these plans belong to.");
+        setMessageType("error");
+        return;
+      }
+
+      // Plan limit validation for bulk import
+      const currentSiteId = selectedSite || (userSites.length === 1 ? userSites[0].id : null);
+      if (currentSiteId) {
+        try {
+          const planLimitCheck = await checkSitePlanLimit(currentSiteId, parsedAssets.length);
+          if (!planLimitCheck.canCreate) {
+            const isSuperAdmin = await isUserSuperAdmin(user.id);
+            
+            // Show modal for everyone (including super admin)
+            setPlanLimitData(planLimitCheck);
+            setIsUserSuperAdminState(isSuperAdmin);
+            setPendingBulkAssets(parsedAssets);
+            setShowPlanLimitModal(true);
+            return; // Stop execution here, let the modal handle the decision
+          }
+        } catch (error) {
+          console.error('Error checking plan limit for bulk import:', error);
+          setMessage("❌ Unable to verify plan limits for bulk import. Please try again.");
+          setMessageType("error");
+          return;
+        }
+      }
+
+      // If we get here, bulk import plan limit check passed, proceed with execution
+      await executeBulkImport(parsedAssets);
+    } catch (error) {
+      console.error("❌ Bulk import validation error:", error);
+      setMessage(`❌ Error: ${error.message}`);
+      setMessageType("error");
+    }
+  };
+
   // Add this check at the beginning of your component
   if (!user) {
     return (
@@ -895,31 +1111,31 @@ export default function PMPlanner() {
       <div className="min-h-screen bg-gray-50">
       <LoadingModal isOpen={loading} />
       
-      {/* Company Selection Modal */}
-      {showCompanySelection && (
+      {/* Site Selection Modal */}
+      {showSiteSelection && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-md mx-4">
-            <h3 className="text-xl font-semibold text-gray-800 mb-4">Select Company</h3>
+            <h3 className="text-xl font-semibold text-gray-800 mb-4">Select Site</h3>
             <p className="text-gray-600 mb-4">
-              You belong to multiple companies. Please select which company this PM plan belongs to:
+              You belong to multiple sites. Please select which site this PM plan belongs to:
             </p>
             
             <div className="space-y-3 mb-6">
-              {userCompanies.map((company) => (
-                <label key={company.id} className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-gray-50 cursor-pointer">
+              {userSites.map((site) => (
+                <label key={site.id} className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-gray-50 cursor-pointer">
                   <input
                     type="radio"
-                    name="company"
-                    value={company.id}
-                    checked={selectedCompany === company.id}
-                    onChange={(e) => setSelectedCompany(e.target.value)}
+                    name="site"
+                    value={site.id}
+                    checked={selectedSite === site.id}
+                    onChange={(e) => setSelectedSite(e.target.value)}
                     className="text-blue-600"
                   />
                   <div>
-                    <div className="font-medium text-gray-900">{company.name}</div>
-                    {company.description && (
-                      <div className="text-sm text-gray-500">{company.description}</div>
-                    )}
+                    <div className="font-medium text-gray-900">{site.displayName}</div>
+                    <div className="text-sm text-gray-500">
+                      Plan Limit: {site.plan_limit || 0}
+                    </div>
                   </div>
                 </label>
               ))}
@@ -928,22 +1144,22 @@ export default function PMPlanner() {
             <div className="flex space-x-3">
               <button
                 onClick={() => {
-                  if (selectedCompany) {
-                    setShowCompanySelection(false);
+                  if (selectedSite) {
+                    setShowSiteSelection(false);
                     setMessage('');
                     setMessageType('');
                   } else {
-                    setMessage("❌ Please select a company.");
+                    setMessage("❌ Please select a site.");
                     setMessageType("error");
                   }
                 }}
-                disabled={!selectedCompany}
+                disabled={!selectedSite}
                 className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
               >
                 Continue
               </button>
               <button
-                onClick={() => setShowCompanySelection(false)}
+                onClick={() => setShowSiteSelection(false)}
                 className="flex-1 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
               >
                 Cancel
@@ -964,6 +1180,14 @@ export default function PMPlanner() {
         isOpen={showBulkImport} 
         onClose={() => setShowBulkImport(false)}
         onBulkImport={handleBulkImport}
+      />
+      
+      <PlanLimitOverrideModal
+        isOpen={showPlanLimitModal}
+        onClose={handlePlanLimitCancel}
+        onProceed={handlePlanLimitOverride}
+        limitData={planLimitData}
+        isSuperAdmin={isUserSuperAdminState}
       />
     
       
