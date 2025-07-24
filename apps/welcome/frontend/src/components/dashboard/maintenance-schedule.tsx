@@ -119,7 +119,7 @@ export default function MaintenanceSchedule() {
         date: (task.scheduled_dates && task.scheduled_dates.length > 0) ? task.scheduled_dates[0] : 'No date',
         time: '09:00',
         technician: task.pm_plans?.users?.full_name || 'Unassigned',
-        duration: task.est_minutes ? `${task.est_minutes} min` : (task.maintenance_interval || 'Unknown'),
+        duration: task.est_minutes ? task.est_minutes : (task.maintenance_interval || 'Unknown'),
         status: 'Pending',
         priority: 'High', // Default to High priority for maintenance tasks
         planId: task.pm_plan_id,
