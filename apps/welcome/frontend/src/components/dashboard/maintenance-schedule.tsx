@@ -1105,7 +1105,7 @@ export default function MaintenanceSchedule() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 11l5-5m0 0l5 5m-5-5v12" />
                     </svg>
                     <span className="text-sm font-medium">
-                      Dragging "{draggedTask?.asset}" - Drop on any date to reschedule
+                      Dragging "{draggedTask?.asset} - {draggedTask?.task}" - Drop on any date to reschedule
                     </span>
                   </div>
                 </div>
