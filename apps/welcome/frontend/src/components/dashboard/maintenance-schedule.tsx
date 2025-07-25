@@ -64,6 +64,11 @@ export default function MaintenanceSchedule() {
   const [canEditTask, setCanEditTask] = useState(false)
   const [isEditMode, setIsEditMode] = useState(false)
   const [originalTaskValues, setOriginalTaskValues] = useState(null)
+  
+  // Drag and drop state
+  const [draggedTask, setDraggedTask] = useState(null)
+  const [draggedOverDate, setDraggedOverDate] = useState(null)
+  const [isDragging, setIsDragging] = useState(false)
 
   // Fetch tasks from database
   const fetchTasks = async () => {
@@ -518,6 +523,135 @@ export default function MaintenanceSchedule() {
     }
   }
 
+  // Update task date with drag and drop
+  const updateTaskDate = async (taskId, newDate, originalDate) => {
+    try {
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) {
+        throw new Error('User not authenticated');
+      }
+
+      // Create audit record for the date change
+      const auditRecord = {
+        task_id: taskId,
+        user_id: user.id,
+        changed_field: 'Scheduled Date',
+        previous_value: originalDate,
+        new_value: newDate
+      };
+
+      // Insert audit record
+      const { error: auditError } = await supabase
+        .from('task_edit_audit')
+        .insert([auditRecord]);
+
+      if (auditError) {
+        console.error('Error creating audit record:', auditError);
+      }
+
+      // Update the task date
+      const { error: updateError } = await supabase
+        .from('pm_tasks')
+        .update({ 
+          scheduled_dates: [newDate] // Update scheduled_dates array
+        })
+        .eq('id', taskId);
+
+      if (updateError) throw updateError;
+
+      // Refresh tasks to show the change
+      await fetchTasks();
+      
+      toast({
+        title: "Task Date Updated",
+        description: `Task moved to ${new Date(newDate).toLocaleDateString()}`,
+        variant: "default",
+      });
+
+      return { success: true };
+    } catch (e) {
+      console.error('Error updating task date:', e);
+      toast({
+        title: "Error Moving Task",
+        description: e.message || "Failed to update task date",
+        variant: "destructive",
+      });
+      return { success: false, error: e.message };
+    }
+  };
+
+  // Drag and drop handlers
+  const handleDragStart = async (e, task) => {
+    // Check if user can edit this task
+    if (task.siteId) {
+      await checkCanEditPermission(task.siteId);
+      if (!canEditTask) {
+        e.preventDefault();
+        toast({
+          title: "Permission Denied",
+          description: "You don't have permission to move tasks for this site.",
+          variant: "destructive",
+        });
+        return;
+      }
+    } else {
+      // If no siteId, prevent dragging as a safety measure
+      e.preventDefault();
+      toast({
+        title: "Cannot Move Task",
+        description: "This task cannot be moved (missing site information).",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setDraggedTask(task);
+    setIsDragging(true);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/html', e.target.outerHTML);
+  };
+
+  const handleDragOver = (e, dateStr) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDraggedOverDate(dateStr);
+  };
+
+  const handleDragLeave = () => {
+    setDraggedOverDate(null);
+  };
+
+  const handleDrop = async (e, targetDate) => {
+    e.preventDefault();
+    
+    if (!draggedTask) return;
+
+    const newDateStr = targetDate.toISOString().split('T')[0];
+    const originalDateStr = draggedTask.date;
+
+    // Don't do anything if dropped on the same date
+    if (newDateStr === originalDateStr) {
+      setDraggedTask(null);
+      setDraggedOverDate(null);
+      setIsDragging(false);
+      return;
+    }
+
+    // Update the task date
+    await updateTaskDate(draggedTask.id, newDateStr, originalDateStr);
+
+    // Reset drag state
+    setDraggedTask(null);
+    setDraggedOverDate(null);
+    setIsDragging(false);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedTask(null);
+    setDraggedOverDate(null);
+    setIsDragging(false);
+  };
+
   // Export functionality
   const exportTaskData = (task, format = "json") => {
     const taskData = {
@@ -964,6 +1098,18 @@ export default function MaintenanceSchedule() {
             </TabsContent>
 
             <TabsContent value="calendar" className="space-y-6">
+              {isDragging && (
+                <div className="bg-blue-100 border border-blue-300 rounded-lg p-3 mb-4">
+                  <div className="flex items-center text-blue-700">
+                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 11l5-5m0 0l5 5m-5-5v12" />
+                    </svg>
+                    <span className="text-sm font-medium">
+                      Dragging "{draggedTask?.asset}" - Drop on any date to reschedule
+                    </span>
+                  </div>
+                </div>
+              )}
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center justify-between">
@@ -1012,26 +1158,36 @@ export default function MaintenanceSchedule() {
                         const tasksForDay = getTasksForDate(cellDate)
                         const isToday = cellDate.toDateString() === new Date().toDateString()
                         const isSelected = cellDate.toDateString() === new Date(selectedDate + 'T12:00:00').toDateString()
+                        const dateStr = cellDate.toISOString().split('T')[0]
+                        const isDraggedOver = draggedOverDate === dateStr
                         
                         return (
                           <div
                             key={day}
                             className={`border p-2 min-h-[100px] cursor-pointer transition-colors ${
                               isToday ? 'bg-blue-50 border-blue-200' : 'hover:bg-gray-50'
-                            } ${isSelected ? 'ring-2 ring-blue-500' : ''}`}
+                            } ${isSelected ? 'ring-2 ring-blue-500' : ''} ${
+                              isDraggedOver ? 'bg-green-100 border-green-300 border-2' : ''
+                            }`}
                             onClick={() => setSelectedDate(cellDate.toISOString().split('T')[0])}
+                            onDragOver={(e) => handleDragOver(e, dateStr)}
+                            onDragLeave={handleDragLeave}
+                            onDrop={(e) => handleDrop(e, cellDate)}
                           >
                             <div className="font-medium text-sm mb-1">{day}</div>
                             <div className="space-y-1">
                               {tasksForDay.slice(0, 3).map((task) => (
                                 <div
                                   key={task.id}
-                                  className={`text-xs p-1 rounded text-white truncate ${
+                                  draggable={true}
+                                  onDragStart={(e) => handleDragStart(e, task)}
+                                  onDragEnd={handleDragEnd}
+                                  className={`text-xs p-1 rounded text-white truncate cursor-move select-none ${
                                     task.priority === 'High' ? 'bg-red-500' :
                                     task.priority === 'Medium' ? 'bg-yellow-500' :
                                     'bg-green-500'
-                                  }`}
-                                  title={`${task.asset} - ${task.task}`}
+                                  } ${draggedTask?.id === task.id ? 'opacity-50' : 'hover:opacity-80'}`}
+                                  title={`${task.asset} - ${task.task} (Drag to move)`}
                                 >
                                   {task.asset}
                                 </div>
@@ -1062,7 +1218,14 @@ export default function MaintenanceSchedule() {
                       {scheduledTasks
                         .filter((task) => task.date === selectedDate)
                         .map((task) => (
-                          <div key={task.id} className="border rounded-lg p-4">
+                          <div 
+                            key={task.id} 
+                            className="border rounded-lg p-4 cursor-move select-none hover:shadow-md transition-shadow"
+                            draggable={true}
+                            onDragStart={(e) => handleDragStart(e, task)}
+                            onDragEnd={handleDragEnd}
+                            title="Drag to move to another date"
+                          >
                             <div className="flex items-center justify-between mb-2">
                               <h4 className="font-semibold">{task.asset}</h4>
                               <div className="flex items-center space-x-2">
