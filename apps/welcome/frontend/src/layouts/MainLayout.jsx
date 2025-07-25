@@ -81,18 +81,6 @@ function AdminMenu({ adminSites = [] }) {
             >
               Dashboard
             </button>
-            <button
-              onClick={() => handleNavigation('/terms-of-service')}
-              className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-            >
-              Terms of Service
-            </button>
-            <button
-              onClick={() => handleNavigation('/privacy-policy')}
-              className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-            >
-              Privacy Policy
-            </button>
             <div className="border-t border-gray-200 my-1"></div>
             <button
               onClick={() => handleNavigation('/admin/users')}
@@ -126,6 +114,7 @@ function AdminMenu({ adminSites = [] }) {
 // Shared AuthHeader component
 function AuthHeader() {
   const { user, logout, loading } = useAuth();
+  const navigate = useNavigate();
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminSites, setAdminSites] = useState([]);
   const [adminCheckLoading, setAdminCheckLoading] = useState(false);
@@ -189,6 +178,19 @@ function AuthHeader() {
             </div>
           </div>
           <div className="flex items-center space-x-4">
+            {/* Always visible links */}
+            <button
+              onClick={() => navigate('/terms-of-service')}
+              className="text-sm text-gray-600 hover:text-gray-900 transition-colors underline"
+            >
+              Terms of Service
+            </button>
+            <button
+              onClick={() => navigate('/privacy-policy')}
+              className="text-sm text-gray-600 hover:text-gray-900 transition-colors underline"
+            >
+              Privacy Policy
+            </button>
             {!adminCheckLoading && isAdmin && <AdminMenu adminSites={adminSites} />}
             <button
               onClick={logout}
