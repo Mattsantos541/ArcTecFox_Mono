@@ -742,6 +742,7 @@ export const fetchSiteUsers = async (siteId) => {
       .select(`
         id,
         role_id,
+        can_edit,
         roles (
           id,
           name
@@ -774,8 +775,10 @@ export const fetchSiteUsers = async (siteId) => {
       ...item.users,
       roles: item.roles ? [item.roles.name] : [],
       roleId: item.role_id,
+      can_edit: item.can_edit,
       site: item.sites,
-      siteUsersId: item.id
+      siteUsersId: item.id,
+      id: item.id // Use site_users id as the main id
     }));
     
     console.log('✅ Site users fetched:', usersWithRoles);

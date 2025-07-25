@@ -53,6 +53,17 @@ export default function MaintenanceSchedule() {
   const [editedTechnician, setEditedTechnician] = useState("")
   const [editedDate, setEditedDate] = useState("")
   const [editedTime, setEditedTime] = useState("")
+  const [editedTaskName, setEditedTaskName] = useState("")
+  const [editedInstructions, setEditedInstructions] = useState("")
+  const [editedEstMinutes, setEditedEstMinutes] = useState("")
+  const [editedToolsNeeded, setEditedToolsNeeded] = useState("")
+  const [editedNoTechsNeeded, setEditedNoTechsNeeded] = useState("")
+  const [editedReason, setEditedReason] = useState("")
+  const [editedSafetyPrecautions, setEditedSafetyPrecautions] = useState("")
+  const [editedConsumables, setEditedConsumables] = useState("")
+  const [canEditTask, setCanEditTask] = useState(false)
+  const [isEditMode, setIsEditMode] = useState(false)
+  const [originalTaskValues, setOriginalTaskValues] = useState(null)
 
   // Fetch tasks from database
   const fetchTasks = async () => {
@@ -98,6 +109,7 @@ export default function MaintenanceSchedule() {
             id,
             asset_name,
             created_by,
+            site_id,
             users (
               id,
               email,
@@ -123,6 +135,7 @@ export default function MaintenanceSchedule() {
         status: 'Pending',
         priority: 'High', // Default to High priority for maintenance tasks
         planId: task.pm_plan_id,
+        siteId: task.pm_plans?.site_id,
         createdByEmail: task.pm_plans?.users?.email,
         notes: task.notes,
         completedAt: task.completed_at,
@@ -157,24 +170,88 @@ export default function MaintenanceSchedule() {
     }
   }
 
-  // Update task in database
-  const updateTask = async (taskId, updates) => {
+  // Update task in database with audit trail
+  const updateTask = async (taskId, updates, originalTask = null) => {
     try {
       const { data: { user }, error: userError } = await supabase.auth.getUser();
-      console.log('=== AUTH DEBUG ===');
-      console.log('Current authenticated user email:', user?.email);
-      console.log('Current authenticated user ID:', user?.id);
+      if (userError || !user) {
+        throw new Error('User not authenticated');
+      }
       
-      // Check what's in users table for this email
-      const { data: dbUser } = await supabase
-        .from('users')
-        .select('id, email')
-        .eq('email', user?.email)
-        .single();
-      console.log('Database user record:', dbUser);
-      console.log('IDs match?', user?.id === dbUser?.id);
-      console.log('==================');
+      // If we have the original task, create audit records for changes
+      if (originalTask) {
+        const auditRecords = [];
+        
+        // Define field mappings for cleaner audit trail
+        const fieldMappings = {
+          task_name: 'Task Name',
+          instructions: 'Instructions',
+          est_minutes: 'Estimated Minutes',
+          tools_needed: 'Tools Needed',
+          no_techs_needed: 'Number of Technicians',
+          reason: 'Reason',
+          safety_precautions: 'Safety Precautions',
+          engineering_rationale: 'Engineering Rationale',
+          common_failures_prevented: 'Common Failures Prevented',
+          usage_insights: 'Usage Insights',
+          consumables: 'Consumables'
+        };
+        
+        // Compare each field and create audit records for changes
+        for (const [field, value] of Object.entries(updates)) {
+          // Get the original value from the database
+          const { data: currentTask } = await supabase
+            .from('pm_tasks')
+            .select(field)
+            .eq('id', taskId)
+            .single();
+            
+          const originalValue = currentTask?.[field];
+          
+          // Handle array comparison for instructions
+          let hasChanged = false;
+          let prevValueStr = null;
+          let newValueStr = null;
+          
+          if (field === 'instructions' && Array.isArray(value)) {
+            const origArray = Array.isArray(originalValue) ? originalValue : [];
+            hasChanged = JSON.stringify(origArray) !== JSON.stringify(value);
+            prevValueStr = origArray.join('\n') || null;
+            newValueStr = value.join('\n') || null;
+          } else {
+            hasChanged = originalValue !== value;
+            prevValueStr = originalValue?.toString() || null;
+            newValueStr = value?.toString() || null;
+          }
+          
+          // Only create audit record if value actually changed
+          if (hasChanged) {
+            const fieldName = fieldMappings[field] || field;
+            
+            auditRecords.push({
+              task_id: taskId,
+              user_id: user.id,
+              changed_field: fieldName,
+              previous_value: prevValueStr,
+              new_value: newValueStr
+            });
+          }
+        }
+        
+        // Insert all audit records if there are any changes
+        if (auditRecords.length > 0) {
+          const { error: auditError } = await supabase
+            .from('task_edit_audit')
+            .insert(auditRecords);
+            
+          if (auditError) {
+            console.error('Error creating audit records:', auditError);
+            // Don't fail the update if audit fails, but log it
+          }
+        }
+      }
       
+      // Update the task
       const { data, error } = await supabase
         .from('pm_tasks')
         .update(updates)
@@ -285,18 +362,95 @@ export default function MaintenanceSchedule() {
     navigate('/pmplanner')
   }
 
-  // Task action handlers
-  const handleViewTask = (task) => {
-    setViewingTask(task)
-    setShowViewDialog(true)
+  // Check if user can edit task based on site permissions
+  const checkCanEditPermission = async (siteId) => {
+    if (!user || !siteId) {
+      setCanEditTask(false)
+      return
+    }
+
+    try {
+      // Get the current user's site_users record for this site
+      const { data: siteUser, error } = await supabase
+        .from('site_users')
+        .select('can_edit')
+        .eq('user_id', user.id)
+        .eq('site_id', siteId)
+        .single()
+
+      if (error) {
+        console.error('Error checking edit permission:', error)
+        setCanEditTask(false)
+        return
+      }
+
+      setCanEditTask(siteUser?.can_edit || false)
+    } catch (err) {
+      console.error('Error checking permission:', err)
+      setCanEditTask(false)
+    }
   }
 
-  const handleEditTask = (task) => {
+  // Task action handlers
+  const handleViewTask = async (task) => {
+    setViewingTask(task)
+    setShowViewDialog(true)
+    setIsEditMode(false) // Start in view mode
+    
+    // Check if user can edit this task
+    if (task.siteId) {
+      await checkCanEditPermission(task.siteId)
+    }
+  }
+
+  const handleEditTask = async (task) => {
+    // Check if user can edit this task
+    if (task.siteId) {
+      await checkCanEditPermission(task.siteId)
+    }
+    
+    // Only show edit dialog if user has permission
+    if (!canEditTask) {
+      toast({
+        title: "Permission Denied",
+        description: "You don't have permission to edit tasks for this site.",
+        variant: "destructive",
+      })
+      return
+    }
+    
     setEditingTask(task)
     setEditedStatus(task.status)
     setEditedTechnician(task.technician)
     setEditedDate(task.date)
     setEditedTime(task.time)
+    setEditedTaskName(task.task || '')
+    setEditedInstructions(Array.isArray(task.instructions) ? task.instructions.join('\n') : (task.instructions || ''))
+    setEditedEstMinutes(task.est_minutes || '')
+    setEditedToolsNeeded(task.tools_needed || '')
+    setEditedNoTechsNeeded(task.no_techs_needed || '')
+    setEditedReason(task.reason || '')
+    setEditedSafetyPrecautions(task.safety_precautions || '')
+    setEditedConsumables(task.consumables || '')
+    
+    // Store original values for audit trail
+    setOriginalTaskValues({
+      task_name: task.task,
+      instructions: task.instructions,
+      est_minutes: task.est_minutes,
+      tools_needed: task.tools_needed,
+      no_techs_needed: task.no_techs_needed,
+      reason: task.reason,
+      safety_precautions: task.safety_precautions,
+      engineering_rationale: task.engineering_rationale,
+      common_failures_prevented: task.common_failures_prevented,
+      usage_insights: task.usage_insights,
+      consumables: task.consumables,
+      status: task.status,
+      assigned_technician: task.technician,
+      scheduled_date: task.date,
+      scheduled_time: task.time
+    })
     setShowEditDialog(true)
   }
 
@@ -329,13 +483,22 @@ export default function MaintenanceSchedule() {
   const saveTaskChanges = async () => {
     if (editingTask) {
       const updates = {
+        task_name: editedTaskName,
+        instructions: editedInstructions.split('\n').filter(line => line.trim()),
+        est_minutes: editedEstMinutes ? parseInt(editedEstMinutes) : null,
+        tools_needed: editedToolsNeeded,
+        no_techs_needed: editedNoTechsNeeded ? parseInt(editedNoTechsNeeded) : null,
+        reason: editedReason,
+        safety_precautions: editedSafetyPrecautions,
+        consumables: editedConsumables,
         status: editedStatus,
         assigned_technician: editedTechnician,
         scheduled_date: editedDate,
         scheduled_time: editedTime
       }
 
-      const result = await updateTask(editingTask.id, updates)
+      // Now with full audit trail support
+      const result = await updateTask(editingTask.id, updates, originalTaskValues)
       if (result.success) {
         toast({
           title: "Task Updated",
@@ -351,6 +514,7 @@ export default function MaintenanceSchedule() {
       }
       setShowEditDialog(false)
       setEditingTask(null)
+      setOriginalTaskValues(null)
     }
   }
 
@@ -1067,42 +1231,77 @@ export default function MaintenanceSchedule() {
                     </div>
                     <div className="text-center">
                       <div className="text-xs font-medium text-blue-600 uppercase tracking-wide">Estimated Time to Complete</div>
-                      <div className="text-sm font-semibold text-blue-900 mt-1">
-                        {viewingTask.est_minutes ? `${viewingTask.est_minutes} min` : 'N/A'}
-                      </div>
+                      {isEditMode ? (
+                        <Input
+                          type="number"
+                          className="w-24 mx-auto mt-1"
+                          value={viewingTask.est_minutes || ''}
+                          onChange={(e) => setViewingTask({ ...viewingTask, est_minutes: parseInt(e.target.value) || 0 })}
+                          placeholder="Minutes"
+                        />
+                      ) : (
+                        <div className="text-sm font-semibold text-blue-900 mt-1">
+                          {viewingTask.est_minutes ? `${viewingTask.est_minutes} min` : 'N/A'}
+                        </div>
+                      )}
                     </div>
                     <div className="text-center">
                       <div className="text-xs font-medium text-blue-600 uppercase tracking-wide">Techs Needed</div>
-                      <div className="text-sm font-semibold text-blue-900 mt-1">
-                        {viewingTask.no_techs_needed || 'N/A'}
-                      </div>
+                      {isEditMode ? (
+                        <Input
+                          type="number"
+                          className="w-20 mx-auto mt-1"
+                          value={viewingTask.no_techs_needed || ''}
+                          onChange={(e) => setViewingTask({ ...viewingTask, no_techs_needed: parseInt(e.target.value) || 1 })}
+                          placeholder="1"
+                        />
+                      ) : (
+                        <div className="text-sm font-semibold text-blue-900 mt-1">
+                          {viewingTask.no_techs_needed || 'N/A'}
+                        </div>
+                      )}
                     </div>
                     <div className="text-center">
                       <div className="text-xs font-medium text-blue-600 uppercase tracking-wide">Tools Needed</div>
-                      <div className="text-sm font-semibold text-blue-900 mt-1">
-                        {viewingTask.tools_needed || 'N/A'}
-                      </div>
+                      {isEditMode ? (
+                        <Input
+                          type="text"
+                          className="w-32 mx-auto mt-1"
+                          value={viewingTask.tools_needed || ''}
+                          onChange={(e) => setViewingTask({ ...viewingTask, tools_needed: e.target.value })}
+                          placeholder="Tools"
+                        />
+                      ) : (
+                        <div className="text-sm font-semibold text-blue-900 mt-1">
+                          {viewingTask.tools_needed || 'N/A'}
+                        </div>
+                      )}
                     </div>
                   </div>
 
                   {/* Task Instructions */}
                   <div className="bg-gray-50 p-4 rounded-lg">
                     <h4 className="font-medium mb-2">Task Instructions</h4>
-                    {viewingTask.instructions ? (
-                      <div className="text-sm space-y-2">
-                        {Array.isArray(viewingTask.instructions) ? 
-                          viewingTask.instructions.map((instruction, index) => {
-                            const cleanInstruction = instruction.replace(/^\d+\.\s*/, '');
-                            const isNumbered = instruction !== cleanInstruction;
-                            return (
-                              <div key={index} className="flex items-start gap-2">
-                                {!isNumbered && <span className="text-muted-foreground min-w-[20px]">{index + 1}.</span>}
-                                <span className={isNumbered ? 'ml-0' : ''}>{isNumbered ? instruction : cleanInstruction}</span>
-                              </div>
-                            );
-                          }) :
-                          typeof viewingTask.instructions === 'string' ? 
-                            viewingTask.instructions.split('\n').filter(line => line.trim()).map((instruction, index) => {
+                    {isEditMode ? (
+                      <div className="space-y-2">
+                        <Label htmlFor="instructions" className="text-sm">Edit Instructions (one per line)</Label>
+                        <textarea
+                          id="instructions"
+                          className="w-full min-h-[150px] p-2 border rounded-md text-sm"
+                          value={Array.isArray(viewingTask.instructions) 
+                            ? viewingTask.instructions.join('\n') 
+                            : viewingTask.instructions || ''}
+                          onChange={(e) => {
+                            const updatedTask = { ...viewingTask, instructions: e.target.value.split('\n').filter(line => line.trim()) }
+                            setViewingTask(updatedTask)
+                          }}
+                        />
+                      </div>
+                    ) : (
+                      viewingTask.instructions ? (
+                        <div className="text-sm space-y-2">
+                          {Array.isArray(viewingTask.instructions) ? 
+                            viewingTask.instructions.map((instruction, index) => {
                               const cleanInstruction = instruction.replace(/^\d+\.\s*/, '');
                               const isNumbered = instruction !== cleanInstruction;
                               return (
@@ -1112,13 +1311,63 @@ export default function MaintenanceSchedule() {
                                 </div>
                               );
                             }) :
-                            <p className="text-muted-foreground">No instructions available</p>
-                        }
-                      </div>
-                    ) : (
-                      <p className="text-sm text-muted-foreground">No instructions available</p>
+                            typeof viewingTask.instructions === 'string' ? 
+                              viewingTask.instructions.split('\n').filter(line => line.trim()).map((instruction, index) => {
+                                const cleanInstruction = instruction.replace(/^\d+\.\s*/, '');
+                                const isNumbered = instruction !== cleanInstruction;
+                                return (
+                                  <div key={index} className="flex items-start gap-2">
+                                    {!isNumbered && <span className="text-muted-foreground min-w-[20px]">{index + 1}.</span>}
+                                    <span className={isNumbered ? 'ml-0' : ''}>{isNumbered ? instruction : cleanInstruction}</span>
+                                  </div>
+                                );
+                              }) :
+                              <p className="text-muted-foreground">No instructions available</p>
+                          }
+                        </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">No instructions available</p>
+                      )
                     )}
                   </div>
+
+                  {/* Additional Task Details (only in edit mode) */}
+                  {isEditMode && (
+                    <div className="space-y-4">
+                      <div>
+                        <Label htmlFor="reason" className="text-sm font-medium">Reason for Task</Label>
+                        <textarea
+                          id="reason"
+                          className="w-full min-h-[60px] p-2 border rounded-md text-sm mt-1"
+                          value={viewingTask.reason || ''}
+                          onChange={(e) => setViewingTask({ ...viewingTask, reason: e.target.value })}
+                          placeholder="Why is this task necessary?"
+                        />
+                      </div>
+                      
+                      <div>
+                        <Label htmlFor="safety" className="text-sm font-medium">Safety Precautions</Label>
+                        <textarea
+                          id="safety"
+                          className="w-full min-h-[60px] p-2 border rounded-md text-sm mt-1"
+                          value={viewingTask.safety_precautions || ''}
+                          onChange={(e) => setViewingTask({ ...viewingTask, safety_precautions: e.target.value })}
+                          placeholder="Safety measures to follow"
+                        />
+                      </div>
+                      
+                      <div>
+                        <Label htmlFor="consumables" className="text-sm font-medium">Consumables Required</Label>
+                        <textarea
+                          id="consumables"
+                          className="w-full min-h-[60px] p-2 border rounded-md text-sm mt-1"
+                          value={viewingTask.consumables || ''}
+                          onChange={(e) => setViewingTask({ ...viewingTask, consumables: e.target.value })}
+                          placeholder="List of consumable materials needed"
+                        />
+                      </div>
+                    </div>
+                  )}
 
                   {/* Related Plan */}
                   <div>
@@ -1145,14 +1394,82 @@ export default function MaintenanceSchedule() {
                   <Button variant="outline" onClick={() => setShowViewDialog(false)}>
                     Close
                   </Button>
-                  <Button
-                    onClick={() => {
-                      setShowViewDialog(false)
-                      handleEditTask(viewingTask)
-                    }}
-                  >
-                    Edit Task
-                  </Button>
+                  {canEditTask && !isEditMode && (
+                    <Button
+                      onClick={() => {
+                        // Store the current values before entering edit mode
+                        setOriginalTaskValues({
+                          task_name: viewingTask.task,
+                          instructions: viewingTask.instructions,
+                          est_minutes: viewingTask.est_minutes,
+                          tools_needed: viewingTask.tools_needed,
+                          no_techs_needed: viewingTask.no_techs_needed,
+                          reason: viewingTask.reason,
+                          safety_precautions: viewingTask.safety_precautions,
+                          engineering_rationale: viewingTask.engineering_rationale,
+                          common_failures_prevented: viewingTask.common_failures_prevented,
+                          usage_insights: viewingTask.usage_insights,
+                          consumables: viewingTask.consumables
+                        });
+                        setIsEditMode(true);
+                      }}
+                    >
+                      Edit Task
+                    </Button>
+                  )}
+                  {canEditTask && isEditMode && (
+                    <>
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setIsEditMode(false)
+                          setOriginalTaskValues(null)
+                          // Reset the viewing task to original values
+                          handleViewTask(viewingTask)
+                        }}
+                      >
+                        Cancel Edit
+                      </Button>
+                      <Button
+                        onClick={async () => {
+                          // Save the edited task details
+                          const updates = {
+                            task_name: viewingTask.task,
+                            instructions: viewingTask.instructions,
+                            est_minutes: viewingTask.est_minutes,
+                            tools_needed: viewingTask.tools_needed,
+                            no_techs_needed: viewingTask.no_techs_needed,
+                            reason: viewingTask.reason,
+                            safety_precautions: viewingTask.safety_precautions,
+                            engineering_rationale: viewingTask.engineering_rationale,
+                            common_failures_prevented: viewingTask.common_failures_prevented,
+                            usage_insights: viewingTask.usage_insights,
+                            consumables: viewingTask.consumables
+                          }
+                          
+                          const result = await updateTask(viewingTask.id, updates, originalTaskValues)
+                          if (result.success) {
+                            toast({
+                              title: "Task Updated",
+                              description: "Task details have been updated successfully.",
+                              variant: "default",
+                            })
+                            setIsEditMode(false)
+                            setShowViewDialog(false)
+                            setOriginalTaskValues(null)
+                          } else {
+                            toast({
+                              title: "Error Updating Task",
+                              description: result.error || "Failed to update task.",
+                              variant: "destructive",
+                            })
+                          }
+                        }}
+                      >
+                        Save Changes
+                      </Button>
+                    </>
+                  )}
                 </div>
               </DialogContent>
             </Dialog>
@@ -1167,7 +1484,18 @@ export default function MaintenanceSchedule() {
                   <DialogDescription>Modify task details and schedule</DialogDescription>
                 </DialogHeader>
 
-                <div className="space-y-4">
+                <div className="space-y-4 max-h-[60vh] overflow-y-auto">
+                  {/* Task Name */}
+                  <div className="space-y-2">
+                    <Label>Task Name</Label>
+                    <Input 
+                      value={editedTaskName} 
+                      onChange={(e) => setEditedTaskName(e.target.value)}
+                      placeholder="Task name"
+                    />
+                  </div>
+
+                  {/* Schedule and Status */}
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label>Status</Label>
@@ -1208,6 +1536,78 @@ export default function MaintenanceSchedule() {
                       <Label>Time</Label>
                       <Input type="time" value={editedTime} onChange={(e) => setEditedTime(e.target.value)} />
                     </div>
+                  </div>
+
+                  {/* Task Details */}
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                      <Label>Est. Minutes</Label>
+                      <Input 
+                        type="number" 
+                        value={editedEstMinutes} 
+                        onChange={(e) => setEditedEstMinutes(e.target.value)}
+                        placeholder="60"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Techs Needed</Label>
+                      <Input 
+                        type="number" 
+                        value={editedNoTechsNeeded} 
+                        onChange={(e) => setEditedNoTechsNeeded(e.target.value)}
+                        placeholder="1"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Tools Needed</Label>
+                      <Input 
+                        value={editedToolsNeeded} 
+                        onChange={(e) => setEditedToolsNeeded(e.target.value)}
+                        placeholder="List tools"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Instructions */}
+                  <div className="space-y-2">
+                    <Label>Instructions (one per line)</Label>
+                    <textarea
+                      className="w-full min-h-[100px] p-2 border rounded-md text-sm"
+                      value={editedInstructions}
+                      onChange={(e) => setEditedInstructions(e.target.value)}
+                      placeholder="Enter task instructions..."
+                    />
+                  </div>
+
+                  {/* Additional Details */}
+                  <div className="space-y-2">
+                    <Label>Reason for Task</Label>
+                    <textarea
+                      className="w-full min-h-[60px] p-2 border rounded-md text-sm"
+                      value={editedReason}
+                      onChange={(e) => setEditedReason(e.target.value)}
+                      placeholder="Why is this task necessary?"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Safety Precautions</Label>
+                    <textarea
+                      className="w-full min-h-[60px] p-2 border rounded-md text-sm"
+                      value={editedSafetyPrecautions}
+                      onChange={(e) => setEditedSafetyPrecautions(e.target.value)}
+                      placeholder="Safety measures to follow"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Consumables Required</Label>
+                    <textarea
+                      className="w-full min-h-[60px] p-2 border rounded-md text-sm"
+                      value={editedConsumables}
+                      onChange={(e) => setEditedConsumables(e.target.value)}
+                      placeholder="List of consumable materials needed"
+                    />
                   </div>
 
                   <div className="bg-gray-50 p-4 rounded-lg">

@@ -238,6 +238,32 @@ const UserManagement = () => {
     }
   };
 
+  const handleUpdateCanEdit = async (siteUserId, canEdit) => {
+    try {
+      // Find the user data to get the user_id
+      const userData = users.find(u => u.id === siteUserId);
+      if (!userData) {
+        setError('User not found');
+        return;
+      }
+
+      // Update the can_edit field in the site_users table
+      const { error } = await supabase
+        .from('site_users')
+        .update({ can_edit: canEdit })
+        .eq('id', siteUserId);
+
+      if (error) throw error;
+
+      // Reload the users to reflect the change
+      loadSiteUsers();
+      setError(null);
+    } catch (err) {
+      setError('Failed to update edit permission');
+      console.error(err);
+    }
+  };
+
   const handleCreateUser = async (e) => {
     e.preventDefault();
     if (!newUserEmail || !selectedSite) {
@@ -441,6 +467,9 @@ const UserManagement = () => {
                       Role
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Can Edit
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Joined
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -508,6 +537,14 @@ const UserManagement = () => {
                             )}
                           </div>
                         )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <input
+                          type="checkbox"
+                          checked={userData.can_edit || false}
+                          onChange={(e) => handleUpdateCanEdit(userData.id, e.target.checked)}
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        />
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {new Date(userData.created_at).toLocaleDateString()}
