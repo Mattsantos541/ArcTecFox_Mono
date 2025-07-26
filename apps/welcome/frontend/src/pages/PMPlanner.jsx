@@ -56,11 +56,11 @@ function BulkImportProgressModal({ isOpen, progress, total, currentAsset }) {
         <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-purple-600 mx-auto mb-4" />
         <h3 className="text-xl font-semibold text-gray-800 mb-2">Processing Bulk Import</h3>
         <p className="text-gray-600 mb-4">
-          Processing asset {progress} of {total}
+          Completed {progress} of {total} assets
         </p>
         {currentAsset && (
           <p className="text-sm text-gray-500 mb-4">
-            Current: {currentAsset}
+            Currently processing: {currentAsset}
           </p>
         )}
         <div className="w-full bg-gray-200 rounded-full h-2.5 mb-4">
@@ -76,7 +76,7 @@ function BulkImportProgressModal({ isOpen, progress, total, currentAsset }) {
 }
 
 // Bulk Import Modal Component
-function BulkImportModal({ isOpen, onClose, onBulkImport }) {
+function BulkImportModal({ isOpen, onClose, onBulkImport, assetCategories = [] }) {
   const [selectedFile, setSelectedFile] = useState(null);
   const [processing, setProcessing] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -84,6 +84,10 @@ function BulkImportModal({ isOpen, onClose, onBulkImport }) {
   if (!isOpen) return null;
 
   const handleDownloadTemplate = () => {
+    // Create workbook and worksheet
+    const wb = XLSX.utils.book_new();
+    
+    // Create main data worksheet
     const headers = [
       'Asset Name',
       'Model', 
@@ -95,13 +99,74 @@ function BulkImportModal({ isOpen, onClose, onBulkImport }) {
       'Plan Start Date'
     ];
     
-    const csvContent = headers.join(',') + '\n';
-    const blob = new Blob([csvContent], { type: 'text/csv' });
+    // Create sample data with proper formatting
+    const sampleData = [
+      headers,
+      ['Example Pump 1', 'XYZ-2000', 'SN12345', 'Pump', '5000', 'Located in Building A', 'Indoor - Clean', '2024-01-15'],
+      ['', '', '', '', '', '', '', ''],
+      ['', '', '', '', '', '', '', ''],
+      ['', '', '', '', '', '', '', ''],
+      ['', '', '', '', '', '', '', '']
+    ];
+    
+    const ws = XLSX.utils.aoa_to_sheet(sampleData);
+    
+    // Set column widths
+    ws['!cols'] = [
+      { wch: 20 }, // Asset Name
+      { wch: 15 }, // Model
+      { wch: 15 }, // Serial Number
+      { wch: 15 }, // Category
+      { wch: 15 }, // Operating Hours
+      { wch: 30 }, // Additional Context
+      { wch: 20 }, // Environment
+      { wch: 15 }  // Plan Start Date
+    ];
+    
+    // Create categories sheet for dropdown data
+    const categoriesWs = XLSX.utils.aoa_to_sheet([
+      ['Categories'],
+      ...assetCategories.map(cat => [cat])
+    ]);
+    
+    // Add worksheets to workbook
+    XLSX.utils.book_append_sheet(wb, ws, 'PM Plans');
+    XLSX.utils.book_append_sheet(wb, categoriesWs, 'Categories');
+    
+    // Add data validation for category column (D2:D100)
+    if (!ws['!dataValidation']) ws['!dataValidation'] = [];
+    ws['!dataValidation'].push({
+      ref: 'D2:D100',
+      type: 'list',
+      formula1: 'Categories!$A$2:$A$' + (assetCategories.length + 1)
+    });
+    
+    // Add data validation for environment column
+    const environments = ['Indoor - Clean', 'Indoor - Dirty', 'Outdoor - Covered', 'Outdoor - Exposed', 'Harsh - Chemical', 'Harsh - Temperature'];
+    if (!ws['!dataValidation']) ws['!dataValidation'] = [];
+    ws['!dataValidation'].push({
+      ref: 'G2:G100',
+      type: 'list',
+      formula1: '"' + environments.join(',') + '"'
+    });
+    
+    // Generate Excel file
+    const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'binary' });
+    
+    // Convert to blob
+    function s2ab(s) {
+      const buf = new ArrayBuffer(s.length);
+      const view = new Uint8Array(buf);
+      for (let i = 0; i < s.length; i++) view[i] = s.charCodeAt(i) & 0xFF;
+      return buf;
+    }
+    
+    const blob = new Blob([s2ab(wbout)], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const url = window.URL.createObjectURL(blob);
     
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'pm_planner_template.csv';
+    link.download = 'pm_planner_template.xlsx';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -113,11 +178,17 @@ function BulkImportModal({ isOpen, onClose, onBulkImport }) {
     if (file) {
       setErrorMessage("");
       
-      if (file.type === 'text/csv' || file.name.endsWith('.csv')) {
+      const isCSV = file.type === 'text/csv' || file.name.endsWith('.csv');
+      const isExcel = file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || 
+                      file.type === 'application/vnd.ms-excel' || 
+                      file.name.endsWith('.xlsx') || 
+                      file.name.endsWith('.xls');
+      
+      if (isCSV || isExcel) {
         setSelectedFile(file);
         console.log('File selected:', file.name);
       } else {
-        setErrorMessage('Please select a CSV file');
+        setErrorMessage('Please select a CSV or Excel file');
         event.target.value = '';
       }
     }
@@ -149,11 +220,31 @@ function BulkImportModal({ isOpen, onClose, onBulkImport }) {
     }
 
     const parsedData = dataRows.map((row, index) => {
-      const values = row.split(',').map(value => value.trim().replace(/"/g, ''));
+      // Better CSV parsing that handles quoted values with commas
+      const values = [];
+      let current = '';
+      let inQuotes = false;
+      
+      for (let i = 0; i < row.length; i++) {
+        const char = row[i];
+        
+        if (char === '"' && (i === 0 || row[i-1] === ',')) {
+          inQuotes = true;
+        } else if (char === '"' && inQuotes) {
+          inQuotes = false;
+        } else if (char === ',' && !inQuotes) {
+          values.push(current.trim());
+          current = '';
+        } else {
+          current += char;
+        }
+      }
+      values.push(current.trim()); // Don't forget the last value
+      
       const rowData = {};
       
       headers.forEach((header, headerIndex) => {
-        const value = values[headerIndex] || '';
+        const value = (values[headerIndex] || '').replace(/^"|"$/g, '').trim();
         
         switch (header.toLowerCase()) {
           case 'asset name':
@@ -212,33 +303,75 @@ function BulkImportModal({ isOpen, onClose, onBulkImport }) {
       setProcessing(true);
       setErrorMessage("");
       
-      const fileReader = new FileReader();
-      fileReader.onload = async (e) => {
-        try {
-          const csvText = e.target.result;
-          console.log('CSV content:', csvText);
-          
-          const parsedAssets = parseCSV(csvText);
-          console.log('Parsed assets:', parsedAssets);
-          
-          await onBulkImport(parsedAssets);
-          
-          onClose();
-          
-        } catch (error) {
-          console.error('CSV parsing error:', error);
-          setErrorMessage(error.message);
-        } finally {
+      const isExcelFile = selectedFile.name.endsWith('.xlsx') || selectedFile.name.endsWith('.xls');
+      
+      if (isExcelFile) {
+        // Handle Excel file
+        const fileReader = new FileReader();
+        fileReader.onload = async (e) => {
+          try {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            
+            // Get the first sheet
+            const firstSheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[firstSheetName];
+            
+            // Convert to CSV
+            const csvText = XLSX.utils.sheet_to_csv(worksheet);
+            console.log('Excel converted to CSV:', csvText);
+            
+            const parsedAssets = parseCSV(csvText);
+            console.log('Parsed assets:', parsedAssets);
+            
+            await onBulkImport(parsedAssets);
+            
+            onClose();
+            
+          } catch (error) {
+            console.error('Excel parsing error:', error);
+            setErrorMessage(error.message);
+          } finally {
+            setProcessing(false);
+          }
+        };
+        
+        fileReader.onerror = () => {
+          setErrorMessage('Error reading file');
           setProcessing(false);
-        }
-      };
-      
-      fileReader.onerror = () => {
-        setErrorMessage('Error reading file');
-        setProcessing(false);
-      };
-      
-      fileReader.readAsText(selectedFile);
+        };
+        
+        fileReader.readAsArrayBuffer(selectedFile);
+      } else {
+        // Handle CSV file
+        const fileReader = new FileReader();
+        fileReader.onload = async (e) => {
+          try {
+            const csvText = e.target.result;
+            console.log('CSV content:', csvText);
+            
+            const parsedAssets = parseCSV(csvText);
+            console.log('Parsed assets:', parsedAssets);
+            
+            await onBulkImport(parsedAssets);
+            
+            onClose();
+            
+          } catch (error) {
+            console.error('CSV parsing error:', error);
+            setErrorMessage(error.message);
+          } finally {
+            setProcessing(false);
+          }
+        };
+        
+        fileReader.onerror = () => {
+          setErrorMessage('Error reading file');
+          setProcessing(false);
+        };
+        
+        fileReader.readAsText(selectedFile);
+      }
       
     } catch (error) {
       console.error('Import error:', error);
@@ -277,7 +410,7 @@ function BulkImportModal({ isOpen, onClose, onBulkImport }) {
           <div className="border border-gray-200 rounded-lg p-4">
             <h4 className="font-medium text-gray-700 mb-2">1. Download Template</h4>
             <p className="text-sm text-gray-600 mb-3">
-              Download a CSV template with the correct headers to fill out your asset information.
+              Download an Excel template with dropdown lists for categories and environments.
             </p>
             <button
               onClick={handleDownloadTemplate}
@@ -295,13 +428,13 @@ function BulkImportModal({ isOpen, onClose, onBulkImport }) {
           <div className="border border-gray-200 rounded-lg p-4">
             <h4 className="font-medium text-gray-700 mb-2">2. Select Import File</h4>
             <p className="text-sm text-gray-600 mb-3">
-              Choose a CSV file containing your asset data to import. <strong>Maximum 10 assets per file.</strong>
+              Choose a CSV or Excel file containing your asset data to import. <strong>Maximum 10 assets per file.</strong>
             </p>
             
             <div className="space-y-3">
               <input
                 type="file"
-                accept=".csv"
+                accept=".csv,.xlsx,.xls"
                 onChange={handleFileSelect}
                 disabled={processing}
                 className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 disabled:opacity-50"
@@ -964,7 +1097,7 @@ export default function PMPlanner() {
         
         try {
           setCurrentAssetName(asset.name || `Asset ${i + 1}`);
-          setBulkProgress(i + 1);
+          // Don't update progress here - wait until completion
           
           console.log(`📝 Processing asset ${i + 1}/${parsedAssets.length}:`, asset.name);
 
@@ -984,7 +1117,13 @@ export default function PMPlanner() {
             siteId: currentSiteId
           };
 
+          console.log(`📤 Sending asset data to API:`, assetData);
+          
           const aiGeneratedPlan = await generatePMPlan(assetData);
+          
+          if (!aiGeneratedPlan) {
+            throw new Error('No plan generated from API');
+          }
           
           results.push({
             asset: assetData,
@@ -993,8 +1132,15 @@ export default function PMPlanner() {
           });
 
           console.log(`✅ Successfully processed: ${asset.name}`);
+          console.log(`📋 Generated plan:`, aiGeneratedPlan);
+          
+          // Update progress AFTER successful completion
+          setBulkProgress(results.length);
 
-          await new Promise(resolve => setTimeout(resolve, 500));
+          // Add a small delay between API calls to avoid rate limiting
+          if (i < parsedAssets.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
 
         } catch (error) {
           console.error(`❌ Error processing asset ${asset.name}:`, error);
@@ -1002,6 +1148,9 @@ export default function PMPlanner() {
             asset: asset.name || `Row ${i + 2}`,
             error: error.message
           });
+          
+          // Update progress even for failed items to show accurate completion
+          setBulkProgress(results.length + errors.length);
         }
       }
 
@@ -1180,6 +1329,7 @@ export default function PMPlanner() {
         isOpen={showBulkImport} 
         onClose={() => setShowBulkImport(false)}
         onBulkImport={handleBulkImport}
+        assetCategories={assetCategories}
       />
       
       <PlanLimitOverrideModal
