@@ -207,23 +207,22 @@ function AuthHeader() {
   return (
     <div className="bg-white border-b border-gray-200 px-6 py-4">
       <div className="max-w-6xl mx-auto">
-        <div className="flex justify-between items-center">
-          <div className="text-center flex-1">
-            <h3 className="text-lg font-semibold text-gray-800 mb-2">
-              Sign in to Access PM Tools
-            </h3>
-            <p className="text-gray-600 mb-4 text-sm">
-              Sign in with your Google account to access the maintenance planning tools.
-            </p>
-            <GoogleLoginButton className="mx-auto" />
-          </div>
-          <div className="flex items-center space-x-4">
+        <div className="text-center">
+          <h3 className="text-lg font-semibold text-gray-800 mb-2">
+            Sign in to Access PM Tools
+          </h3>
+          <p className="text-gray-600 mb-4 text-sm">
+            Sign in with your Google account to access the maintenance planning tools.
+          </p>
+          <GoogleLoginButton className="mx-auto" />
+          <div className="flex justify-center items-center space-x-4 mt-4">
             <button
               onClick={() => navigate('/terms-of-service')}
               className="text-sm text-gray-600 hover:text-gray-900 transition-colors underline"
             >
               Terms of Service
             </button>
+            <span className="text-gray-400">|</span>
             <button
               onClick={() => navigate('/privacy-policy')}
               className="text-sm text-gray-600 hover:text-gray-900 transition-colors underline"
