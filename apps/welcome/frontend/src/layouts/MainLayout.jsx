@@ -206,14 +206,32 @@ function AuthHeader() {
 
   return (
     <div className="bg-white border-b border-gray-200 px-6 py-4">
-      <div className="max-w-6xl mx-auto text-center">
-        <h3 className="text-lg font-semibold text-gray-800 mb-2">
-          Sign in to Access PM Tools
-        </h3>
-        <p className="text-gray-600 mb-4 text-sm">
-          Sign in with your Google account to access the maintenance planning tools.
-        </p>
-        <GoogleLoginButton className="mx-auto" />
+      <div className="max-w-6xl mx-auto">
+        <div className="flex justify-between items-center">
+          <div className="text-center flex-1">
+            <h3 className="text-lg font-semibold text-gray-800 mb-2">
+              Sign in to Access PM Tools
+            </h3>
+            <p className="text-gray-600 mb-4 text-sm">
+              Sign in with your Google account to access the maintenance planning tools.
+            </p>
+            <GoogleLoginButton className="mx-auto" />
+          </div>
+          <div className="flex items-center space-x-4">
+            <button
+              onClick={() => navigate('/terms-of-service')}
+              className="text-sm text-gray-600 hover:text-gray-900 transition-colors underline"
+            >
+              Terms of Service
+            </button>
+            <button
+              onClick={() => navigate('/privacy-policy')}
+              className="text-sm text-gray-600 hover:text-gray-900 transition-colors underline"
+            >
+              Privacy Policy
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -242,7 +260,7 @@ export default function MainLayout() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 text-gray-900 font-sans">
+    <div className="min-h-screen bg-gray-100 text-gray-900 font-sans flex flex-col">
       {/* Auth header stays at top of every page */}
       <AuthHeader />
       
@@ -272,6 +290,27 @@ export default function MainLayout() {
       <div className="max-w-6xl mx-auto px-4 py-8">
         <Outlet />
       </div>
+
+      {/* Footer with Terms and Privacy links */}
+      <footer className="bg-white border-t border-gray-200 mt-auto">
+        <div className="max-w-6xl mx-auto px-6 py-4">
+          <div className="flex justify-center items-center space-x-6 text-sm text-gray-600">
+            <a 
+              href="/terms-of-service" 
+              className="hover:text-gray-900 transition-colors"
+            >
+              Terms of Service
+            </a>
+            <span className="text-gray-400">|</span>
+            <a 
+              href="/privacy-policy" 
+              className="hover:text-gray-900 transition-colors"
+            >
+              Privacy Policy
+            </a>
+          </div>
+        </div>
+      </footer>
 
       {/* Terms of Service Modal - shown only to authenticated users who haven't accepted */}
       {user && needsToSAcceptance && (
