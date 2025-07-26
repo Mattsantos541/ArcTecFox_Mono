@@ -7,14 +7,13 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { CalendarDays, Clock, User, CheckCircle, AlertCircle, Eye, Edit, Trash2, Download, Info, Loader2, ChevronLeft, ChevronRight } from "lucide-react"
+import { CalendarDays, Clock, User, CheckCircle, AlertCircle, Eye, Edit, Trash2, Download, Info, Loader2, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react"
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip"
 import ComponentErrorBoundary from "../ComponentErrorBoundary"
 import { MaintenanceScheduleLoading } from "../loading/LoadingStates"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
 import { useAuth } from "../../hooks/useAuth"
 import { supabase, isUserSiteAdmin, getUserAdminSites } from "../../api" // Import the shared client
@@ -69,6 +68,18 @@ export default function MaintenanceSchedule() {
   const [draggedTask, setDraggedTask] = useState(null)
   const [draggedOverDate, setDraggedOverDate] = useState(null)
   const [isDragging, setIsDragging] = useState(false)
+  
+  // Filter state
+  const [filterStatus, setFilterStatus] = useState("all")
+  const [filterPriority, setFilterPriority] = useState("all")
+  const [filterTechnician, setFilterTechnician] = useState("all")
+  const [filterDateRange, setFilterDateRange] = useState({ start: "", end: "" })
+  const [filterAsset, setFilterAsset] = useState("")
+  const [filterTask, setFilterTask] = useState("")
+  
+  // Sort state
+  const [sortField, setSortField] = useState("")
+  const [sortDirection, setSortDirection] = useState("asc")
 
   // Fetch tasks from database
   const fetchTasks = async () => {
@@ -136,9 +147,9 @@ export default function MaintenanceSchedule() {
         date: (task.scheduled_dates && task.scheduled_dates.length > 0) ? task.scheduled_dates[0] : 'No date',
         time: '09:00',
         technician: task.pm_plans?.users?.full_name || 'Unassigned',
-        duration: task.est_minutes ? task.est_minutes : (task.maintenance_interval || 'Unknown'),
-        status: 'Pending',
-        priority: 'High', // Default to High priority for maintenance tasks
+        duration: task.est_minutes ? `${task.est_minutes} min` : (task.maintenance_interval || 'Unknown'),
+        status: task.completed_at ? 'Completed' : 'Scheduled',
+        priority: task.priority || 'High', // Use task priority or default to High
         planId: task.pm_plan_id,
         siteId: task.pm_plans?.site_id,
         createdByEmail: task.pm_plans?.users?.email,
@@ -161,6 +172,7 @@ export default function MaintenanceSchedule() {
         consumables: task.consumables
       }))
 
+      console.log('Setting scheduled tasks:', transformedTasks);
       setScheduledTasks(transformedTasks)
     } catch (err) {
       console.error('Error fetching tasks:', err)
@@ -327,40 +339,6 @@ export default function MaintenanceSchedule() {
     }
   }, [user]) // Removed supabaseClient dependency since we're using the shared client
 
-  // Calculate weekly view data from real tasks
-  const getWeeklyView = () => {
-    const today = new Date()
-    const weekStart = new Date(today)
-    weekStart.setDate(today.getDate() - today.getDay()) // Start of week (Sunday)
-    
-    const weeklyData = []
-    
-    for (let i = 0; i < 7; i++) {
-      const date = new Date(weekStart)
-      date.setDate(weekStart.getDate() + i)
-      
-      const dateStr = date.toISOString().split('T')[0]
-      const tasksCount = scheduledTasks.filter(task => task.date === dateStr).length
-      
-      const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-      
-      weeklyData.push({
-        date: `${dayNames[i]} ${date.getDate()}`,
-        tasks: tasksCount
-      })
-    }
-    
-    return weeklyData
-  }
-
-  // Calculate summary stats
-  const getSummaryStats = () => {
-    const total = scheduledTasks.length
-    const completed = scheduledTasks.filter(task => task.status === 'Completed').length
-    const overdue = scheduledTasks.filter(task => task.status === 'Overdue').length
-    
-    return { total, completed, overdue }
-  }
 
   // Add navigation handler
   const handleCreateNewPlans = () => {
@@ -920,7 +898,7 @@ export default function MaintenanceSchedule() {
 
   const getTasksForDate = (date) => {
     const dateString = date.toISOString().split('T')[0]
-    return scheduledTasks.filter(task => task.date === dateString)
+    return filteredTasks.filter(task => task.date === dateString)
   }
 
   const navigateMonth = (direction) => {
@@ -964,7 +942,139 @@ export default function MaintenanceSchedule() {
       </div>
     )
   }
+  
+  // Get unique technicians for filter
+  const uniqueTechnicians = [...new Set(scheduledTasks.map(task => task.technician).filter(Boolean))]
+  
+  // Filter and sort tasks
+  let processedTasks = scheduledTasks.filter(task => {
+    // Debug logging
+    if (filterStatus !== "all" || filterPriority !== "all" || filterTechnician !== "all") {
+      console.log('Filter values:', { filterStatus, filterPriority, filterTechnician });
+      console.log('Task values:', { status: task.status, priority: task.priority, technician: task.technician });
+    }
+    
+    // Status filter
+    if (filterStatus !== "all" && task.status !== filterStatus) {
+      console.log(`Status filter: ${task.status} !== ${filterStatus}`);
+      return false;
+    }
+    
+    // Priority filter  
+    if (filterPriority !== "all" && task.priority !== filterPriority) {
+      console.log(`Priority filter: ${task.priority} !== ${filterPriority}`);
+      return false;
+    }
+    
+    // Technician filter
+    if (filterTechnician !== "all" && task.technician !== filterTechnician) {
+      console.log(`Technician filter: ${task.technician} !== ${filterTechnician}`);
+      return false;
+    }
+    
+    // Date filter (exact match or after selected date)
+    if (filterDateRange.start && task.date !== filterDateRange.start) return false
+    
+    // Asset text filter
+    if (filterAsset && !task.asset.toLowerCase().includes(filterAsset.toLowerCase())) return false
+    
+    // Task text filter
+    if (filterTask && !task.task.toLowerCase().includes(filterTask.toLowerCase())) return false
+    
+    return true
+  })
+  
+  // Apply sorting
+  if (sortField) {
+    processedTasks = [...processedTasks].sort((a, b) => {
+      let aValue = a[sortField]
+      let bValue = b[sortField]
+      
+      // Handle date sorting
+      if (sortField === 'date') {
+        aValue = new Date(aValue)
+        bValue = new Date(bValue)
+      }
+      
+      // Handle priority sorting (High > Medium > Low)
+      if (sortField === 'priority') {
+        const priorityOrder = { 'High': 3, 'Medium': 2, 'Low': 1 }
+        aValue = priorityOrder[aValue] || 0
+        bValue = priorityOrder[bValue] || 0
+      }
+      
+      // Handle status sorting
+      if (sortField === 'status') {
+        const statusOrder = { 'Overdue': 4, 'In Progress': 3, 'Scheduled': 2, 'Completed': 1 }
+        aValue = statusOrder[aValue] || 0
+        bValue = statusOrder[bValue] || 0
+      }
+      
+      if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1
+      if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1
+      return 0
+    })
+  }
+  
+  const filteredTasks = processedTasks
+  
+  // Reset filters
+  const resetFilters = () => {
+    setFilterStatus("all")
+    setFilterPriority("all")
+    setFilterTechnician("all")
+    setFilterDateRange({ start: "", end: "" })
+    setFilterAsset("")
+    setFilterTask("")
+    setSortField("")
+    setSortDirection("asc")
+  }
+  
+  // Handle sorting
+  const handleSort = (field) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortField(field)
+      setSortDirection('asc')
+    }
+  }
+  
+  // Calculate weekly view data from real tasks
+  const getWeeklyView = () => {
+    const today = new Date()
+    const weekStart = new Date(today)
+    weekStart.setDate(today.getDate() - today.getDay()) // Start of week (Sunday)
+    
+    const weeklyData = []
+    
+    for (let i = 0; i < 7; i++) {
+      const date = new Date(weekStart)
+      date.setDate(weekStart.getDate() + i)
+      
+      const dateStr = date.toISOString().split('T')[0]
+      const tasksCount = filteredTasks.filter(task => task.date === dateStr).length
+      
+      const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+      
+      weeklyData.push({
+        date: `${dayNames[i]} ${date.getDate()}`,
+        tasks: tasksCount
+      })
+    }
+    
+    return weeklyData
+  }
 
+  // Calculate summary stats
+  const getSummaryStats = () => {
+    const total = filteredTasks.length
+    const completed = filteredTasks.filter(task => task.status === 'Completed').length
+    const overdue = filteredTasks.filter(task => task.status === 'Overdue').length
+    
+    return { total, completed, overdue }
+  }
+  
   const weeklyView = getWeeklyView()
   const stats = getSummaryStats()
 
@@ -996,36 +1106,233 @@ export default function MaintenanceSchedule() {
             <TabsContent value="list" className="space-y-6">
               <Card>
                 <CardHeader>
-                  <CardTitle>Scheduled Maintenance Tasks ({scheduledTasks.length})</CardTitle>
-                  <CardDescription>All upcoming and recent maintenance activities</CardDescription>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle>Scheduled Maintenance Tasks ({filteredTasks.length})</CardTitle>
+                      <CardDescription>All upcoming and recent maintenance activities</CardDescription>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {(filterStatus !== "all" || filterPriority !== "all" || filterTechnician !== "all" || filterDateRange.start || filterAsset || filterTask) && (
+                        <>
+                          <Badge variant="secondary">
+                            {filteredTasks.length} of {scheduledTasks.length} tasks
+                          </Badge>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={resetFilters}
+                          >
+                            Reset Filters
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </div>
                 </CardHeader>
                 <CardContent>
-                  {scheduledTasks.length === 0 ? (
+                  {filteredTasks.length === 0 ? (
                     <div className="text-center py-8">
                       <CalendarDays className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                       <p className="text-lg font-medium text-gray-600">No maintenance tasks found</p>
-                      <p className="text-gray-500 mb-4">Create your first maintenance plan to get started</p>
-                      <button
-                        onClick={handleCreateNewPlans}
-                        className="px-6 py-2 sm:px-8 sm:py-3 rounded-lg font-semibold text-white text-sm sm:text-base bg-blue-600 hover:bg-blue-700 transition-colors"
-                      >
-                        Generate New Plans
-                      </button>
+                      <p className="text-gray-500 mb-4">{scheduledTasks.length > 0 ? "Try adjusting your filters" : "Create your first maintenance plan to get started"}</p>
+                      {scheduledTasks.length === 0 ? (
+                        <button
+                          onClick={handleCreateNewPlans}
+                          className="px-6 py-2 sm:px-8 sm:py-3 rounded-lg font-semibold text-white text-sm sm:text-base bg-blue-600 hover:bg-blue-700 transition-colors"
+                        >
+                          Generate New Plans
+                        </button>
+                      ) : (
+                        <Button variant="outline" onClick={resetFilters}>
+                          Reset Filters
+                        </Button>
+                      )}
                     </div>
                   ) : (
-                    <Table>
+                    <div className="overflow-x-auto">
+                      <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Asset</TableHead>
-                          <TableHead>Task</TableHead>
-                          <TableHead>Date & Time</TableHead>
-                          <TableHead>Duration</TableHead>
-                          <TableHead>Priority</TableHead>
+                          <TableHead>
+                            <div className="space-y-2">
+                              <div className="flex items-center gap-2">
+                                <span>Asset</span>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 w-6 p-0"
+                                  onClick={() => handleSort('asset')}
+                                >
+                                  {sortField === 'asset' ? (
+                                    sortDirection === 'asc' ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                                  ) : (
+                                    <ArrowUpDown className="h-4 w-4" />
+                                  )}
+                                </Button>
+                              </div>
+                              <Input
+                                type="text"
+                                value={filterAsset}
+                                onChange={(e) => setFilterAsset(e.target.value)}
+                                placeholder="Filter assets..."
+                                className="h-8 text-xs"
+                              />
+                            </div>
+                          </TableHead>
+                          <TableHead>
+                            <div className="space-y-2">
+                              <div className="flex items-center gap-2">
+                                <span>Task</span>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 w-6 p-0"
+                                  onClick={() => handleSort('task')}
+                                >
+                                  {sortField === 'task' ? (
+                                    sortDirection === 'asc' ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                                  ) : (
+                                    <ArrowUpDown className="h-4 w-4" />
+                                  )}
+                                </Button>
+                              </div>
+                              <Input
+                                type="text"
+                                value={filterTask}
+                                onChange={(e) => setFilterTask(e.target.value)}
+                                placeholder="Filter tasks..."
+                                className="h-8 text-xs"
+                              />
+                            </div>
+                          </TableHead>
+                          <TableHead>
+                            <div className="space-y-2">
+                              <div className="flex items-center gap-2">
+                                <span>Date & Time</span>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 w-6 p-0"
+                                  onClick={() => handleSort('date')}
+                                >
+                                  {sortField === 'date' ? (
+                                    sortDirection === 'asc' ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                                  ) : (
+                                    <ArrowUpDown className="h-4 w-4" />
+                                  )}
+                                </Button>
+                              </div>
+                              <Input
+                                type="date"
+                                value={filterDateRange.start}
+                                onChange={(e) => setFilterDateRange(prev => ({ ...prev, start: e.target.value }))}
+                                className="h-8 text-xs"
+                                placeholder="Filter by date"
+                              />
+                            </div>
+                          </TableHead>
+                          <TableHead>
+                            <div className="space-y-2">
+                              <div className="flex items-center gap-2">
+                                <span>Technician</span>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 w-6 p-0"
+                                  onClick={() => handleSort('technician')}
+                                >
+                                  {sortField === 'technician' ? (
+                                    sortDirection === 'asc' ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                                  ) : (
+                                    <ArrowUpDown className="h-4 w-4" />
+                                  )}
+                                </Button>
+                              </div>
+                              <select
+                                value={filterTechnician}
+                                onChange={(e) => {
+                                  console.log('Technician filter changed to:', e.target.value);
+                                  setFilterTechnician(e.target.value);
+                                }}
+                                className="h-8 text-xs flex w-full rounded-md border border-gray-300 bg-white px-3 py-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                              >
+                                <option value="all">All Technicians</option>
+                                {uniqueTechnicians.map(tech => (
+                                  <option key={tech} value={tech}>{tech}</option>
+                                ))}
+                              </select>
+                            </div>
+                          </TableHead>
+                          <TableHead>
+                            <div className="space-y-2">
+                              <div className="flex items-center gap-2">
+                                <span>Priority</span>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 w-6 p-0"
+                                  onClick={() => handleSort('priority')}
+                                >
+                                  {sortField === 'priority' ? (
+                                    sortDirection === 'asc' ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                                  ) : (
+                                    <ArrowUpDown className="h-4 w-4" />
+                                  )}
+                                </Button>
+                              </div>
+                              <select
+                                value={filterPriority}
+                                onChange={(e) => {
+                                  console.log('Priority filter changed to:', e.target.value);
+                                  setFilterPriority(e.target.value);
+                                }}
+                                className="h-8 text-xs flex w-full rounded-md border border-gray-300 bg-white px-3 py-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                              >
+                                <option value="all">All</option>
+                                <option value="High">High</option>
+                                <option value="Medium">Medium</option>
+                                <option value="Low">Low</option>
+                              </select>
+                            </div>
+                          </TableHead>
+                          <TableHead>
+                            <div className="space-y-2">
+                              <div className="flex items-center gap-2">
+                                <span>Status</span>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 w-6 p-0"
+                                  onClick={() => handleSort('status')}
+                                >
+                                  {sortField === 'status' ? (
+                                    sortDirection === 'asc' ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                                  ) : (
+                                    <ArrowUpDown className="h-4 w-4" />
+                                  )}
+                                </Button>
+                              </div>
+                              <select
+                                value={filterStatus}
+                                onChange={(e) => {
+                                  console.log('Status filter changed to:', e.target.value);
+                                  setFilterStatus(e.target.value);
+                                }}
+                                className="h-8 text-xs flex w-full rounded-md border border-gray-300 bg-white px-3 py-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                              >
+                                <option value="all">All</option>
+                                <option value="Scheduled">Scheduled</option>
+                                <option value="In Progress">In Progress</option>
+                                <option value="Completed">Completed</option>
+                                <option value="Overdue">Overdue</option>
+                              </select>
+                            </div>
+                          </TableHead>
                           <TableHead>Actions</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {scheduledTasks.map((task) => (
+                        {filteredTasks.map((task) => (
                           <TableRow key={task.id}>
                             <TableCell className="font-medium whitespace-nowrap">{task.asset}</TableCell>
                             <TableCell>{task.task}</TableCell>
@@ -1036,13 +1343,21 @@ export default function MaintenanceSchedule() {
                               </div>
                             </TableCell>
                             <TableCell>
-                              <div className="flex items-center space-x-2">
-                                <Clock className="h-4 w-4" />
-                                <span>{task.duration}</span>
+                              <div className="flex items-center space-x-1">
+                                <User className="h-4 w-4" />
+                                <span>{task.technician}</span>
                               </div>
                             </TableCell>
                             <TableCell>
                               <Badge variant={getPriorityColor(task.priority)}>{task.priority}</Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={getStatusColor(task.status)}>
+                                <div className="flex items-center space-x-1">
+                                  {getStatusIcon(task.status)}
+                                  <span>{task.status}</span>
+                                </div>
+                              </Badge>
                             </TableCell>
                             <TableCell>
                               <div className="flex items-center space-x-1">
@@ -1091,7 +1406,8 @@ export default function MaintenanceSchedule() {
                           </TableRow>
                         ))}
                       </TableBody>
-                    </Table>
+                      </Table>
+                    </div>
                   )}
                 </CardContent>
               </Card>
@@ -1215,7 +1531,7 @@ export default function MaintenanceSchedule() {
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-4">
-                      {scheduledTasks
+                      {filteredTasks
                         .filter((task) => task.date === selectedDate)
                         .map((task) => (
                           <div 
@@ -1290,7 +1606,7 @@ export default function MaintenanceSchedule() {
                             </div>
                           </div>
                         ))}
-                      {scheduledTasks.filter((task) => task.date === selectedDate).length === 0 && (
+                      {filteredTasks.filter((task) => task.date === selectedDate).length === 0 && (
                         <div className="text-center py-8 text-muted-foreground">
                           No tasks scheduled for this date
                         </div>
