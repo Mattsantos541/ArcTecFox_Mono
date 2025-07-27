@@ -162,19 +162,22 @@ function AuthHeader() {
     return (
       <div className="bg-white border-b border-gray-200 px-6 py-4">
         <div className="max-w-6xl mx-auto flex justify-between items-center">
-          <div className="flex items-center space-x-4">
-            {user.user_metadata?.avatar_url && (
-              <img 
-                src={user.user_metadata.avatar_url} 
-                alt="Profile" 
-                className="w-8 h-8 rounded-full"
-              />
-            )}
-            <div>
-              <p className="font-medium text-gray-800">
-                {user.user_metadata?.full_name || user.email}
-              </p>
-              <p className="text-sm text-gray-600">{user.email}</p>
+          <div className="flex items-center space-x-6">
+            <h1 className="text-xl font-bold text-gray-800">ArcTecFox</h1>
+            <div className="flex items-center space-x-4">
+              {user.user_metadata?.avatar_url && (
+                <img 
+                  src={user.user_metadata.avatar_url} 
+                  alt="Profile" 
+                  className="w-8 h-8 rounded-full"
+                />
+              )}
+              <div>
+                <p className="font-medium text-gray-800">
+                  {user.user_metadata?.full_name || user.email}
+                </p>
+                <p className="text-sm text-gray-600">{user.email}</p>
+              </div>
             </div>
           </div>
           <div className="flex items-center space-x-4">
@@ -207,6 +210,7 @@ function AuthHeader() {
   return (
     <div className="bg-white border-b border-gray-200 px-6 py-4">
       <div className="max-w-6xl mx-auto">
+        <h1 className="text-xl font-bold text-gray-800 text-center mb-4">ArcTecFox</h1>
         <div className="text-center">
           <h3 className="text-lg font-semibold text-gray-800 mb-2">
             Sign in to Access PM Tools
