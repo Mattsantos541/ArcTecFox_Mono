@@ -1,4 +1,3 @@
-// src/components/HeroSection.jsx
 import React from "react";
 import logo from "/assets/ArcTecFox-logo.jpg";
 
@@ -15,17 +14,24 @@ export default function HeroSection({ onGenerateClick }) {
         alt="ArcTecFox Logo"
         className="mx-auto mb-6 w-16 h-16 rounded"
       />
-      <h1 className="text-4xl font-bold text-blue-900 mb-4">
-        Welcome to our AI-Powered Maintenance Planning Platform
+
+      <h1 className="text-3xl font-semibold text-blue-900 mb-4">
+        What is ArcTecFox?
       </h1>
-      <p className="text-gray-700 max-w-xl mx-auto">
-        Our AI helps you create detailed PM plans for your specific equipment. Enter your
-        asset info and let the system generate schedules, safety procedures, and rationale —
-        in seconds.
+      <p className="text-gray-700 max-w-2xl mx-auto mb-6">
+        ArcTecFox is an AI-powered preventive maintenance planner that generates detailed PM schedules tailored to your specific equipment—pumps, motors, valves, and more. Get instant Excel or PDF output with no CMMS setup required.
       </p>
-      <p className="text-sm text-gray-500 mt-2">
-        Manage pumps, motors, valves, and more using manufacturer specs, industry best practices, and your real-world operations.
-      </p>
+
+      <h2 className="text-xl font-medium text-gray-800 mb-2">
+        Why Use ArcTecFox?
+      </h2>
+      <ul className="list-disc list-inside text-left text-gray-700 max-w-xl mx-auto mb-6">
+        <li>✅ Auto-generates maintenance plans based on real-world standards</li>
+        <li>✅ Supports pumps, motors, valves, compressors, and more</li>
+        <li>✅ Uses manufacturer specs, AI logic, and industry best practices</li>
+        <li>✅ Instantly downloadable as Excel or PDF</li>
+      </ul>
+
       <button
         onClick={scrollToPlanner}
         className="mt-6 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg shadow"
