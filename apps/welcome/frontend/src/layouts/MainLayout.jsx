@@ -3,7 +3,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useToSCheck } from '../hooks/useToSCheck';
 import { AuthLoading } from '../components/loading/LoadingStates';
 import ToSAcceptanceModal from '../components/ToSAcceptanceModal';
-import AuthHeader from '../components/layout/AuthHeader';
+import AuthHeader from '../components/layouts/AuthHeader';
 
 export default function MainLayout() {
   const { user, logout } = useAuth();
