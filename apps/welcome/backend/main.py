@@ -12,13 +12,19 @@ import google.generativeai as genai
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel
 from supabase import create_client, Client
 from PIL import Image
 import PyPDF2
 from docx import Document
 from file_processor import file_processor
+from pdf_export import (
+    export_maintenance_task_to_pdf,
+    export_pm_plans_data_to_pdf,
+    export_assets_data_to_pdf,
+    export_detailed_pm_plans_to_pdf
+)
 
 # Load environment variables
 load_dotenv()
@@ -31,7 +37,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="PM Planning AI API", version="1.0.0")
 
 # Environment-based CORS configuration
-cors_origins_env = os.getenv("CORS_ORIGIN", "http://localhost:3000")
+cors_origins_env = os.getenv("CORS_ORIGIN", "https://arctecfox-mono.vercel.app")
 cors_origins = [origin.strip() for origin in cors_origins_env.split(",")]
 
 logger.info(f"🌐 CORS origins configured: {cors_origins}")
@@ -92,6 +98,11 @@ class HealthResponse(BaseModel):
 class AIPlanResponse(BaseModel):
     success: bool
     data: List[Dict[str, Any]]
+
+class PDFExportRequest(BaseModel):
+    data: List[Dict[str, Any]]
+    filename: Optional[str] = None
+    export_type: str  # "maintenance_task", "pm_plans", "assets", "detailed_pm_plans"
 
 # Health check route
 @app.get("/api/health", response_model=HealthResponse)
@@ -174,6 +185,10 @@ For each PM task:
 7. Include an "engineering_rationale" field explaining why this task and interval were selected.
 8. Based on the plan start date, return a list of future dates when this task should be performed over the next 12 months.
 9. In each task object, include the "usage_insights" field (you may repeat or summarize key points if needed).
+10. ALWAYS include "time_to_complete" - estimate how long this task takes (e.g., "2 hours", "45 minutes").
+11. ALWAYS include "tools_needed" - list all tools, equipment, and supplies required.
+12. ALWAYS include "number_of_technicians" - specify how many people are needed (integer).
+13. ALWAYS include "consumables" - list all consumables and supplies needed for this specific task (grease, oil, filters, gaskets, etc.).
 
 **IMPORTANT:** Return only a valid JSON object with no markdown or explanation. The JSON must have a key "maintenance_plan" whose value is an array of objects. Each object must include:
 - "task_name" (string)
@@ -185,16 +200,20 @@ For each PM task:
 - "common_failures_prevented" (string)
 - "usage_insights" (string)
 - "scheduled_dates" (array of strings in YYYY-MM-DD format)
+- "time_to_complete" (string, e.g., "2 hours", "30 minutes")
+- "tools_needed" (string, list of tools/equipment needed)
+- "number_of_technicians" (integer, number of technicians required)
+- "consumables" (string, list of consumables and supplies needed for this task)
 """
 
         try:
-            model = genai.GenerativeModel('gemini-pro')
+            model = genai.GenerativeModel('gemini-2.0-flash-exp')
             full_prompt = "You are an expert in preventive maintenance planning. Always return pure JSON without any markdown formatting.\n\n" + prompt
             response = model.generate_content(
                 full_prompt,
                 generation_config=genai.types.GenerationConfig(
                     temperature=0.7,
-                    max_output_tokens=2000,
+                    max_output_tokens=8192,
                 )
             )
         except Exception as ge:
@@ -215,12 +234,24 @@ For each PM task:
             logger.error(f"Raw content: {raw_content[:200]}...")
             raise HTTPException(status_code=500, detail="AI returned invalid JSON format")
 
+        # Debug: Log the full first task to see what Gemini returned
+        if parsed_plan:
+            logger.info(f"🔍 FIRST TASK DEBUG: {json.dumps(parsed_plan[0], indent=2)}")
+
         # Add asset metadata to each task
         for task in parsed_plan:
             task["asset_name"] = plan_data.name
             task["asset_model"] = plan_data.model
 
         logger.info(f"✅ Final plan parsed with {len(parsed_plan)} tasks")
+        
+        # Log critical info for debugging
+        if parsed_plan:
+            first_task = parsed_plan[0]
+            has_time = 'time_to_complete' in first_task
+            has_tools = 'tools_needed' in first_task  
+            has_techs = 'number_of_technicians' in first_task
+            logger.info(f"🔍 DEBUG: time_to_complete={has_time}, tools_needed={has_tools}, number_of_technicians={has_techs}")
 
         return AIPlanResponse(success=True, data=parsed_plan)
 
@@ -230,6 +261,61 @@ For each PM task:
         import traceback
         logger.error("❌ Error generating AI plan:\n%s", traceback.format_exc())
         raise HTTPException(status_code=500, detail="Internal error during plan generation")
+
+# PDF Export endpoint
+@app.post("/api/export-pdf")
+async def export_pdf(request: PDFExportRequest):
+    try:
+        logger.info(f"🖨️ PDF export request received: type={request.export_type}, data_count={len(request.data)}")
+        
+        if not request.data:
+            raise HTTPException(status_code=400, detail="No data provided for export")
+        
+        # Generate filename if not provided
+        if not request.filename:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            request.filename = f"{request.export_type}_export_{timestamp}.pdf"
+        
+        # Ensure filename ends with .pdf
+        if not request.filename.endswith('.pdf'):
+            request.filename += '.pdf'
+        
+        # Call appropriate export function based on type
+        output_path = None
+        if request.export_type == "maintenance_task":
+            if len(request.data) == 1:
+                output_path = export_maintenance_task_to_pdf(request.data[0])
+            else:
+                raise HTTPException(status_code=400, detail="Maintenance task export requires exactly one task")
+        elif request.export_type == "pm_plans":
+            output_path = export_pm_plans_data_to_pdf(request.data)
+        elif request.export_type == "assets":
+            output_path = export_assets_data_to_pdf(request.data)
+        elif request.export_type == "detailed_pm_plans":
+            output_path = export_detailed_pm_plans_to_pdf(request.data)
+        else:
+            raise HTTPException(status_code=400, detail=f"Unknown export type: {request.export_type}")
+        
+        # Verify file was created
+        if not output_path or not os.path.exists(output_path):
+            raise HTTPException(status_code=500, detail="PDF generation failed")
+        
+        logger.info(f"✅ PDF generated successfully: {output_path}")
+        
+        # Return the file as a download
+        return FileResponse(
+            path=output_path,
+            filename=request.filename,
+            media_type='application/pdf',
+            headers={"Content-Disposition": f"attachment; filename={request.filename}"}
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        logger.error("❌ Error generating PDF:\n%s", traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Internal error during PDF generation: {str(e)}")
 
 # Debug Gemini connection
 @app.get("/api/debug-gemini")

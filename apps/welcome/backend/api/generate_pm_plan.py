@@ -1,112 +1,140 @@
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Query
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
-from openai import OpenAI, APIConnectionError, OpenAIError
-from datetime import datetime
-import logging
+from typing import Optional
+from datetime import datetime, date
+import json
+import pandas as pd
+import openai
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 router = APIRouter()
-logger = logging.getLogger("main")
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-
-class PMPlanInput(BaseModel):
+class AssetData(BaseModel):
     name: str
     model: str
     serial: str
     category: str
-    hours: str  # Operating hours
-    frequency: str
-    criticality: str
-    additional_context: str  # Replaces usage cycles
+    hours: int
+    cycles: int
+    environment: str
+    date_of_plan_start: Optional[date] = None
 
-def generate_prompt(data: PMPlanInput) -> str:
-    today = datetime.utcnow().date().isoformat()
+def format_numbered_instructions(instructions: list[str]) -> str:
+    return "\n".join([f"{i + 1}. {step.strip()}" for i, step in enumerate(instructions)])
+
+def generate_prompt(data: AssetData) -> str:
+    plan_start = (
+        data.date_of_plan_start.isoformat()
+        if data.date_of_plan_start
+        else datetime.utcnow().date().isoformat()
+    )
+
     return f"""
-You are an expert in preventive maintenance (PM) for industrial assets. Generate a detailed preventive maintenance plan for the following asset:
+Generate a detailed preventive maintenance (PM) plan for the following asset:
 
-- Name: {data.name}
+- Asset Name: {data.name}
 - Model: {data.model}
-- Serial: {data.serial}
-- Category: {data.category}
-- Operating Hours: {data.hours}
-- PM Frequency: {data.frequency}
-- Criticality: {data.criticality}
-- Additional Context: {data.additional_context}
-- Plan Start Date: {today}
+- Serial Number: {data.serial}
+- Asset Category: {data.category}
+- Usage Hours: {data.hours} hours
+- Usage Cycles: {data.cycles} cycles
+- Environmental Conditions: {data.environment}
+- Date of Plan Start: {plan_start}
 
-**Instructions:**
+Use the manufacturer's user manual to determine recommended maintenance tasks and intervals. If the manual is not available, infer recommendations from best practices for similar assets in the same category. Be as detailed as possible in the instructions.
 
-1. Organize tasks into the following standard frequency groups:
-   - Daily
-   - Weekly
-   - Monthly
-   - Quarterly
-   - Yearly
+**Usage Insights**  
+- Provide a concise write-up (in a field named "usage_insights") that analyzes this asset’s current usage profile ({data.hours} hours and {data.cycles} cycles), noting the typical outages or failure modes that occur at this stage in the asset’s life.
 
-2. For each task, provide these fields:
-   - "task_name": a clear, specific task name.
-   - "maintenance_interval": one of the frequency groups above.
-   - "instructions": an array of clear, step-by-step instructions to complete the task.
-   - "reason": why this task is necessary for asset reliability, performance, or safety.
-   - "engineering_rationale": a technical explanation considering the asset's operating hours ({data.hours}), criticality ({data.criticality}), category ({data.category}), and **especially the additional context** ({data.additional_context}). If the task addresses the additional context directly, clearly highlight this.
-   - "safety_precautions": important safety measures for performing the task safely.
-   - "common_failures_prevented": typical failure modes this task prevents. When applicable, highlight **grease points**, **typical failure points**, or wear-prone components.
-   - "usage_insights": insights specific to {data.hours} operating hours and the additional context. Do not reference usage cycles.
-   - "estimated_time_minutes": the estimated time to complete the task, in minutes.
-   - "tools_needed": an array of required tools to perform the task.
-   - "number_of_technicians": recommended number of technicians needed to complete the task.
-   - "comments": a free-form field for additional comments or considerations.
-   - "scheduled_dates": an array of specific dates for the next 12 months starting from {today}, based on the task frequency.
-   - "recommended_materials": list specific brands, types, and grades of required materials (e.g., lubricants, filters, belts). Include product examples (e.g., "Mobil SHC 632 gear oil", "SKF LGMT 2 grease") where applicable.
-   - "citations": cite reliable sources for each task—ideally from the manufacturer’s manual. If unavailable, use credible industry references (e.g., ISO, ASTM, API, Mobil, SKF, Shell).
+For each PM task:
+1. Clearly describe the task.
+2. Provide step-by-step instructions.
+3. Include safety precautions.
+4. Note any relevant government regulations or compliance checks.
+5. Highlight common failure points this task is designed to prevent.
+6. Tailor instructions based on usage data and environmental conditions.
+7. Include an "engineering_rationale" field explaining why this task and interval were selected.
+8. Based on the plan start date, return a list of future dates when this task should be performed over the next 12 months.
+9. In each task object, include the "usage_insights" field (you may repeat or summarize key points if needed).
 
-3. If applicable, for lubrication or greasing tasks:
-   - Identify all grease points or lubrication zones.
-   - Recommend lubrication frequency and the exact type/brand of grease or oil.
-   - Explain how proper lubrication prevents wear, overheating, or failure.
-   - Align recommendations with the asset's actual operating conditions and any special notes from the additional context.
-
-4. **MANDATORY:** Ensure that every relevant task addresses the "Additional Context" provided. If the additional context describes specific concerns, environmental factors, operating conditions, or customer requirements, clearly explain how the PM plan mitigates or supports those factors within the relevant fields (e.g., "engineering_rationale", "usage_insights", or "comments").
-
-5. Prioritize information from the manufacturer’s manual. If not available, rely on best practices from industry standards and reputable sources.
-
-**Output Format:**
-
-Return a single valid JSON object structured like this:
-
-```json
-{{ "maintenance_plan": [ {{task1}}, {{task2}}, ... ] }}
-```
-
-⚠️ **IMPORTANT:** Return only the raw JSON output. Do not include markdown formatting, explanations, or commentary.
+**IMPORTANT:** Return only a valid JSON object with no markdown or explanation. The JSON must have a key "maintenance_plan" whose value is an array of objects. Each object must include:
+- "task_name" (string)
+- "maintenance_interval" (string)
+- "instructions" (array of strings)
+- "reason" (string)
+- "engineering_rationale" (string)
+- "safety_precautions" (string)
+- "common_failures_prevented" (string)
+- "usage_insights" (string)
+- "scheduled_dates" (array of strings in YYYY-MM-DD format)
 """
 
-
-@router.post("/api/generate-ai-plan")
-async def generate_ai_plan(input: PMPlanInput, request: Request):
-    logger.info(f"🚀 Received AI plan request: {input.name}")
-    prompt = generate_prompt(input)
+@router.post("/generate_pm_plan")
+def generate_pm_plan(data: AssetData, format: str = Query("json", enum=["json", "excel"])):
+    print("📥 PM Plan Request")
+    print("Format:", format)
+    print("Asset Data:", data.dict())
 
     try:
-        response = client.chat.completions.create(
+        log_entry = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "input": data.dict()
+        }
+        with open("pm_lite_logs.txt", "a") as f:
+            f.write(json.dumps(log_entry) + "\n")
+    except Exception as e:
+        print("⚠️ Log write failed:", e)
+
+    try:
+        response = openai.ChatCompletion.create(
             model="gpt-4",
             messages=[
                 {"role": "system", "content": "You are an expert in preventive maintenance planning."},
-                {"role": "user", "content": prompt}
+                {"role": "user", "content": generate_prompt(data)}
             ],
-            timeout=20
+            temperature=0.7,
+            max_tokens=2000,
         )
-        ai_output = response.choices[0].message.content
-        logger.info("✅ AI plan generated successfully")
-        return {"plan": ai_output}
-    except APIConnectionError as e:
-        logger.error(f"🔌 OpenAI connection error: {e}")
-        raise HTTPException(status_code=502, detail="OpenAI connection failed.")
-    except OpenAIError as e:
-        logger.error(f"🧐 OpenAI API error: {e}")
-        raise HTTPException(status_code=500, detail="OpenAI API error.")
+
+        raw_content = response.choices[0].message.content
+        print("🧠 Raw OpenAI response:")
+        print(raw_content)
+
+        try:
+            parsed = json.loads(raw_content)
+            plan_json = parsed.get("maintenance_plan", [])
+        except json.JSONDecodeError as je:
+            print("❌ JSON decode error:", je)
+            return {"error": "AI returned invalid JSON", "pm_plan": []}
+
+        for task in plan_json:
+            task["asset_name"] = data.name
+            task["asset_model"] = data.model
+
+            instructions_raw = task.get("instructions")
+            if isinstance(instructions_raw, str) and "|" in instructions_raw:
+                steps = [s.strip() for s in instructions_raw.split("|") if s.strip()]
+                task["instructions"] = format_numbered_instructions(steps)
+            elif isinstance(instructions_raw, list):
+                task["instructions"] = format_numbered_instructions(instructions_raw)
+
+        if format == "excel":
+            df = pd.DataFrame(plan_json)
+            output_path = "pm_plan_output.xlsx"
+            df.to_excel(output_path, index=False)
+            return FileResponse(
+                output_path,
+                media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                filename="PM_Plan.xlsx"
+            )
+        else:
+            return JSONResponse(content={"pm_plan": plan_json})
+
     except Exception as e:
-        logger.error(f"❌ Unexpected error: {e}")
-        raise HTTPException(status_code=500, detail="Unexpected server error.")
+        print("❌ Error generating plan:", e)
+        return {"error": str(e), "pm_plan": []}

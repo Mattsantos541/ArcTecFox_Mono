@@ -12,7 +12,7 @@ const PORT = process.env.PORT || 8000;
 
 // Middleware
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:3000'
+  origin: process.env.CORS_ORIGIN || 'https://arctecfox-mono.vercel.app'
 }));
 app.use(express.json());
 
@@ -102,7 +102,6 @@ For each PM task:
 7. Include an "engineering_rationale" field explaining why this task and interval were selected.
 8. Based on the plan start date, return a list of future dates when this task should be performed over the next 12 months.
 9. In each task object, include the "usage_insights" field (you may repeat or summarize key points if needed).
-
 **IMPORTANT:** Return only a valid JSON object with no markdown or explanation. The JSON must have a key "maintenance_plan" whose value is an array of objects. Each object must include:
 - "task_name" (string)
 - "maintenance_interval" (string)
@@ -113,6 +112,9 @@ For each PM task:
 - "common_failures_prevented" (string)
 - "usage_insights" (string)
 - "scheduled_dates" (array of strings in YYYY-MM-DD format)
+- "time_to_complete" (string, e.g., "2 hours", "30 minutes")
+- "tools_needed" (string, list of tools/equipment needed)
+- "number_of_technicians" (integer, number of technicians required)
 `;
 
     const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -158,8 +160,18 @@ For each PM task:
 
     let parsedPlan;
     try {
+      // Debug: Log raw AI content to see what's being returned
+      console.log('🔍 RAW AI CONTENT:', rawContent);
+      
       const parsed = JSON.parse(rawContent);
       parsedPlan = parsed.maintenance_plan || [];
+      
+      // Debug: Check if consumables are in the parsed plan
+      console.log('🔍 PARSED PLAN CONSUMABLES CHECK:');
+      if (parsedPlan.length > 0) {
+        console.log('  - First task raw keys:', Object.keys(parsedPlan[0]));
+        console.log('  - First task consumables:', parsedPlan[0].consumables);
+      }
     } catch (jsonError) {
       console.error('❌ JSON parse error:', jsonError);
       throw new Error('AI returned invalid JSON format');
@@ -173,6 +185,24 @@ For each PM task:
 
     // 4. Save AI results to database
     if (parsedPlan.length > 0) {
+      // Log the first task to check if AI returned the new fields
+      console.log('🔍 First task from AI:', JSON.stringify(parsedPlan[0], null, 2));
+      
+      // Debug: Check specifically for the new fields
+      console.log('🔍 NEW FIELDS DEBUG:');
+      console.log('  - time_to_complete:', parsedPlan[0].time_to_complete);
+      console.log('  - tools_needed:', parsedPlan[0].tools_needed);
+      console.log('  - number_of_technicians:', parsedPlan[0].number_of_technicians);
+      console.log('  - consumables:', parsedPlan[0].consumables);
+      console.log('  - consumables type:', typeof parsedPlan[0].consumables);
+      console.log('  - consumables exists:', parsedPlan[0].hasOwnProperty('consumables'));
+      
+      // Check all tasks for consumables
+      console.log('🔍 CONSUMABLES IN ALL TASKS:');
+      parsedPlan.forEach((task, index) => {
+        console.log(`  Task ${index + 1}: ${task.task_name} - consumables:`, task.consumables);
+      });
+      
       const resultsToInsert = parsedPlan.map(task => ({
         pm_plan_id: planInputResult.data.id,
         task_name: task.task_name,
@@ -183,8 +213,15 @@ For each PM task:
         safety_precautions: task.safety_precautions,
         common_failures_prevented: task.common_failures_prevented,
         usage_insights: task.usage_insights,
-        scheduled_dates: task.scheduled_dates || null
+        scheduled_dates: task.scheduled_dates || null,
+        est_minutes: task.time_to_complete || null,
+        tools_needed: task.tools_needed || null,
+        no_techs_needed: task.number_of_technicians || 1,
+        consumables: task.consumables || null
       }));
+      
+      // Log what we're about to insert
+      console.log('🔍 First record to insert:', JSON.stringify(resultsToInsert[0], null, 2));
 
       const tasksResult = await supabase
         .from('pm_tasks')
@@ -194,6 +231,8 @@ For each PM task:
       if (tasksResult.error) {
         console.error('Error saving tasks:', tasksResult.error);
         // Don't fail the whole request if task saving fails
+      } else {
+        console.log('✅ Tasks saved successfully. First saved task consumables:', tasksResult.data[0]?.consumables);
       }
     }
 

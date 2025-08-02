@@ -1,0 +1,53 @@
+{
+  "name": "ArcTecFox Development",
+  "image": "mcr.microsoft.com/devcontainers/universal:2",
+  
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "18"
+    },
+    "ghcr.io/devcontainers/features/python:1": {
+      "version": "3.11"
+    }
+  },
+
+  "postCreateCommand": [
+    "bash", "-c", 
+    "git config --global user.name 'willisreed17' && git config --global user.email '135554111+willisreed17@users.noreply.github.com' && git config --global commit.gpgsign false && git config --local commit.gpgsign false && git config --global gpg.program '' && echo '✅ Git configured with user info and GPG signing disabled'"
+  ],</  
+  "postStartCommand": [
+    "bash", "-c",
+    "git config --global user.name 'willisreed17' && git config --global user.email '135554111+willisreed17@users.noreply.github.com' && git config --global commit.gpgsign false && git config --local commit.gpgsign false"
+  ],
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-vscode.vscode-json",
+        "bradlc.vscode-tailwindcss",
+        "esbenp.prettier-vscode"
+      ],
+      "settings": {
+        "git.enableCommitSigning": false,
+        "git.useCommitInputAsStashMessage": true
+      }
+    }
+  },
+
+  "forwardPorts": [3000, 8000, 5432],
+  "portsAttributes": {
+    "3000": {
+      "label": "Frontend",
+      "onAutoForward": "notify"
+    },
+    "8000": {
+      "label": "Backend",
+      "onAutoForward": "notify"
+    },
+    "5432": {
+      "label": "PostgreSQL",
+      "onAutoForward": "ignore"
+    }
+  }
+}

@@ -5,7 +5,7 @@ function LogoutButton() {
   const handleLogout = async () => {
     try {
       // Call backend logout API
-      await axios.post("http://0.0.0.0:9000/logout"); // Use 0.0.0.0
+      await axios.post(`${import.meta.env.VITE_BACKEND_URL}/logout`); // Use 0.0.0.0
 
       // Clear local storage and session data
       localStorage.removeItem("token");
