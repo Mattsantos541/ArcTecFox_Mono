@@ -1,0 +1,37 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run dev:*)",
+      "Bash(python:*)",
+      "Bash(find:*)",
+      "Bash(grep:*)",
+      "Bash(sed:*)",
+      "Bash(rm:*)",
+      "Bash(timeout 5s npm run dev)",
+      "Bash(npm install:*)",
+      "Bash(npm run build:*)",
+      "Bash(npm run lint)",
+      "Bash(npm run:*)",
+      "mcp__ide__getDiagnostics",
+      "Bash(timeout 30s npm run build)",
+      "Bash(pip install:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "WebFetch(domain:arctecfox-mono.onrender.com)",
+      "Bash(ls:*)",
+      "Bash(cp:*)",
+      "Bash(gpg:*)",
+      "Bash(git config:*)",
+      "Bash(gh auth:*)",
+      "Bash(git fsck:*)",
+      "Bash(git reset:*)",
+      "Bash(mkdir:*)",
+      "Bash(curl:*)",
+      "Bash(touch:*)",
+      "Bash(chmod:*)",
+      "Bash(~/.config/codespaces/setup-git.sh)"
+    ],
+    "deny": []
+  }
+}
