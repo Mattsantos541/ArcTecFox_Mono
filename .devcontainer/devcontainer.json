@@ -14,7 +14,8 @@
   "postCreateCommand": [
     "bash", "-c", 
     "git config --global user.name 'willisreed17' && git config --global user.email '135554111+willisreed17@users.noreply.github.com' && git config --global commit.gpgsign false && git config --local commit.gpgsign false && git config --global gpg.program '' && echo '✅ Git configured with user info and GPG signing disabled'"
-  ],</  
+  ],
+  
   "postStartCommand": [
     "bash", "-c",
     "git config --global user.name 'willisreed17' && git config --global user.email '135554111+willisreed17@users.noreply.github.com' && git config --global commit.gpgsign false && git config --local commit.gpgsign false"
