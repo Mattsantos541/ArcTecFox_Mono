@@ -809,9 +809,15 @@ export default function PMPlanner() {
     }
     
     try {
+      // Fetch child assets with parent asset environment
       const { data: children, error } = await supabase
         .from('child_assets')
-        .select('*')
+        .select(`
+          *,
+          parent_assets!parent_asset_id (
+            environment
+          )
+        `)
         .eq('parent_asset_id', parentAssetId)
         .neq('status', 'deleted')
         .order('name');
@@ -891,6 +897,11 @@ export default function PMPlanner() {
       setValue('serial', asset.serial_number || '');
       setValue('category', asset.category || '');
       
+      // Set environment from parent asset (inherited)
+      if (asset.parent_assets?.environment) {
+        setValue('environment', asset.parent_assets.environment);
+      }
+      
       // Check for existing plans for this child asset
       checkExistingPlans(selectedParentAsset.id, asset.id);
     } else if (selectedParentAsset) {
@@ -899,6 +910,9 @@ export default function PMPlanner() {
       setValue('model', selectedParentAsset.model || '');
       setValue('serial', selectedParentAsset.serial_number || '');
       setValue('category', selectedParentAsset.category || '');
+      
+      // Clear environment since no child is selected (user can edit for parent)
+      setValue('environment', '');
       
       // Clear existing plans since we're back to parent asset only
       setExistingPlans([]);
@@ -1102,7 +1116,8 @@ export default function PMPlanner() {
             category: selectedParentAsset.category,
             purchase_date: selectedParentAsset.purchase_date,
             install_date: selectedParentAsset.install_date,
-            notes: selectedParentAsset.notes
+            notes: selectedParentAsset.notes,
+            environment: selectedParentAsset.environment || ''
           },
           child_asset: selectedChildAsset ? {
             id: selectedChildAsset.id,
@@ -1112,7 +1127,12 @@ export default function PMPlanner() {
             category: selectedChildAsset.category,
             purchase_date: selectedChildAsset.purchase_date,
             install_date: selectedChildAsset.install_date,
-            notes: selectedChildAsset.notes
+            notes: selectedChildAsset.notes,
+            operating_hours: selectedChildAsset.operating_hours,
+            addtl_context: selectedChildAsset.addtl_context,
+            plan_start_date: selectedChildAsset.plan_start_date,
+            // Environment is inherited from parent
+            parent_environment: selectedChildAsset.parent_assets?.environment || selectedParentAsset.environment || ''
           } : null
         }
       };
@@ -1838,11 +1858,12 @@ export default function PMPlanner() {
                   {...register("additional_context")}
                 />
                 <FormTextarea 
-                  label="Environment" 
+                  label={selectedChildAsset ? "Environment (Inherited from Parent Asset)" : "Environment"}
                   placeholder="e.g., outdoor / high humidity, indoor clean room, etc." 
                   rows={3} 
                   error={errors.environment?.message}
                   className="mb-3"
+                  disabled={!!selectedChildAsset}
                   {...register("environment")}
                 />
                 <FormInput 
