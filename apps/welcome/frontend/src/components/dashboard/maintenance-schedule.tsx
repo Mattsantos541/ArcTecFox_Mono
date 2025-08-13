@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input"
 import { useToast } from "@/hooks/use-toast"
 import { useAuth } from "../../hooks/useAuth"
 import { supabase, isUserSiteAdmin, getUserAdminSites } from "../../api" // Import the shared client
+import ManageAssets from "../../pages/ManageAssets"
 
 export default function MaintenanceSchedule() {
   // Remove the local Supabase client initialization - use the shared one
@@ -116,23 +117,26 @@ export default function MaintenanceSchedule() {
         console.log('Error in auth debug:', e);
       }
       
-      // FIXED: Use a simpler query that works with your current permissions
+      // Simplified query to avoid JOIN issues - we'll get asset data separately if needed
+      // Only fetch tasks associated with Current PM plans
       const { data, error } = await supabase
         .from('pm_tasks')
         .select(`
           *,
-          pm_plans (
+          pm_plans!inner (
             id,
-            asset_name,
             created_by,
             site_id,
+            status,
+            child_asset_id,
             users (
               id,
               email,
               full_name
             )
           )
-        `);
+        `)
+        .eq('pm_plans.status', 'Current');
 
       if (error) {
         console.error('Supabase error:', error);
@@ -140,37 +144,61 @@ export default function MaintenanceSchedule() {
       }
 
       // Transform data to match component expectations
-      const transformedTasks = data.map(task => ({
-        id: task.id,
-        asset: task.pm_plans?.asset_name || 'Unknown Asset',
-        task: task.task_name || 'No description',
-        date: (task.scheduled_dates && task.scheduled_dates.length > 0) ? task.scheduled_dates[0] : 'No date',
-        time: '09:00',
-        technician: task.pm_plans?.users?.full_name || 'Unassigned',
-        duration: task.est_minutes ? `${task.est_minutes} min` : (task.maintenance_interval || 'Unknown'),
-        status: task.completed_at ? 'Completed' : 'Scheduled',
-        priority: task.priority || 'High', // Use task priority or default to High
-        planId: task.pm_plan_id,
-        siteId: task.pm_plans?.site_id,
-        createdByEmail: task.pm_plans?.users?.email,
-        notes: task.notes,
-        completedAt: task.completed_at,
-        actualDuration: task.actual_duration,
-        instructions: task.instructions,
-        // AI fields from pm_tasks table
-        time_to_complete: task.est_minutes || 'N/A',
-        tools_needed: task.tools_needed || 'N/A',
-        no_techs_needed: task.no_techs_needed || 'N/A',
-        est_minutes: task.est_minutes,
-        // Additional fields for PDF export
-        reason: task.reason,
-        safety_precautions: task.safety_precautions,
-        engineering_rationale: task.engineering_rationale,
-        common_failures_prevented: task.common_failures_prevented,
-        usage_insights: task.usage_insights,
-        scheduled_dates: task.scheduled_dates,
-        consumables: task.consumables
-      }))
+      // For now, we'll get asset names from a separate query if needed
+      const transformedTasks = await Promise.all(data.map(async (task) => {
+        let assetName = 'Unknown Asset';
+        
+        // Try to get asset name from child_assets table if child_asset_id exists
+        if (task.pm_plans?.child_asset_id) {
+          try {
+            const { data: childAsset } = await supabase
+              .from('child_assets')
+              .select('name')
+              .eq('id', task.pm_plans.child_asset_id)
+              .single();
+            
+            if (childAsset) {
+              assetName = childAsset.name;
+            }
+          } catch (assetError) {
+            console.log('Could not fetch asset name for task:', task.id);
+          }
+        }
+        
+        return {
+          id: task.id,
+          asset: assetName,
+          task: task.task_name || 'No description',
+          date: (task.scheduled_dates && task.scheduled_dates.length > 0) ? task.scheduled_dates[0] : 'No date',
+          time: '09:00',
+          technician: task.pm_plans?.users?.full_name || 'Unassigned',
+          duration: task.est_minutes ? `${task.est_minutes} min` : (task.maintenance_interval || 'Unknown'),
+          status: task.completed_at ? 'Completed' : 'Scheduled',
+          priority: task.priority || 'High', // Use task priority or default to High
+          planId: task.pm_plan_id,
+          siteId: task.pm_plans?.site_id,
+          createdByEmail: task.pm_plans?.users?.email,
+          notes: task.notes,
+          completedAt: task.completed_at,
+          actualDuration: task.actual_duration,
+          instructions: task.instructions,
+          // AI fields from pm_tasks table
+          time_to_complete: task.est_minutes || 'N/A',
+          tools_needed: task.tools_needed || 'N/A',
+          no_techs_needed: task.no_techs_needed || 'N/A',
+          est_minutes: task.est_minutes,
+          // Additional fields for PDF export
+          reason: task.reason,
+          safety_precautions: task.safety_precautions,
+          engineering_rationale: task.engineering_rationale,
+          common_failures_prevented: task.common_failures_prevented,
+          usage_insights: task.usage_insights,
+          scheduled_dates: task.scheduled_dates,
+          consumables: task.consumables,
+          // Asset information
+          childAssetId: task.pm_plans?.child_asset_id
+        };
+      }));
 
       console.log('Setting scheduled tasks:', transformedTasks);
       setScheduledTasks(transformedTasks)
@@ -1098,10 +1126,17 @@ export default function MaintenanceSchedule() {
 
           <Tabs value={viewMode} onValueChange={setViewMode} className="space-y-6">
             <TabsList>
-              <TabsTrigger value="list">List View</TabsTrigger>
+              <TabsTrigger value="assets">Asset View</TabsTrigger>
+              <TabsTrigger value="list">Task View</TabsTrigger>
               <TabsTrigger value="calendar">Calendar View</TabsTrigger>
               <TabsTrigger value="weekly">Weekly View</TabsTrigger>
             </TabsList>
+
+            <TabsContent value="assets" className="space-y-6" forceMount>
+              <div style={{ display: viewMode === 'assets' ? 'block' : 'none' }}>
+                <ManageAssets />
+              </div>
+            </TabsContent>
 
             <TabsContent value="list" className="space-y-6">
               <Card>

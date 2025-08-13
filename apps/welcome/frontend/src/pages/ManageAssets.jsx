@@ -3,10 +3,38 @@ import { useAuth } from '../hooks/useAuth';
 import { 
   supabase, 
   isUserSiteAdmin, 
-  getUserAdminSites
+  getUserAdminSites,
+  fetchPMPlansByAsset,
+  generatePMPlan,
+  fetchUserSites
 } from '../api';
 import FileUpload from '../components/forms/FileUpload';
 import { createStorageService } from '../services/storageService';
+
+// Loading Modal Component (copied from PMPlanner)
+function LoadingModal({ isOpen }) {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-8 max-w-md mx-4 text-center">
+        <div className="mb-6">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 rounded-full mb-4">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+          </div>
+          <h3 className="text-xl font-semibold text-gray-800 mb-2">Generating Your PM Plan</h3>
+          <p className="text-gray-600 mb-4">
+            Our AI is analyzing your asset and creating a comprehensive maintenance plan...
+          </p>
+          <div className="flex justify-center">
+            <div className="text-sm text-blue-600">
+              This may take a few moments...
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const ManageAssets = () => {
   const { user } = useAuth();
@@ -44,7 +72,10 @@ const ManageAssets = () => {
     category: '',
     purchase_date: '',
     install_date: '',
-    notes: ''
+    notes: '',
+    operating_hours: '',
+    addtl_context: '',
+    plan_start_date: ''
   });
   const [parentManualFile, setParentManualFile] = useState(null);
   const [childManualFile, setChildManualFile] = useState(null);
@@ -66,9 +97,23 @@ const ManageAssets = () => {
   const [editModalFile, setEditModalFile] = useState(null);
   const [editModalFileError, setEditModalFileError] = useState(null);
   const [uploadingEditModalFile, setUploadingEditModalFile] = useState(false);
+  
+  // PM Plan display state
+  const [selectedChildAssetForPlan, setSelectedChildAssetForPlan] = useState(null);
+  const [existingPlans, setExistingPlans] = useState([]);
+  const [loadingPlans, setLoadingPlans] = useState(false);
+  const [showPlans, setShowPlans] = useState(false);
+  
+  // PM Plan generation state
+  const [generatingPlan, setGeneratingPlan] = useState(false);
+
+  // PM Plan status tracking for child assets
+  const [childAssetPlanStatuses, setChildAssetPlanStatuses] = useState({});
 
   useEffect(() => {
-    initializeComponent();
+    if (user) {
+      initializeComponent();
+    }
   }, [user]);
 
   const initializeComponent = async () => {
@@ -106,6 +151,7 @@ const ManageAssets = () => {
         name: `${item.sites?.companies?.name || 'Unknown Company'} - ${item.sites?.name || 'Unknown Site'}`,
         company_id: item.sites?.companies?.id
       }));
+      
       setUserSites(sitesList);
 
       if (sitesList.length === 1) {
@@ -144,6 +190,7 @@ const ManageAssets = () => {
         .order('name');
 
       if (error) throw error;
+      
       setParentAssets(data || []);
     } catch (err) {
       console.error('Error loading parent assets:', err);
@@ -166,6 +213,11 @@ const ManageAssets = () => {
 
       if (error) throw error;
       setChildAssets(data || []);
+      
+      // Load PM plan statuses for child assets
+      if (data && data.length > 0) {
+        await loadChildAssetPlanStatuses(data);
+      }
       
       // Load manuals for child assets
       await loadManuals(null, parentAssetId);
@@ -371,14 +423,27 @@ const ManageAssets = () => {
     }
 
     try {
+      // Prepare child asset data - include make, model, serial_number mapped to correct fields
+      const childAssetData = {
+        name: newChildAsset.name,
+        make: newChildAsset.make || null,
+        model: newChildAsset.model || null,
+        serial_no: newChildAsset.serial_number || null, // Map serial_number to serial_no
+        category: newChildAsset.category,
+        purchase_date: newChildAsset.purchase_date,
+        install_date: newChildAsset.install_date,
+        notes: newChildAsset.notes,
+        operating_hours: newChildAsset.operating_hours || null,
+        addtl_context: newChildAsset.addtl_context || null,
+        plan_start_date: newChildAsset.plan_start_date || null,
+        parent_asset_id: selectedParentAsset.id,
+        status: 'active',
+        created_by: user.id
+      };
+
       const { data, error } = await supabase
         .from('child_assets')
-        .insert([{
-          ...newChildAsset,
-          parent_asset_id: selectedParentAsset.id,
-          status: 'active',
-          created_by: user.id
-        }])
+        .insert([childAssetData])
         .select();
 
       if (error) throw error;
@@ -394,13 +459,14 @@ const ManageAssets = () => {
       setShowAddChildAsset(false);
       setNewChildAsset({
         name: '',
-        make: '',
-        model: '',
-        serial_number: '',
         category: '',
         purchase_date: '',
         install_date: '',
-        notes: ''
+        notes: '',
+        operating_hours: '',
+        addtl_context: '',
+        environment: '',
+        plan_start_date: ''
       });
       setChildManualFile(null);
       setChildFileUploadError(null);
@@ -566,17 +632,31 @@ const ManageAssets = () => {
   };
 
   const openEditModal = (asset, isParent = true) => {
-    setEditModalData({
+    const modalData = {
       id: asset.id,
       name: asset.name || '',
-      make: asset.make || '',
-      model: asset.model || '',
-      serial_number: asset.serial_number || '',
       category: asset.category || '',
       purchase_date: asset.purchase_date || '',
       install_date: asset.install_date || '',
       notes: asset.notes || ''
-    });
+    };
+    
+    // Include make, model, serial_number for both parent and child assets
+    modalData.make = asset.make || '';
+    modalData.model = asset.model || '';
+    
+    if (isParent) {
+      modalData.serial_number = asset.serial_number || '';
+    } else {
+      // For child assets, map serial_no database field to serial_number frontend field
+      modalData.serial_number = asset.serial_no || '';
+      // Include additional fields for child assets
+      modalData.operating_hours = asset.operating_hours || '';
+      modalData.addtl_context = asset.addtl_context || '';
+      modalData.plan_start_date = asset.plan_start_date || '';
+    }
+    
+    setEditModalData(modalData);
     setEditModalIsParent(isParent);
     setShowEditModal(true);
     setEditModalFile(null);
@@ -610,11 +690,25 @@ const ManageAssets = () => {
         );
       }
 
+      // Prepare data for update - include make, model, serial_number for child assets with correct field mapping
+      const dataToUpdate = { ...editModalData };
+      if (!editModalIsParent) {
+        // Map the frontend field names to database field names for child assets
+        if (dataToUpdate.serial_number !== undefined) {
+          dataToUpdate.serial_no = dataToUpdate.serial_number;
+          delete dataToUpdate.serial_number; // Remove the frontend field name
+        }
+        // Ensure new fields are included with proper null handling
+        dataToUpdate.operating_hours = dataToUpdate.operating_hours || null;
+        dataToUpdate.addtl_context = dataToUpdate.addtl_context || null;
+        dataToUpdate.plan_start_date = dataToUpdate.plan_start_date || null;
+      }
+
       // Save asset updates
       if (editModalIsParent) {
-        await handleUpdateParentAsset(editModalData.id, editModalData);
+        await handleUpdateParentAsset(editModalData.id, dataToUpdate);
       } else {
-        await handleUpdateChildAsset(editModalData.id, editModalData);
+        await handleUpdateChildAsset(editModalData.id, dataToUpdate);
       }
 
       closeEditModal();
@@ -707,13 +801,14 @@ const ManageAssets = () => {
     setEditingChildAsset(asset.id);
     setEditingChildData({
       name: asset.name || '',
-      make: asset.make || '',
-      model: asset.model || '',
-      serial_number: asset.serial_number || '',
       category: asset.category || '',
       purchase_date: asset.purchase_date || '',
       install_date: asset.install_date || '',
-      notes: asset.notes || ''
+      notes: asset.notes || '',
+      operating_hours: asset.operating_hours || '',
+      addtl_context: asset.addtl_context || '',
+      environment: asset.environment || '',
+      plan_start_date: asset.plan_start_date || ''
     });
   };
 
@@ -730,6 +825,202 @@ const ManageAssets = () => {
   const formatDate = (dateString) => {
     if (!dateString) return '';
     return new Date(dateString).toLocaleDateString();
+  };
+
+  // PM Plan display components (copied from PMPlanner)
+  const Info = ({ label, value }) => {
+    return (
+      <div>
+        <p className="text-sm font-medium text-gray-600">{label}:</p>
+        <p className="text-sm">{value}</p>
+      </div>
+    );
+  };
+
+  const InfoBlock = ({ label, value, bg }) => {
+    const displayValue = Array.isArray(value) ? value.join('\n') : value;
+    
+    return (
+      <div className="mb-4">
+        <p className="text-sm font-medium text-gray-600 mb-1">{label}:</p>
+        <p className={`text-sm ${bg} p-2 rounded whitespace-pre-line`}>{displayValue}</p>
+      </div>
+    );
+  };
+
+  // Function to load PM plans for a child asset
+  const loadPMPlansForAsset = async (parentAssetId, childAssetId) => {
+    try {
+      setLoadingPlans(true);
+      console.log('Loading PM plans for child asset:', childAssetId);
+      
+      const plans = await fetchPMPlansByAsset(parentAssetId, childAssetId);
+      console.log('Fetched plans:', plans);
+      
+      setExistingPlans(plans);
+      setShowPlans(plans.length > 0);
+      
+    } catch (error) {
+      console.error('Error loading PM plans:', error);
+      setExistingPlans([]);
+      setShowPlans(false);
+    } finally {
+      setLoadingPlans(false);
+    }
+  };
+
+  // Load PM plan statuses for all child assets
+  const loadChildAssetPlanStatuses = async (childAssetsList) => {
+    const statuses = {};
+    
+    await Promise.all(
+      childAssetsList.map(async (childAsset) => {
+        try {
+          const { data: plans, error } = await supabase
+            .from('pm_plans')
+            .select('id')
+            .eq('child_asset_id', childAsset.id)
+            .eq('status', 'Current')
+            .limit(1);
+          
+          if (error) {
+            console.error('Error checking PM plan status for child asset:', childAsset.id, error);
+            statuses[childAsset.id] = false;
+          } else {
+            statuses[childAsset.id] = plans && plans.length > 0;
+          }
+        } catch (error) {
+          console.error('Error checking PM plan status for child asset:', childAsset.id, error);
+          statuses[childAsset.id] = false;
+        }
+      })
+    );
+    
+    setChildAssetPlanStatuses(statuses);
+  };
+
+  // Handle child asset click to display details and load PM plans
+  const handleChildAssetClick = (childAsset) => {
+    setSelectedChildAssetForPlan(childAsset);
+    loadPMPlansForAsset(selectedParentAsset.id, childAsset.id);
+  };
+
+  // Handle Create/Update PM Plan (matching PMPlanner process exactly)
+  const handleCreateUpdatePMPlan = async (childAsset) => {
+    try {
+      setGeneratingPlan(true);
+      setError(null);
+      
+      // If updating existing plan, mark it as 'Replaced'
+      if (existingPlans.length > 0) {
+        const existingPlanId = existingPlans[0].id;
+        const { error: updateError } = await supabase
+          .from('pm_plans')
+          .update({ status: 'Replaced' })
+          .eq('id', existingPlanId);
+        
+        if (updateError) {
+          console.error('Error updating existing plan status:', updateError);
+          throw new Error('Failed to update existing plan status');
+        }
+      }
+      
+      // Get parent asset data for context
+      const parentAsset = selectedParentAsset;
+      
+      // Get all manuals for this child asset
+      const childManuals = loadedManuals[childAsset.id] || [];
+      
+      // Prepare form data similar to PMPlanner
+      const formData = {
+        // Core asset identification
+        name: childAsset.name,
+        model: childAsset.model || '',
+        serial: childAsset.serial_no || '',
+        category: childAsset.category || '',
+        
+        // PM planning fields
+        hours: childAsset.operating_hours?.toString() || '',
+        additional_context: childAsset.addtl_context || '',
+        environment: parentAsset.environment || '', // Inherited from parent
+        date_of_plan_start: childAsset.plan_start_date || '',
+        
+        // Asset hierarchy information
+        child_asset_id: childAsset.id,
+        parent_asset_id: parentAsset.id,
+        
+        // Asset details for AI context
+        purchase_date: childAsset.purchase_date || '',
+        install_date: childAsset.install_date || '',
+        asset_notes: childAsset.notes || '',
+        
+        // Site and user information
+        email: user?.email || "asset-management@example.com",
+        company: parentAsset.sites?.companies?.name || "Unknown Company",
+        site_name: parentAsset.sites?.name || "Unknown Site",
+        siteId: parentAsset.site_id,
+        
+        // Manual information
+        userManual: childManuals[0] || null,
+        manuals: childManuals,
+        manual_count: childManuals.length,
+        
+        // Complete asset context for AI
+        asset_full_details: {
+          parent_asset: {
+            id: parentAsset.id,
+            name: parentAsset.name,
+            model: parentAsset.model,
+            serial_number: parentAsset.serial_number,
+            category: parentAsset.category,
+            purchase_date: parentAsset.purchase_date,
+            install_date: parentAsset.install_date,
+            notes: parentAsset.notes,
+            environment: parentAsset.environment || ''
+          },
+          child_asset: {
+            id: childAsset.id,
+            name: childAsset.name,
+            model: childAsset.model,
+            serial_number: childAsset.serial_no,
+            category: childAsset.category,
+            purchase_date: childAsset.purchase_date,
+            install_date: childAsset.install_date,
+            notes: childAsset.notes,
+            operating_hours: childAsset.operating_hours,
+            addtl_context: childAsset.addtl_context,
+            plan_start_date: childAsset.plan_start_date,
+            parent_environment: parentAsset.environment || ''
+          }
+        }
+      };
+      
+      console.log('Generating PM plan for child asset:', formData);
+      
+      // Call the AI API to generate the plan
+      const aiGeneratedPlan = await generatePMPlan(formData);
+      
+      if (!aiGeneratedPlan) {
+        throw new Error('No plan generated from API');
+      }
+      
+      console.log('PM Plan generated successfully:', aiGeneratedPlan);
+      
+      // Reload the plans to show the new one
+      await loadPMPlansForAsset(selectedParentAsset.id, childAsset.id);
+      
+      // Refresh PM plan statuses for all child assets
+      await loadChildAssetPlanStatuses(childAssets);
+      
+      // Show success message
+      setError(null);
+      
+    } catch (error) {
+      console.error('Error creating/updating PM plan:', error);
+      setError('Failed to create/update PM plan: ' + error.message);
+    } finally {
+      setGeneratingPlan(false);
+    }
   };
 
   if (loading) {
@@ -768,10 +1059,10 @@ const ManageAssets = () => {
         </div>
       )}
 
-      {/* Parent Assets Section */}
+      {/* Assets Section */}
       <div className="mb-8">
         <div className="flex justify-between items-center mb-4">
-          <h3 className="text-xl font-semibold text-gray-800">Parent Assets</h3>
+          <h3 className="text-xl font-semibold text-gray-800">Assets</h3>
           {userSites.length > 0 && (
             <button
               onClick={() => setShowAddParentAsset(!showAddParentAsset)}
@@ -956,424 +1247,656 @@ const ManageAssets = () => {
           </div>
         )}
 
-        {/* Parent Assets Table */}
-        <div className="overflow-x-auto">
-          <table className="min-w-full bg-white border border-gray-200">
+        {/* Assets Table with Inline Child Assets */}
+        <div className="overflow-hidden">
+          <table className="w-full bg-white border border-gray-200 table-fixed">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/8">
                   Name
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/8">
                   Make
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/8">
                   Model
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/8">
                   Serial Number
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/8">
                   Category
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/8">
                   Purchase Date
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/8">
                   Install Date
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Manuals
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/12">
                   Actions
                 </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {parentAssets.map((asset) => (
-                <tr 
-                  key={asset.id} 
-                  className={`${selectedParentAsset?.id === asset.id ? 'bg-blue-50' : ''} ${editingParentAsset !== asset.id ? 'cursor-pointer hover:bg-gray-50' : ''}`}
-                  onClick={(e) => {
-                    if (editingParentAsset !== asset.id) {
-                      handleParentAssetSelect(asset);
-                    }
-                  }}
-                >
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm font-medium text-gray-900">
-                      {asset.name}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-500">
-                      {asset.make || '-'}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-500">
-                      {asset.model || '-'}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-500">
-                      {asset.serial_number || '-'}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-500">
-                      {asset.category || '-'}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {formatDate(asset.purchase_date)}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {formatDate(asset.install_date)}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm" onClick={(e) => e.stopPropagation()}>
-                    {loadedManuals[asset.id] && loadedManuals[asset.id].length > 0 ? (
-                      <div className="space-y-1">
-                        {loadedManuals[asset.id].map((manual) => (
-                          <div key={manual.id} className="flex items-center">
-                            <button
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                const url = await getSignedUrl(manual.file_path);
-                                if (url) window.open(url, '_blank');
-                              }}
-                              className="text-blue-600 hover:text-blue-900 text-xs"
-                              title={manual.original_name}
-                            >
-                              📄 {manual.original_name.length > 15 ? manual.original_name.substring(0, 15) + '...' : manual.original_name}
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <span className="text-gray-400 text-xs">No manuals</span>
-                    )}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm" onClick={(e) => e.stopPropagation()}>
-                    <div className="flex space-x-2">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openEditModal(asset, true);
-                        }}
-                        className="text-blue-600 hover:text-blue-900"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteParentAsset(asset.id);
-                        }}
-                        className="text-red-600 hover:text-red-900"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Child Assets Section */}
-      <div>
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="text-xl font-semibold text-gray-800">Child Assets</h3>
-          {selectedParentAsset && (
-            <button
-              onClick={() => setShowAddChildAsset(!showAddChildAsset)}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
-            >
-              {showAddChildAsset ? 'Cancel' : 'Add Child Asset'}
-            </button>
-          )}
-        </div>
-
-        {!selectedParentAsset && (
-          <div className="p-4 bg-gray-50 rounded-lg text-center text-gray-600">
-            Select a parent asset to view child assets
-          </div>
-        )}
-
-        {/* Add Child Asset Form */}
-        {showAddChildAsset && selectedParentAsset && (
-          <div className="mb-6 p-4 bg-gray-50 rounded-lg border">
-            <h4 className="text-lg font-medium text-gray-800 mb-4">
-              Add New Child Asset for: {selectedParentAsset.name}
-            </h4>
-            <form onSubmit={handleCreateChildAsset} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Name *
-                  </label>
-                  <input
-                    type="text"
-                    value={newChildAsset.name}
-                    onChange={(e) => setNewChildAsset(prev => ({ ...prev, name: e.target.value }))}
-                    className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Make
-                  </label>
-                  <input
-                    type="text"
-                    value={newChildAsset.make}
-                    onChange={(e) => setNewChildAsset(prev => ({ ...prev, make: e.target.value }))}
-                    className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Model
-                  </label>
-                  <input
-                    type="text"
-                    value={newChildAsset.model}
-                    onChange={(e) => setNewChildAsset(prev => ({ ...prev, model: e.target.value }))}
-                    className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Serial Number
-                  </label>
-                  <input
-                    type="text"
-                    value={newChildAsset.serial_number}
-                    onChange={(e) => setNewChildAsset(prev => ({ ...prev, serial_number: e.target.value }))}
-                    className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Category
-                  </label>
-                  <select
-                    value={newChildAsset.category}
-                    onChange={(e) => setNewChildAsset(prev => ({ ...prev, category: e.target.value }))}
-                    className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                <React.Fragment key={asset.id}>
+                  {/* Parent Asset Row */}
+                  <tr 
+                    className={`${selectedParentAsset?.id === asset.id ? 'bg-blue-50' : ''} ${editingParentAsset !== asset.id ? 'cursor-pointer hover:bg-gray-50' : ''}`}
+                    onClick={(e) => {
+                      if (editingParentAsset !== asset.id) {
+                        handleParentAssetSelect(asset);
+                      }
+                    }}
                   >
-                    <option value="">Select a category</option>
-                    {assetCategories.map((cat) => (
-                      <option key={cat.id} value={cat.asset_name}>
-                        {cat.asset_name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Purchase Date
-                  </label>
-                  <input
-                    type="date"
-                    value={newChildAsset.purchase_date}
-                    onChange={(e) => setNewChildAsset(prev => ({ ...prev, purchase_date: e.target.value }))}
-                    className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Install Date
-                  </label>
-                  <input
-                    type="date"
-                    value={newChildAsset.install_date}
-                    onChange={(e) => setNewChildAsset(prev => ({ ...prev, install_date: e.target.value }))}
-                    className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Notes
-                </label>
-                <textarea
-                  value={newChildAsset.notes}
-                  onChange={(e) => setNewChildAsset(prev => ({ ...prev, notes: e.target.value }))}
-                  rows={3}
-                  className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                />
-              </div>
-              
-              <FileUpload
-                label="Include User Manual (Optional)"
-                accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png,.gif"
-                maxSize={30 * 1024 * 1024} // 30MB
-                onFileSelect={handleChildFileSelect}
-                error={childFileUploadError}
-                disabled={uploadingChildFile}
-              />
-              
-              {uploadingChildFile && (
-                <div className="text-sm text-blue-600 flex items-center gap-2">
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-                  Uploading user manual...
-                </div>
-              )}
-              
-              <div className="flex space-x-2">
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
-                >
-                  Create Child Asset
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowAddChildAsset(false);
-                    setNewChildAsset({
-                      name: '',
-                      make: '',
-                      model: '',
-                      serial_number: '',
-                      category: '',
-                      purchase_date: '',
-                      install_date: '',
-                      notes: ''
-                    });
-                    setChildManualFile(null);
-                    setChildFileUploadError(null);
-                    setError(null);
-                  }}
-                  className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm"
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
-          </div>
-        )}
-
-        {/* Child Assets Table */}
-        {selectedParentAsset && (
-          <div className="overflow-x-auto">
-            <table className="min-w-full bg-white border border-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Name
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Make
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Model
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Serial Number
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Category
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Purchase Date
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Install Date
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Manuals
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {childAssets.map((asset) => (
-                  <tr key={asset.id}>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">
+                    <td className="px-2 py-4 whitespace-nowrap">
+                      <div className="text-sm font-medium text-gray-900 truncate">
                         {asset.name}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-500">
+                    <td className="px-3 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-500 truncate">
                         {asset.make || '-'}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-500">
+                    <td className="px-3 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-500 truncate">
                         {asset.model || '-'}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-500">
+                    <td className="px-3 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-500 truncate">
                         {asset.serial_number || '-'}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-500">
+                    <td className="px-3 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-500 truncate">
                         {asset.category || '-'}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-500">
                       {formatDate(asset.purchase_date)}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-500">
                       {formatDate(asset.install_date)}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      {loadedManuals[asset.id] && loadedManuals[asset.id].length > 0 ? (
-                        <div className="space-y-1">
-                          {loadedManuals[asset.id].map((manual) => (
-                            <div key={manual.id} className="flex items-center">
-                              <button
-                                onClick={async (e) => {
-                                  e.stopPropagation();
-                                  const url = await getSignedUrl(manual.file_path);
-                                  if (url) window.open(url, '_blank');
-                                }}
-                                className="text-blue-600 hover:text-blue-900 text-xs"
-                                title={manual.original_name}
-                              >
-                                📄 {manual.original_name.length > 15 ? manual.original_name.substring(0, 15) + '...' : manual.original_name}
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <span className="text-gray-400 text-xs">No manuals</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <div className="flex space-x-2">
+                    <td className="px-3 py-4 whitespace-nowrap text-sm" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex space-x-1">
                         <button
-                          onClick={() => openEditModal(asset, false)}
-                          className="text-blue-600 hover:text-blue-900"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openEditModal(asset, true);
+                          }}
+                          className="text-blue-600 hover:text-blue-900 text-xs"
                         >
                           Edit
                         </button>
                         <button
-                          onClick={() => handleDeleteChildAsset(asset.id)}
-                          className="text-red-600 hover:text-red-900"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteParentAsset(asset.id);
+                          }}
+                          className="text-red-600 hover:text-red-900 text-xs"
                         >
                           Delete
                         </button>
                       </div>
                     </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+
+                  {/* Child Assets Rows (shown when parent is selected) */}
+                  {selectedParentAsset?.id === asset.id && (
+                    <>
+                      {/* Child Assets Header Row */}
+                      {childAssets.length > 0 && (
+                        <tr className="bg-blue-100">
+                          <td className="px-1 py-1.5 text-xs font-medium text-blue-800 uppercase tracking-wide pl-2 text-left w-16">
+                            <div className="flex flex-col leading-tight">
+                              <span>Child</span>
+                              <span>Asset</span>
+                            </div>
+                          </td>
+                          <td className="px-3 py-1.5 text-xs font-medium text-blue-800 uppercase tracking-wide">
+                            Name
+                          </td>
+                          <td className="px-3 py-1.5 text-xs font-medium text-blue-800 uppercase tracking-wide">
+                            Purchase Date
+                          </td>
+                          <td className="px-3 py-1.5 text-xs font-medium text-blue-800 uppercase tracking-wide">
+                            Install Date
+                          </td>
+                          <td className="px-3 py-1.5 text-xs font-medium text-blue-800 uppercase tracking-wide">
+                            Plan Start
+                          </td>
+                          <td className="px-3 py-1.5 text-xs font-medium text-blue-800 uppercase tracking-wide">
+                            Category
+                          </td>
+                          <td className="px-3 py-1.5 text-xs font-medium text-blue-800 uppercase tracking-wide">
+                            PM Plan
+                          </td>
+                          <td className="px-3 py-1.5 text-xs font-medium text-blue-800 uppercase tracking-wide">
+                            Actions
+                          </td>
+                        </tr>
+                      )}
+
+                      {/* Child Assets Rows */}
+                      {childAssets.map((childAsset) => (
+                        <tr 
+                          key={childAsset.id} 
+                          className={`${selectedChildAssetForPlan?.id === childAsset.id ? 'bg-green-100' : 'bg-blue-50/30'} cursor-pointer hover:bg-blue-100/50`}
+                          onClick={() => handleChildAssetClick(childAsset)}
+                        >
+                          <td className="px-1 py-1.5 pl-2 w-16">
+                          </td>
+                          <td className="px-2 py-4 whitespace-nowrap">
+                            <div className="text-sm font-medium text-gray-900 flex items-center gap-2 truncate">
+                              ↳ {childAsset.name}
+                              {selectedChildAssetForPlan?.id === childAsset.id && (
+                                <span className="text-xs bg-green-200 text-green-800 px-2 py-1 rounded">Selected for PM Plans</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-3 py-4 whitespace-nowrap">
+                            <div className="text-sm text-gray-500 truncate">
+                              {formatDate(childAsset.purchase_date)}
+                            </div>
+                          </td>
+                          <td className="px-3 py-4 whitespace-nowrap">
+                            <div className="text-sm text-gray-500 truncate">
+                              {formatDate(childAsset.install_date)}
+                            </div>
+                          </td>
+                          <td className="px-3 py-4 whitespace-nowrap">
+                            <div className="text-sm text-gray-500 truncate">
+                              {formatDate(childAsset.plan_start_date)}
+                            </div>
+                          </td>
+                          <td className="px-3 py-4 whitespace-nowrap">
+                            <div className="text-sm text-gray-500 truncate">
+                              {childAsset.category || '-'}
+                            </div>
+                          </td>
+                          <td className="px-3 py-4 whitespace-nowrap">
+                            <div className="text-sm flex justify-center">
+                              {childAssetPlanStatuses[childAsset.id] ? (
+                                <span className="inline-flex items-center justify-center w-6 h-6 bg-green-100 text-green-600 rounded-full">
+                                  ✓
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center justify-center w-6 h-6 bg-red-100 text-red-600 rounded-full">
+                                  ✗
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-3 py-4 whitespace-nowrap text-sm" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex space-x-1">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openEditModal(childAsset, false);
+                                }}
+                                className="text-blue-600 hover:text-blue-900 text-xs"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteChildAsset(childAsset.id);
+                                }}
+                                className="text-red-600 hover:text-red-900 text-xs"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+
+                      {/* Add Child Asset Button Row - appears after all child assets */}
+                      <tr>
+                        <td colSpan="8" className="px-6 py-2 bg-gray-50">
+                          <button
+                            onClick={() => setShowAddChildAsset(!showAddChildAsset)}
+                            className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-xs"
+                          >
+                            {showAddChildAsset ? 'Cancel' : 'Add Child Asset'}
+                          </button>
+                        </td>
+                      </tr>
+
+                      {/* Add Child Asset Form */}
+                      {showAddChildAsset && (
+                        <tr>
+                          <td colSpan="8" className="p-2 bg-gray-50">
+                            <div className="bg-white rounded-lg p-4 border max-w-full overflow-hidden">
+                              <h4 className="text-sm font-medium text-gray-800 mb-4">
+                                Add New Child Asset for: {selectedParentAsset.name}
+                              </h4>
+                              <form onSubmit={handleCreateChildAsset} className="space-y-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                      Name *
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={newChildAsset.name}
+                                      onChange={(e) => setNewChildAsset(prev => ({ ...prev, name: e.target.value }))}
+                                      className="block w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                      required
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                      Make
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={newChildAsset.make}
+                                      onChange={(e) => setNewChildAsset(prev => ({ ...prev, make: e.target.value }))}
+                                      className="block w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                      Model
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={newChildAsset.model}
+                                      onChange={(e) => setNewChildAsset(prev => ({ ...prev, model: e.target.value }))}
+                                      className="block w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                      Serial Number
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={newChildAsset.serial_number}
+                                      onChange={(e) => setNewChildAsset(prev => ({ ...prev, serial_number: e.target.value }))}
+                                      className="block w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                      Category
+                                    </label>
+                                    <select
+                                      value={newChildAsset.category}
+                                      onChange={(e) => setNewChildAsset(prev => ({ ...prev, category: e.target.value }))}
+                                      className="block w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                    >
+                                      <option value="">Select a category</option>
+                                      {assetCategories.map((cat) => (
+                                        <option key={cat.id} value={cat.asset_name}>
+                                          {cat.asset_name}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                      Purchase Date
+                                    </label>
+                                    <input
+                                      type="date"
+                                      value={newChildAsset.purchase_date}
+                                      onChange={(e) => setNewChildAsset(prev => ({ ...prev, purchase_date: e.target.value }))}
+                                      className="block w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                      Install Date
+                                    </label>
+                                    <input
+                                      type="date"
+                                      value={newChildAsset.install_date}
+                                      onChange={(e) => setNewChildAsset(prev => ({ ...prev, install_date: e.target.value }))}
+                                      className="block w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                      Operating Hours
+                                    </label>
+                                    <input
+                                      type="number"
+                                      value={newChildAsset.operating_hours}
+                                      onChange={(e) => setNewChildAsset(prev => ({ ...prev, operating_hours: e.target.value }))}
+                                      placeholder="Hours per day"
+                                      className="block w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                      Plan Start Date
+                                    </label>
+                                    <input
+                                      type="date"
+                                      value={newChildAsset.plan_start_date}
+                                      onChange={(e) => setNewChildAsset(prev => ({ ...prev, plan_start_date: e.target.value }))}
+                                      className="block w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                    />
+                                  </div>
+                                </div>
+                                
+                                {/* Full width textarea field */}
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Additional Context
+                                  </label>
+                                  <textarea
+                                    value={newChildAsset.addtl_context}
+                                    onChange={(e) => setNewChildAsset(prev => ({ ...prev, addtl_context: e.target.value }))}
+                                    rows={2}
+                                    placeholder="Any additional context or special considerations"
+                                    className="block w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 resize-none"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Notes
+                                  </label>
+                                  <textarea
+                                    value={newChildAsset.notes}
+                                    onChange={(e) => setNewChildAsset(prev => ({ ...prev, notes: e.target.value }))}
+                                    rows={2}
+                                    className="block w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 resize-none"
+                                  />
+                                </div>
+                                
+                                <FileUpload
+                                  label="Include User Manual (Optional)"
+                                  accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png,.gif"
+                                  maxSize={30 * 1024 * 1024} // 30MB
+                                  onFileSelect={handleChildFileSelect}
+                                  error={childFileUploadError}
+                                  disabled={uploadingChildFile}
+                                />
+                                
+                                {uploadingChildFile && (
+                                  <div className="text-sm text-blue-600 flex items-center gap-2">
+                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                                    Uploading user manual...
+                                  </div>
+                                )}
+                                
+                                <div className="flex space-x-2 pt-2">
+                                  <button
+                                    type="submit"
+                                    className="px-3 py-1.5 bg-green-600 text-white rounded hover:bg-green-700 transition-colors text-sm"
+                                  >
+                                    Create Child Asset
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setShowAddChildAsset(false);
+                                      setNewChildAsset({
+                                        name: '',
+                                        make: '',
+                                        model: '',
+                                        serial_number: '',
+                                        category: '',
+                                        purchase_date: '',
+                                        install_date: '',
+                                        notes: '',
+                                        operating_hours: '',
+                                        addtl_context: '',
+                                        plan_start_date: ''
+                                      });
+                                      setChildManualFile(null);
+                                      setChildFileUploadError(null);
+                                      setError(null);
+                                    }}
+                                    className="px-3 py-1.5 bg-gray-600 text-white rounded hover:bg-gray-700 transition-colors text-sm"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </form>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </>
+                  )}
+                </React.Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
+
+      {/* Child Asset Details Display Section */}
+      {selectedChildAssetForPlan && (
+        <div className="mt-8">
+          <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
+            <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
+              <h3 className="text-lg font-semibold text-gray-800">
+                Child Asset Details: {selectedChildAssetForPlan.name}
+              </h3>
+            </div>
+            
+            <div className="p-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {/* Basic Information */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                  <p className="text-sm text-gray-900 bg-gray-50 px-3 py-2 rounded">{selectedChildAssetForPlan.name || '-'}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Make</label>
+                  <p className="text-sm text-gray-900 bg-gray-50 px-3 py-2 rounded">{selectedChildAssetForPlan.make || '-'}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Model</label>
+                  <p className="text-sm text-gray-900 bg-gray-50 px-3 py-2 rounded">{selectedChildAssetForPlan.model || '-'}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Serial Number</label>
+                  <p className="text-sm text-gray-900 bg-gray-50 px-3 py-2 rounded">{selectedChildAssetForPlan.serial_no || '-'}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                  <p className="text-sm text-gray-900 bg-gray-50 px-3 py-2 rounded">{selectedChildAssetForPlan.category || '-'}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Operating Hours</label>
+                  <p className="text-sm text-gray-900 bg-gray-50 px-3 py-2 rounded">
+                    {selectedChildAssetForPlan.operating_hours ? `${selectedChildAssetForPlan.operating_hours} hrs/day` : '-'}
+                  </p>
+                </div>
+                
+                {/* Date Fields */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Purchase Date</label>
+                  <p className="text-sm text-gray-900 bg-gray-50 px-3 py-2 rounded">{formatDate(selectedChildAssetForPlan.purchase_date)}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Install Date</label>
+                  <p className="text-sm text-gray-900 bg-gray-50 px-3 py-2 rounded">{formatDate(selectedChildAssetForPlan.install_date)}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Plan Start Date</label>
+                  <p className="text-sm text-gray-900 bg-gray-50 px-3 py-2 rounded">{formatDate(selectedChildAssetForPlan.plan_start_date)}</p>
+                </div>
+              </div>
+              
+              {/* Full Width Fields */}
+              {selectedChildAssetForPlan.addtl_context && (
+                <div className="mt-6">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Additional Context</label>
+                  <p className="text-sm text-gray-900 bg-gray-50 px-3 py-2 rounded whitespace-pre-wrap">
+                    {selectedChildAssetForPlan.addtl_context}
+                  </p>
+                </div>
+              )}
+              
+              {selectedChildAssetForPlan.notes && (
+                <div className="mt-6">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                  <p className="text-sm text-gray-900 bg-gray-50 px-3 py-2 rounded whitespace-pre-wrap">
+                    {selectedChildAssetForPlan.notes}
+                  </p>
+                </div>
+              )}
+              
+              {/* Manuals Section */}
+              {loadedManuals[selectedChildAssetForPlan.id] && loadedManuals[selectedChildAssetForPlan.id].length > 0 && (
+                <div className="mt-6">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Attached Manuals</label>
+                  <div className="space-y-2">
+                    {loadedManuals[selectedChildAssetForPlan.id].map((manual) => (
+                      <div key={manual.id} className="flex items-center justify-between bg-gray-50 px-3 py-2 rounded">
+                        <div className="flex items-center space-x-2">
+                          <span className="text-gray-500">📄</span>
+                          <span className="text-sm text-gray-900">{manual.original_name}</span>
+                          <span className="text-xs text-gray-500">({(manual.file_size / 1024 / 1024).toFixed(2)} MB)</span>
+                        </div>
+                        <button
+                          onClick={() => handleViewManual(manual)}
+                          className="text-blue-600 hover:text-blue-900 text-sm"
+                        >
+                          View
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end space-x-2">
+              <button
+                onClick={() => handleCreateUpdatePMPlan(selectedChildAssetForPlan)}
+                className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors text-sm disabled:bg-gray-400 disabled:cursor-not-allowed"
+                disabled={loadingPlans || generatingPlan}
+              >
+                {loadingPlans ? 'Loading...' : generatingPlan ? 'Generating Plan...' : (existingPlans.length > 0 ? 'Update PM Plan' : 'Create PM Plan')}
+              </button>
+              <button
+                onClick={() => openEditModal(selectedChildAssetForPlan, false)}
+                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-sm"
+              >
+                Edit Asset
+              </button>
+              <button
+                onClick={() => handleDeleteChildAsset(selectedChildAssetForPlan.id)}
+                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors text-sm"
+              >
+                Delete Asset
+              </button>
+            </div>
+          </div>
+          
+          {/* PM Plans Section */}
+          {loadingPlans && (
+            <div className="mt-6 bg-gray-50 rounded-lg p-6">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                <p className="text-gray-600">Loading PM plans...</p>
+              </div>
+            </div>
+          )}
+
+          {/* Existing Plans Display */}
+          {!loadingPlans && existingPlans.length > 0 && (
+            <div className="mt-6">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                <div className="flex items-start">
+                  <div className="flex-shrink-0">
+                    <span className="text-blue-600 text-xl">📋</span>
+                  </div>
+                  <div className="ml-3 flex-1">
+                    <h4 className="text-sm font-semibold text-blue-800 mb-2">
+                      {existingPlans.length === 1 ? 'Existing PM Plan Found' : `${existingPlans.length} Existing PM Plans Found`}
+                    </h4>
+                    <p className="text-xs text-blue-600">
+                      Displaying the most recent plan created on {new Date(existingPlans[0].created_at).toLocaleDateString()}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Display existing plan tasks */}
+              {existingPlans[0].pm_tasks && (
+                <div className="bg-gray-50 rounded-lg p-6">
+                  <h3 className="text-xl font-bold mb-6 text-gray-800">Maintenance Tasks</h3>
+                  <div className="space-y-6">
+                    {existingPlans[0].pm_tasks.map((task, index) => (
+                      <div key={index} className="bg-white rounded-lg p-4 border border-gray-200">
+                        <h4 className="text-lg font-semibold text-blue-600 mb-2">{task.task_name}</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+                          <Info label="Interval" value={task.maintenance_interval} />
+                          <Info label="Reason" value={task.reason} />
+                          <Info label="Estimated Time" value={task.est_minutes ? `${task.est_minutes} minutes` : 'Not specified'} />
+                          <Info label="Tools Needed" value={task.tools_needed || 'Standard maintenance tools'} />
+                          <Info label="Technicians Required" value={task.no_techs_needed || 1} />
+                          <Info label="Consumables" value={task.consumables || 'None specified'} />
+                        </div>
+                        <InfoBlock label="Instructions" value={task.instructions} bg="bg-gray-50" />
+                        <InfoBlock label="Safety Precautions" value={task.safety_precautions} bg="bg-red-50 text-red-600" />
+                        <InfoBlock label="Engineering Rationale" value={task.engineering_rationale} bg="bg-blue-50" />
+                        <InfoBlock label="Common Failures Prevented" value={task.common_failures_prevented} bg="bg-yellow-50" />
+                        <InfoBlock label="Usage Insights" value={task.usage_insights} bg="bg-green-50" />
+                        {task.scheduled_dates?.length > 0 && (
+                          <div className="mt-4">
+                            <p className="text-sm font-medium text-gray-600 mb-1">Scheduled Dates (Next 12 months):</p>
+                            <div className="flex flex-wrap gap-2">
+                              {Array.isArray(task.scheduled_dates) ? task.scheduled_dates.map((date, idx) => (
+                                <span key={idx} className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-medium">
+                                  {date}
+                                </span>
+                              )) : (
+                                <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-medium">
+                                  {task.scheduled_dates}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Additional Plans count */}
+              {existingPlans.length > 1 && (
+                <div className="mt-4 text-center">
+                  <p className="text-sm text-blue-600">
+                    {existingPlans.length - 1} additional plan{existingPlans.length > 2 ? 's' : ''} available for this asset
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* No Plans Found */}
+          {!loadingPlans && existingPlans.length === 0 && (
+            <div className="mt-6 bg-gray-50 rounded-lg p-6">
+              <div className="text-center">
+                <div className="text-gray-400 text-5xl mb-4">📋</div>
+                <h3 className="text-lg font-semibold text-gray-700 mb-2">No PM Plans Found</h3>
+                <p className="text-gray-600 mb-4">
+                  No preventive maintenance plans have been created for <strong>{selectedChildAssetForPlan.name}</strong> yet.
+                </p>
+                <p className="text-sm text-blue-600">
+                  Please press the Create PM Plan button to create the maintenance tasks for this asset.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Edit Asset Modal */}
       {showEditModal && (
@@ -1487,7 +2010,49 @@ const ManageAssets = () => {
                     className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                   />
                 </div>
+                {!editModalIsParent && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Operating Hours
+                      </label>
+                      <input
+                        type="number"
+                        value={editModalData.operating_hours}
+                        onChange={(e) => setEditModalData(prev => ({ ...prev, operating_hours: e.target.value }))}
+                        placeholder="Hours per day"
+                        className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Plan Start Date
+                      </label>
+                      <input
+                        type="date"
+                        value={editModalData.plan_start_date}
+                        onChange={(e) => setEditModalData(prev => ({ ...prev, plan_start_date: e.target.value }))}
+                        className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                      />
+                    </div>
+                  </>
+                )}
               </div>
+
+              {!editModalIsParent && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Additional Context
+                  </label>
+                  <textarea
+                    value={editModalData.addtl_context}
+                    onChange={(e) => setEditModalData(prev => ({ ...prev, addtl_context: e.target.value }))}
+                    rows={2}
+                    placeholder="Any additional context or special considerations"
+                    className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+              )}
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1699,6 +2264,9 @@ const ManageAssets = () => {
           </div>
         </div>
       )}
+
+      {/* Loading Modal for PM Plan Generation */}
+      <LoadingModal isOpen={generatingPlan} />
     </div>
   );
 };

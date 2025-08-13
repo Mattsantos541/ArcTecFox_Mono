@@ -196,37 +196,29 @@ export const savePMPlanInput = async (planData) => {
       console.log('✅ Created new user with ID:', userId);
     }
     
-    // Step 2: Insert PM plan with the user ID and company ID
+    // Step 2: Insert PM plan with only plan-specific data (no asset duplication)
     const planInsertData = {
-      asset_name: planData.name,
-      asset_model: planData.model,
-      serial_no: planData.serial,
-      eq_category: planData.category,
-      op_hours: parseInt(planData.hours) || 0,
-      additional_context: planData.additional_context || null,
-      env_desc: planData.environment,
-      plan_start_date: planData.date_of_plan_start || null,
+      child_asset_id: planData.child_asset_id || null, // Link to child asset (required)
       created_by: userId, // Use the ID from users table
-      site_id: planData.siteId || null, // Add site ID
-      child_asset_id: planData.child_asset_id || null, // Link to child asset if selected
+      plan_start_date: planData.date_of_plan_start || new Date().toISOString().split('T')[0], // Required field
+      status: 'Current', // Set status as Current for new plans
+      site_id: planData.siteId || null, // Add site ID for easy querying
+      version: 1, // Plan version
     };
+    
+    // Asset data will be retrieved via JOIN with child_assets and parent_assets tables
 
     console.log('🗃️ Saving PM plan with child asset ID:', {
       child_asset_id: planInsertData.child_asset_id,
-      asset_name: planInsertData.asset_name,
-      is_child_plan: !!planInsertData.child_asset_id
+      plan_start_date: planInsertData.plan_start_date,
+      status: planInsertData.status,
+      site_id: planInsertData.site_id
     });
 
-    // Add user manual data if provided
+    // Note: Manual data is stored separately in the loaded_manuals table
+    // and linked via asset_id, so we don't need to duplicate it in pm_plans
     if (planData.userManual) {
-      planInsertData.user_manual_path = planData.userManual.filePath;
-      planInsertData.user_manual_filename = planData.userManual.fileName;
-      planInsertData.user_manual_original_name = planData.userManual.originalName;
-      planInsertData.user_manual_file_size = planData.userManual.fileSize;
-      planInsertData.user_manual_file_type = planData.userManual.fileType;
-      planInsertData.user_manual_uploaded_at = planData.userManual.uploadedAt;
-      
-      console.log('📎 Including user manual data:', planData.userManual.fileName);
+      console.log('📎 Manual data available but stored separately:', planData.userManual.fileName);
     }
 
     const { data, error } = await supabase
@@ -358,7 +350,24 @@ export const fetchPMPlans = async () => {
   try {
     const { data, error } = await supabase
       .from('pm_plans')
-      .select('*')
+      .select(`
+        *,
+        child_assets (
+          id,
+          name,
+          make,
+          model,
+          serial_number,
+          category,
+          operating_hours,
+          addtl_context,
+          parent_assets!parent_asset_id (
+            id,
+            name
+          )
+        )
+      `)
+      .eq('status', 'Current')
       .order('created_at', { ascending: false });
     
     if (error) throw error;
@@ -382,57 +391,47 @@ export const fetchPMPlansByAsset = async (parentAssetId, childAssetId = null) =>
     
     console.log('🔍 Searching by child_asset_id:', childAssetId);
     
-    // First let's try to query the table without any filters to see if it's accessible
-    console.log('🔍 Testing basic pm_plans table access...');
-    const { data: testPlans, error: testError } = await supabase
+    // First, get the PM plans (simplified query without JOINs)
+    const { data: plans, error: plansError } = await supabase
       .from('pm_plans')
-      .select('id, asset_name, child_asset_id, created_at')
-      .limit(5);
-      
-    if (testError) {
-      console.error('❌ Basic pm_plans table access failed:', testError);
-    } else {
-      console.log('✅ Basic pm_plans access works. Sample data:', testPlans);
-    }
-    
-    // Now try the specific query with PM tasks included using correct column names
-    const { data: plans, error } = await supabase
-      .from('pm_plans')
-      .select(`
-        *,
-        pm_tasks!pm_plan_id (
-          task_name,
-          maintenance_interval,
-          reason,
-          est_minutes,
-          tools_needed,
-          no_techs_needed,
-          consumables,
-          instructions,
-          safety_precautions,
-          engineering_rationale,
-          common_failures_prevented,
-          usage_insights,
-          scheduled_dates
-        )
-      `)
+      .select('*')
       .eq('child_asset_id', childAssetId)
+      .eq('status', 'Current')
       .order('created_at', { ascending: false });
     
-    if (error) {
-      console.error('❌ Detailed error querying pm_plans:', {
-        error,
-        message: error.message,
-        details: error.details,
-        hint: error.hint,
-        code: error.code
-      });
-      throw error;
+    if (plansError) {
+      console.error('❌ Error fetching pm_plans:', plansError);
+      throw plansError;
     }
-    
-    console.log('✅ Found PM plans for child asset:', plans?.length || 0);
-    console.log('✅ Plans with tasks:', plans);
-    return plans || [];
+
+    if (!plans || plans.length === 0) {
+      console.log('✅ No PM plans found for child asset');
+      return [];
+    }
+
+    console.log('✅ Found PM plans:', plans.length);
+
+    // Get the tasks for each plan
+    const plansWithTasks = await Promise.all(
+      plans.map(async (plan) => {
+        const { data: tasks, error: tasksError } = await supabase
+          .from('pm_tasks')
+          .select('*')
+          .eq('pm_plan_id', plan.id)
+          .order('created_at', { ascending: true });
+
+        if (tasksError) {
+          console.error('❌ Error fetching tasks for plan:', plan.id, tasksError);
+          return { ...plan, pm_tasks: [] };
+        }
+
+        return { ...plan, pm_tasks: tasks || [] };
+      })
+    );
+
+    console.log('✅ Plans with tasks loaded:', plansWithTasks.length);
+    return plansWithTasks;
+
   } catch (error) {
     console.error("❌ Error fetching PM plans by asset:", error);
     return []; // Return empty array instead of throwing to prevent UI breaks
@@ -1304,11 +1303,12 @@ export const checkSitePlanLimit = async (siteId, newPlansCount = 1) => {
     // If plan_limit is null, treat as 0 (no plans allowed)
     const planLimit = siteData.plan_limit || 0;
     
-    // Count existing plans for this site
+    // Count existing Current plans for this site (don't count Replaced plans)
     const { data: plansData, error: plansError } = await supabase
       .from('pm_plans')
       .select('id')
-      .eq('site_id', siteId);
+      .eq('site_id', siteId)
+      .eq('status', 'Current');
     
     if (plansError) throw plansError;
     
