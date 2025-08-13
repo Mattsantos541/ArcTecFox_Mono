@@ -30,7 +30,10 @@
       "Bash(curl:*)",
       "Bash(touch:*)",
       "Bash(chmod:*)",
-      "Bash(~/.config/codespaces/setup-git.sh)"
+      "Bash(~/.config/codespaces/setup-git.sh)",
+      "Bash(kill:*)",
+      "Bash(pkill:*)",
+      "Bash(fuser:*)"
     ],
     "deny": []
   }
