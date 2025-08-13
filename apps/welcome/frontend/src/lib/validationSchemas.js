@@ -4,10 +4,8 @@ import { z } from 'zod';
 export const pmPlannerSchema = z.object({
   name: z
     .string()
-    .min(1, 'Asset name is required')
-    .min(3, 'Asset name must be at least 3 characters')
-    .max(100, 'Asset name must be less than 100 characters')
-    .trim(),
+    .optional()
+    .or(z.literal('')),
   
   model: z
     .string()
@@ -25,8 +23,18 @@ export const pmPlannerSchema = z.object({
   
   category: z
     .string()
-    .min(1, 'Category is required')
-    .refine(val => val !== '', 'Please select a category'),
+    .optional()
+    .or(z.literal('')),
+  
+  parent_asset_id: z
+    .string()
+    .optional()
+    .or(z.literal('')),
+  
+  child_asset_id: z
+    .string()
+    .optional()
+    .or(z.literal('')),
   
   hours: z
     .string()

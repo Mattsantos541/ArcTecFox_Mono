@@ -96,6 +96,12 @@ function AdminMenu({ adminSites = [] }) {
                 Manage Companies/Sites
               </button>
             )}
+            <button
+              onClick={() => handleNavigation('/admin/assets')}
+              className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+            >
+              Manage Assets
+            </button>
             {isSuperAdmin && (
               <button
                 onClick={() => handleNavigation('/admin/super-admins')}

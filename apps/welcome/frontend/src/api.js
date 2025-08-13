@@ -208,7 +208,14 @@ export const savePMPlanInput = async (planData) => {
       plan_start_date: planData.date_of_plan_start || null,
       created_by: userId, // Use the ID from users table
       site_id: planData.siteId || null, // Add site ID
+      child_asset_id: planData.child_asset_id || null, // Link to child asset if selected
     };
+
+    console.log('🗃️ Saving PM plan with child asset ID:', {
+      child_asset_id: planInsertData.child_asset_id,
+      asset_name: planInsertData.asset_name,
+      is_child_plan: !!planInsertData.child_asset_id
+    });
 
     // Add user manual data if provided
     if (planData.userManual) {
@@ -359,6 +366,76 @@ export const fetchPMPlans = async () => {
   } catch (error) {
     console.error("❌ Error fetching PM plans:", error);
     throw error;
+  }
+};
+
+// Fetch existing PM plans for a specific child asset (all plans are for child assets only)
+export const fetchPMPlansByAsset = async (parentAssetId, childAssetId = null) => {
+  try {
+    console.log('🔍 Fetching PM plans for child asset:', { parentAssetId, childAssetId });
+    
+    // Since all plans are for child assets only, we only search when childAssetId is provided
+    if (!childAssetId) {
+      console.log('❌ No child asset ID provided - returning empty (parent assets have no direct plans)');
+      return [];
+    }
+    
+    console.log('🔍 Searching by child_asset_id:', childAssetId);
+    
+    // First let's try to query the table without any filters to see if it's accessible
+    console.log('🔍 Testing basic pm_plans table access...');
+    const { data: testPlans, error: testError } = await supabase
+      .from('pm_plans')
+      .select('id, asset_name, child_asset_id, created_at')
+      .limit(5);
+      
+    if (testError) {
+      console.error('❌ Basic pm_plans table access failed:', testError);
+    } else {
+      console.log('✅ Basic pm_plans access works. Sample data:', testPlans);
+    }
+    
+    // Now try the specific query with PM tasks included using correct column names
+    const { data: plans, error } = await supabase
+      .from('pm_plans')
+      .select(`
+        *,
+        pm_tasks!pm_plan_id (
+          task_name,
+          maintenance_interval,
+          reason,
+          est_minutes,
+          tools_needed,
+          no_techs_needed,
+          consumables,
+          instructions,
+          safety_precautions,
+          engineering_rationale,
+          common_failures_prevented,
+          usage_insights,
+          scheduled_dates
+        )
+      `)
+      .eq('child_asset_id', childAssetId)
+      .order('created_at', { ascending: false });
+    
+    if (error) {
+      console.error('❌ Detailed error querying pm_plans:', {
+        error,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code
+      });
+      throw error;
+    }
+    
+    console.log('✅ Found PM plans for child asset:', plans?.length || 0);
+    console.log('✅ Plans with tasks:', plans);
+    return plans || [];
+  } catch (error) {
+    console.error("❌ Error fetching PM plans by asset:", error);
+    return []; // Return empty array instead of throwing to prevent UI breaks
   }
 };
 

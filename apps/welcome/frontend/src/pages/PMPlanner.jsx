@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { generatePMPlan, fetchUserSitesForPlanning, checkSitePlanLimit, isUserSuperAdmin, supabase } from "../api";
+import { generatePMPlan, fetchUserSitesForPlanning, fetchUserSites, fetchPMPlansByAsset, checkSitePlanLimit, isUserSuperAdmin, supabase } from "../api";
 import * as XLSX from 'xlsx';
 import { useAuth } from '../hooks/useAuth';
 import { useNavigate } from "react-router-dom";
@@ -660,7 +660,9 @@ export default function PMPlanner() {
       environment: "",
       date_of_plan_start: "",
       email: user?.email || "",
-      company: ""
+      company: "",
+      parent_asset_id: "",
+      child_asset_id: ""
     }
   });
 
@@ -701,6 +703,19 @@ export default function PMPlanner() {
   const [userManualFile, setUserManualFile] = useState(null);
   const [fileUploadError, setFileUploadError] = useState(null);
   const [uploadingFile, setUploadingFile] = useState(false);
+  
+  // Parent/Child asset state
+  const [parentAssets, setParentAssets] = useState([]);
+  const [childAssets, setChildAssets] = useState([]);
+  const [selectedParentAsset, setSelectedParentAsset] = useState(null);
+  const [selectedChildAsset, setSelectedChildAsset] = useState(null);
+  const [assetsLoading, setAssetsLoading] = useState(true);
+  const [loadedManuals, setLoadedManuals] = useState({});
+  
+  // Existing plans state
+  const [existingPlans, setExistingPlans] = useState([]);
+  const [loadingExistingPlans, setLoadingExistingPlans] = useState(false);
+  const [showExistingPlans, setShowExistingPlans] = useState(false);
 
   const fetchAssetCategories = async () => {
     try {
@@ -722,6 +737,219 @@ export default function PMPlanner() {
       setAssetCategories(["Pump", "Motor", "Valve", "Sensor", "Actuator", "Controller", "Other"]);
     } finally {
       setCategoriesLoading(false);
+    }
+  };
+
+  // Fetch parent assets based on user's site access
+  const fetchParentAssets = async () => {
+    if (!user) return;
+    
+    try {
+      setAssetsLoading(true);
+      
+      // Get user's accessible sites using the correct API function
+      const sitesData = await fetchUserSites(user.id);
+      console.log('PMPlanner: Sites data received:', sitesData);
+      
+      if (!sitesData || sitesData.length === 0) {
+        setParentAssets([]);
+        return;
+      }
+      
+      // The fetchUserSites returns sites with 'id' field, not 'site_id'
+      const siteIds = sitesData.map(s => s.id).filter(Boolean);
+      console.log('PMPlanner: Site IDs extracted:', siteIds);
+      
+      // Fetch parent assets for these sites
+      const { data: assets, error: assetsError } = await supabase
+        .from('parent_assets')
+        .select('*')
+        .in('site_id', siteIds)
+        .neq('status', 'deleted')
+        .order('name');
+      
+      if (assetsError) throw assetsError;
+      
+      setParentAssets(assets || []);
+      
+      // Fetch loaded manuals for all assets
+      if (assets && assets.length > 0) {
+        const assetIds = assets.map(a => a.id);
+        const { data: manuals, error: manualsError } = await supabase
+          .from('loaded_manuals')
+          .select('*')
+          .in('asset_id', assetIds)
+          .eq('asset_type', 'parent');
+        
+        if (!manualsError && manuals) {
+          const manualsByAsset = {};
+          manuals.forEach(manual => {
+            if (!manualsByAsset[manual.asset_id]) {
+              manualsByAsset[manual.asset_id] = [];
+            }
+            manualsByAsset[manual.asset_id].push(manual);
+          });
+          setLoadedManuals(manualsByAsset);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching parent assets:', error);
+      setMessage('❌ Failed to load assets. Please refresh and try again.');
+      setMessageType('error');
+    } finally {
+      setAssetsLoading(false);
+    }
+  };
+  
+  // Fetch child assets when parent is selected
+  const fetchChildAssets = async (parentAssetId) => {
+    if (!parentAssetId) {
+      setChildAssets([]);
+      return;
+    }
+    
+    try {
+      const { data: children, error } = await supabase
+        .from('child_assets')
+        .select('*')
+        .eq('parent_asset_id', parentAssetId)
+        .neq('status', 'deleted')
+        .order('name');
+      
+      if (error) throw error;
+      
+      setChildAssets(children || []);
+      
+      // Fetch manuals for child assets
+      if (children && children.length > 0) {
+        const childIds = children.map(c => c.id);
+        const { data: manuals, error: manualsError } = await supabase
+          .from('loaded_manuals')
+          .select('*')
+          .in('asset_id', childIds)
+          .eq('asset_type', 'child');
+        
+        if (!manualsError && manuals) {
+          const manualsByAsset = { ...loadedManuals };
+          manuals.forEach(manual => {
+            if (!manualsByAsset[manual.asset_id]) {
+              manualsByAsset[manual.asset_id] = [];
+            }
+            manualsByAsset[manual.asset_id].push(manual);
+          });
+          setLoadedManuals(manualsByAsset);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching child assets:', error);
+    }
+  };
+  
+  // Handle parent asset selection
+  const handleParentAssetChange = (assetId) => {
+    const asset = parentAssets.find(a => a.id === assetId);
+    setSelectedParentAsset(asset);
+    setSelectedChildAsset(null); // Reset child selection
+    setValue('parent_asset_id', assetId);
+    setValue('child_asset_id', '');
+    
+    // Auto-populate form fields if asset selected
+    if (asset) {
+      setValue('name', asset.name || '');
+      setValue('model', asset.model || '');
+      setValue('serial', asset.serial_number || '');
+      setValue('category', asset.category || '');
+      
+      // Fetch child assets for this parent
+      fetchChildAssets(assetId);
+      
+      // Clear existing plans since parent assets don't have direct plans
+      setExistingPlans([]);
+      setShowExistingPlans(false);
+    } else {
+      // Clear form fields
+      setValue('name', '');
+      setValue('model', '');
+      setValue('serial', '');
+      setValue('category', '');
+      setChildAssets([]);
+      setExistingPlans([]);
+      setShowExistingPlans(false);
+    }
+  };
+  
+  // Handle child asset selection  
+  const handleChildAssetChange = (assetId) => {
+    const asset = childAssets.find(a => a.id === assetId);
+    setSelectedChildAsset(asset);
+    setValue('child_asset_id', assetId);
+    
+    // If child asset selected, use its details instead
+    if (asset) {
+      setValue('name', asset.name || '');
+      setValue('model', asset.model || '');
+      setValue('serial', asset.serial_number || '');
+      setValue('category', asset.category || '');
+      
+      // Check for existing plans for this child asset
+      checkExistingPlans(selectedParentAsset.id, asset.id);
+    } else if (selectedParentAsset) {
+      // Revert to parent asset details
+      setValue('name', selectedParentAsset.name || '');
+      setValue('model', selectedParentAsset.model || '');
+      setValue('serial', selectedParentAsset.serial_number || '');
+      setValue('category', selectedParentAsset.category || '');
+      
+      // Clear existing plans since we're back to parent asset only
+      setExistingPlans([]);
+      setShowExistingPlans(false);
+    }
+  };
+  
+  // Check for existing PM plans for the selected asset
+  const checkExistingPlans = async (parentAssetId, childAssetId = null) => {
+    if (!parentAssetId) {
+      setExistingPlans([]);
+      setShowExistingPlans(false);
+      return;
+    }
+    
+    try {
+      setLoadingExistingPlans(true);
+      console.log('🔍 PMPlanner: Checking for existing plans...', {
+        parentAssetId,
+        childAssetId,
+        parentAsset: selectedParentAsset?.name,
+        childAsset: selectedChildAsset?.name
+      });
+      
+      const plans = await fetchPMPlansByAsset(parentAssetId, childAssetId);
+      
+      console.log('📋 PMPlanner: Retrieved plans:', plans);
+      
+      setExistingPlans(plans);
+      setShowExistingPlans(plans.length > 0);
+      
+      if (plans.length > 0) {
+        console.log(`✅ Found ${plans.length} existing PM plan(s) for this asset`);
+        
+        // Populate form fields with data from the most recent plan
+        const mostRecentPlan = plans[0];
+        setValue('hours', mostRecentPlan.op_hours?.toString() || '');
+        setValue('additional_context', mostRecentPlan.additional_context || '');
+        setValue('environment', mostRecentPlan.env_desc || '');
+        setValue('date_of_plan_start', mostRecentPlan.plan_start_date || '');
+        
+        console.log('📝 Populated form fields with existing plan data');
+      } else {
+        console.log('❌ No existing plans found for this asset');
+      }
+    } catch (error) {
+      console.error('💥 Error checking for existing plans:', error);
+      setExistingPlans([]);
+      setShowExistingPlans(false);
+    } finally {
+      setLoadingExistingPlans(false);
     }
   };
 
@@ -761,6 +989,12 @@ export default function PMPlanner() {
   useEffect(() => {
     fetchAssetCategories();
   }, []); // Only fetch categories once
+  
+  useEffect(() => {
+    if (user) {
+      fetchParentAssets();
+    }
+  }, [user]); // Fetch assets when user is available
 
   useEffect(() => {
     loadUserSites();
@@ -785,15 +1019,43 @@ export default function PMPlanner() {
     setMessageType("");
     
     try {
-      let userManualData = null;
+      // Validate that an asset is selected
+      if (!selectedParentAsset) {
+        throw new Error('Please select a parent asset before generating a plan.');
+      }
       
-      // Upload user manual if provided
-      if (userManualFile) {
-        userManualData = await uploadUserManual(userManualFile, data.name);
-        if (!userManualData) {
-          // If upload failed, the error is already set, so just return
-          return;
-        }
+      // Use the selected asset's data (child asset takes precedence if selected)
+      const activeAsset = selectedChildAsset || selectedParentAsset;
+      console.log('PMPlanner: Generating plan for asset:', activeAsset);
+      
+      // Get manuals for the selected asset
+      const assetManuals = loadedManuals[activeAsset.id] || [];
+      console.log('PMPlanner: Found manuals for asset:', assetManuals);
+      
+      // Prepare manual data for the backend
+      let userManualData = null;
+      let allManualsData = [];
+      
+      // If asset has manuals, prepare them for the backend
+      if (assetManuals.length > 0) {
+        // Use the first manual as the primary manual for backward compatibility
+        userManualData = {
+          filePath: assetManuals[0].file_path,
+          fileName: assetManuals[0].file_name,
+          originalName: assetManuals[0].original_name,
+          fileType: assetManuals[0].file_type,
+          fileSize: assetManuals[0].file_size
+        };
+        
+        // Prepare all manuals for enhanced processing
+        allManualsData = assetManuals.map(manual => ({
+          filePath: manual.file_path,
+          fileName: manual.file_name,
+          originalName: manual.original_name,
+          fileType: manual.file_type,
+          fileSize: manual.file_size,
+          loadedAt: manual.loaded_at
+        }));
       }
       
       // Determine which site to use
@@ -803,29 +1065,82 @@ export default function PMPlanner() {
 
       const formDataWithDefaults = {
         ...data,
-        // Use custom category if "Other" is selected, otherwise use the selected category
-        category: data.category === "Other" ? customCategory.trim() : data.category,
+        // Core asset identification
+        name: activeAsset.name,
+        model: activeAsset.model || '',
+        serial: activeAsset.serial_number || '',
+        category: activeAsset.category || '',
+        
+        // Asset hierarchy information
+        child_asset_id: selectedChildAsset?.id || null,
+        
+        // Additional asset details that might be useful for PM planning
+        purchase_date: activeAsset.purchase_date || '',
+        install_date: activeAsset.install_date || '',
+        asset_notes: activeAsset.notes || '',
+        
+        // Site and company information
         email: user?.email || "test@example.com",
         company: siteData?.company?.name || "Unknown Company",
-        siteId: siteToUse, // Add site ID for database storage
-        userManual: userManualData // Include user manual data
+        site_name: siteData?.name || "Unknown Site",
+        siteId: siteToUse,
+        
+        // Manual information (backward compatibility)
+        userManual: userManualData,
+        
+        // Enhanced manual information for better processing
+        manuals: allManualsData,
+        manual_count: allManualsData.length,
+        
+        // Asset metadata for better AI context
+        asset_full_details: {
+          parent_asset: {
+            id: selectedParentAsset.id,
+            name: selectedParentAsset.name,
+            model: selectedParentAsset.model,
+            serial_number: selectedParentAsset.serial_number,
+            category: selectedParentAsset.category,
+            purchase_date: selectedParentAsset.purchase_date,
+            install_date: selectedParentAsset.install_date,
+            notes: selectedParentAsset.notes
+          },
+          child_asset: selectedChildAsset ? {
+            id: selectedChildAsset.id,
+            name: selectedChildAsset.name,
+            model: selectedChildAsset.model,
+            serial_number: selectedChildAsset.serial_number,
+            category: selectedChildAsset.category,
+            purchase_date: selectedChildAsset.purchase_date,
+            install_date: selectedChildAsset.install_date,
+            notes: selectedChildAsset.notes
+          } : null
+        }
       };
+      
+      console.log('PMPlanner: Sending data to backend:', formDataWithDefaults);
+      console.log('PMPlanner: Asset IDs being saved:', {
+        child_asset_id: formDataWithDefaults.child_asset_id,
+        is_child_plan: !!formDataWithDefaults.child_asset_id,
+        asset_name: formDataWithDefaults.name
+      });
       
       const aiGeneratedPlan = await generatePMPlan(formDataWithDefaults);
       
       setGeneratedPlan(aiGeneratedPlan);
       
-      let successMessage = `✅ PM Plan generated successfully! Found ${aiGeneratedPlan.length} maintenance tasks.`;
-      if (userManualData) {
-        successMessage += ` User manual uploaded and will be referenced in the plan.`;
+      let successMessage = `✅ PM Plan generated successfully for ${activeAsset.name}!`;
+      if (aiGeneratedPlan && aiGeneratedPlan.length) {
+        successMessage += ` Found ${aiGeneratedPlan.length} maintenance tasks.`;
+      }
+      if (allManualsData.length > 0) {
+        successMessage += ` ${allManualsData.length} manual(s) were analyzed and incorporated into the plan.`;
+      }
+      if (selectedChildAsset) {
+        successMessage += ` Plan generated for child asset "${selectedChildAsset.name}" of parent "${selectedParentAsset.name}".`;
       }
       
       setMessage(successMessage);
       setMessageType("success");
-      
-      // Reset file upload after successful submission
-      setUserManualFile(null);
-      setFileUploadError(null);
       
       // Optionally reset form after successful submission
       // reset(); // Uncomment if you want to clear form after submission
@@ -872,9 +1187,9 @@ export default function PMPlanner() {
   // Form submission handler
   const onSubmit = async (data) => {
     try {
-      // Validate custom category if "Other" is selected
-      if (data.category === "Other" && !customCategory.trim()) {
-        setMessage("❌ Please enter a custom category when 'Other' is selected.");
+      // Validate asset selection
+      if (!selectedParentAsset) {
+        setMessage("❌ Please select a parent asset.");
         setMessageType("error");
         return;
       }
@@ -1383,67 +1698,124 @@ export default function PMPlanner() {
           <form onSubmit={handleSubmit(onSubmit, onError)}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <h3 className="text-lg font-semibold mb-4 text-gray-700">Asset Information</h3>
-                <FormInput 
-                  label="Asset Name" 
-                  placeholder="e.g., Hydraulic Pump #1" 
-                  required
-                  error={errors.name?.message}
-                  className="mb-3"
-                  {...register("name")}
-                />
-                <FormInput 
-                  label="Model" 
-                  placeholder="e.g., HPX-500" 
-                  error={errors.model?.message}
-                  className="mb-3"
-                  {...register("model")}
-                />
-                <FormInput 
-                  label="Serial Number" 
-                  placeholder="e.g., HPX500-00123" 
-                  error={errors.serial?.message}
-                  className="mb-3"
-                  {...register("serial")}
-                />
-                <FormSelect 
-                  label="Category" 
-                  options={categoriesLoading ? [] : assetCategories}
-                  placeholder={categoriesLoading ? "Loading categories..." : "Select Category"}
-                  disabled={categoriesLoading}
-                  required
-                  error={errors.category?.message}
-                  className="mb-3"
-                  {...register("category")}
-                />
-
-                {/* Show custom category input when "Other" is selected */}
-                {watchedCategory === "Other" && (
-                  <FormInput 
-                    label="Custom Category" 
-                    placeholder="Enter your custom category" 
-                    value={customCategory}
-                    onChange={(e) => setCustomCategory(e.target.value)}
+                <h3 className="text-lg font-semibold mb-4 text-gray-700">Asset Selection</h3>
+                
+                {/* Parent Asset Dropdown */}
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Parent Asset <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={selectedParentAsset?.id || ''}
+                    onChange={(e) => handleParentAssetChange(e.target.value)}
+                    disabled={assetsLoading}
+                    className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                     required
-                    error={watchedCategory === "Other" && !customCategory ? "Custom category is required" : ""}
-                    className="mb-3"
-                  />
+                  >
+                    <option value="">
+                      {assetsLoading ? "Loading assets..." : "Select a parent asset"}
+                    </option>
+                    {parentAssets.map((asset) => (
+                      <option key={asset.id} value={asset.id}>
+                        {asset.name} {asset.serial_number ? `(${asset.serial_number})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  {!selectedParentAsset && parentAssets.length === 0 && !assetsLoading && (
+                    <p className="text-sm text-gray-500 mt-1">
+                      No assets available. Please create assets in the Manage Assets page first.
+                    </p>
+                  )}
+                </div>
+
+                {/* Child Asset Dropdown - Only show if parent is selected */}
+                {selectedParentAsset && (
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Child Asset (Optional)
+                    </label>
+                    <select
+                      value={selectedChildAsset?.id || ''}
+                      onChange={(e) => handleChildAssetChange(e.target.value)}
+                      className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="">None - Use parent asset</option>
+                      {childAssets.map((asset) => (
+                        <option key={asset.id} value={asset.id}>
+                          {asset.name} {asset.serial_number ? `(${asset.serial_number})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    {childAssets.length === 0 && (
+                      <p className="text-sm text-gray-500 mt-1">
+                        No child assets available for this parent asset.
+                      </p>
+                    )}
+                  </div>
                 )}
-                
-                <FileUpload
-                  label="Include User Manual (Optional)"
-                  accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png,.gif"
-                  maxSize={30 * 1024 * 1024} // 30MB
-                  onFileSelect={handleFileSelect}
-                  error={fileUploadError}
-                  disabled={uploadingFile}
-                  className="mb-3"
-                />
-                
-                {uploadingFile && (
-                  <div className="mb-3 text-sm text-blue-600 flex items-center gap-2">
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-                    Uploading user manual...
+
+                {/* Display selected asset details */}
+                {(selectedParentAsset || selectedChildAsset) && (
+                  <div className="bg-gray-50 rounded-lg p-4 mb-4">
+                    <h4 className="text-sm font-semibold text-gray-700 mb-2">Selected Asset Details:</h4>
+                    <div className="space-y-1 text-sm">
+                      <div>
+                        <span className="font-medium text-gray-600">Name:</span>{' '}
+                        {(selectedChildAsset || selectedParentAsset)?.name}
+                      </div>
+                      {(selectedChildAsset || selectedParentAsset)?.model && (
+                        <div>
+                          <span className="font-medium text-gray-600">Model:</span>{' '}
+                          {(selectedChildAsset || selectedParentAsset).model}
+                        </div>
+                      )}
+                      {(selectedChildAsset || selectedParentAsset)?.serial_number && (
+                        <div>
+                          <span className="font-medium text-gray-600">Serial Number:</span>{' '}
+                          {(selectedChildAsset || selectedParentAsset).serial_number}
+                        </div>
+                      )}
+                      {(selectedChildAsset || selectedParentAsset)?.category && (
+                        <div>
+                          <span className="font-medium text-gray-600">Category:</span>{' '}
+                          {(selectedChildAsset || selectedParentAsset).category}
+                        </div>
+                      )}
+                    </div>
+                    
+                    {/* Display associated manuals if any */}
+                    {loadedManuals[(selectedChildAsset || selectedParentAsset)?.id] && 
+                     loadedManuals[(selectedChildAsset || selectedParentAsset).id].length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-gray-200">
+                        <h5 className="text-sm font-semibold text-gray-700 mb-1">Associated Manuals:</h5>
+                        <ul className="space-y-1">
+                          {loadedManuals[(selectedChildAsset || selectedParentAsset).id].map((manual) => (
+                            <li key={manual.id} className="text-sm text-blue-600">
+                              📄 {manual.original_name}
+                            </li>
+                          ))}
+                        </ul>
+                        <p className="text-xs text-gray-500 mt-1">
+                          These manuals will be used for generating the PM plan.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Hidden inputs to maintain form data */}
+                <input type="hidden" {...register("name")} />
+                <input type="hidden" {...register("model")} />
+                <input type="hidden" {...register("serial")} />
+                <input type="hidden" {...register("category")} />
+
+                {/* Loading indicator for existing plans */}
+                {loadingExistingPlans && (
+                  <div className="mt-6 text-center">
+                    <div className="inline-flex items-center gap-2 text-sm text-gray-500">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-400"></div>
+                      Checking for existing plans...
+                    </div>
                   </div>
                 )}
               </div>
@@ -1485,16 +1857,21 @@ export default function PMPlanner() {
             <div className="mt-8 text-center">
               <button
                 type="submit"
-                disabled={loading || bulkProcessing || isSubmitting || !isValid}
+                disabled={loading || bulkProcessing || isSubmitting || !selectedParentAsset}
                 className={`px-8 py-3 rounded-lg font-semibold text-white transition-colors ${
-                  loading || bulkProcessing || isSubmitting || !isValid
+                  loading || bulkProcessing || isSubmitting || !selectedParentAsset
                     ? "bg-gray-400 cursor-not-allowed" 
                     : "bg-blue-600 hover:bg-blue-700"
                 }`}
               >
                 {loading || isSubmitting ? "Generating PM Plan..." : "Generate Plan"}
               </button>
-              {!isValid && Object.keys(errors).length > 0 && (
+              {!selectedParentAsset && (
+                <p className="text-sm text-gray-500 mt-2">
+                  Please select a parent asset to enable plan generation
+                </p>
+              )}
+              {Object.keys(errors).length > 0 && (
                 <p className="text-sm text-gray-500 mt-2">
                   Please fix the errors above to enable submission
                 </p>
@@ -1504,6 +1881,85 @@ export default function PMPlanner() {
        </section>
 
        <PMPlanDisplay plan={generatedPlan} loading={loading && !generatedPlan} />
+       
+       {/* Existing Plans Section - Display using exact same format as PMPlanDisplay */}
+       {showExistingPlans && existingPlans.length > 0 && (
+         <div className="mt-8">
+           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+             <div className="flex items-start">
+               <div className="flex-shrink-0">
+                 <span className="text-blue-600 text-xl">📋</span>
+               </div>
+               <div className="ml-3 flex-1">
+                 <h4 className="text-sm font-semibold text-blue-800 mb-2">
+                   {existingPlans.length === 1 ? 'Existing PM Plan Found' : `${existingPlans.length} Existing PM Plans Found`}
+                 </h4>
+                 <p className="text-xs text-blue-600">
+                   Displaying the most recent plan created on {new Date(existingPlans[0].created_at).toLocaleDateString()}
+                 </p>
+               </div>
+             </div>
+           </div>
+
+           {/* Display existing plan using exact same format as PMPlanDisplay */}
+           {existingPlans.length > 0 && existingPlans[0].pm_tasks && (
+             <div className="bg-gray-50 rounded-lg p-6">
+               <h3 className="text-xl font-bold mb-6 text-gray-800">Existing PM Plan</h3>
+               <div className="space-y-6">
+                 {existingPlans[0].pm_tasks.map((task, index) => (
+                   <div key={index} className="bg-white rounded-lg p-4 border border-gray-200">
+                     <h4 className="text-lg font-semibold text-blue-600 mb-2">{task.task_name}</h4>
+                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+                       <Info label="Interval" value={task.maintenance_interval} />
+                       <Info label="Reason" value={task.reason} />
+                       <Info label="Estimated Time" value={task.est_minutes ? `${task.est_minutes} minutes` : 'Not specified'} />
+                       <Info label="Tools Needed" value={task.tools_needed || 'Standard maintenance tools'} />
+                       <Info label="Technicians Required" value={task.no_techs_needed || 1} />
+                       <Info label="Consumables" value={task.consumables || 'None specified'} />
+                     </div>
+                     <InfoBlock label="Instructions" value={task.instructions} bg="bg-gray-50" />
+                     <InfoBlock label="Safety Precautions" value={task.safety_precautions} bg="bg-red-50 text-red-600" />
+                     <InfoBlock label="Engineering Rationale" value={task.engineering_rationale} bg="bg-blue-50" />
+                     <InfoBlock label="Common Failures Prevented" value={task.common_failures_prevented} bg="bg-yellow-50" />
+                     <InfoBlock label="Usage Insights" value={task.usage_insights} bg="bg-green-50" />
+                     {task.scheduled_dates?.length > 0 && (
+                       <div className="mt-4">
+                         <p className="text-sm font-medium text-gray-600 mb-1">Scheduled Dates (Next 12 months):</p>
+                         <div className="flex flex-wrap gap-2">
+                           {Array.isArray(task.scheduled_dates) ? task.scheduled_dates.map((date, idx) => (
+                             <span key={idx} className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-medium">
+                               {date}
+                             </span>
+                           )) : (
+                             <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-medium">
+                               {task.scheduled_dates}
+                             </span>
+                           )}
+                         </div>
+                       </div>
+                     )}
+                   </div>
+                 ))}
+               </div>
+             </div>
+           )}
+
+           {/* Additional Plans count (if more than 1) */}
+           {existingPlans.length > 1 && (
+             <div className="mt-4 text-center">
+               <p className="text-sm text-blue-600">
+                 {existingPlans.length - 1} additional plan{existingPlans.length > 2 ? 's' : ''} available for this asset
+               </p>
+             </div>
+           )}
+
+           <div className="mt-4 text-center">
+             <p className="text-xs text-blue-600">
+               💡 You can create a new plan with different operating conditions if needed.
+             </p>
+           </div>
+         </div>
+       )}
        
        {/* Export Section */}
        <section className="bg-white rounded-lg shadow-md p-6">

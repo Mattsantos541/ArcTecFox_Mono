@@ -5,6 +5,7 @@ import MaintenanceSchedule from "./components/dashboard/maintenance-schedule";
 import UserManagement from "./pages/UserManagement";
 import SuperAdminManagement from "./pages/SuperAdminManagement";
 import CompanyManagement from "./pages/CompanyManagement";
+import ManageAssets from "./pages/ManageAssets";
 import TermsOfService from "./pages/TermsOfService";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import { AuthProvider } from "./hooks/useAuth";
@@ -22,6 +23,7 @@ function App() {
               <Route path="/pmplanner" element={<PMPlanner />} />
               <Route path="/admin/users" element={<UserManagement />} />
               <Route path="/admin/companies" element={<CompanyManagement />} />
+              <Route path="/admin/assets" element={<ManageAssets />} />
               <Route path="/admin/super-admins" element={<SuperAdminManagement />} />
               <Route path="/terms-of-service" element={<TermsOfService />} />
               <Route path="/privacy-policy" element={<PrivacyPolicy />} />
