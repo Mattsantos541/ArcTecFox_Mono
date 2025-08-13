@@ -1409,3 +1409,39 @@ export const removeUserRoleFromCompany = async (userId, siteId) => {
 export const createUserByEmail = async (email, siteId, fullName = '', roleId = null) => {
   return await createUserForSite(email, siteId, fullName, roleId);
 };
+
+// AI-Powered Child Asset Suggestions
+export const suggestChildAssets = async (parentAssetData) => {
+  try {
+    console.log('🧩 Requesting child asset suggestions for parent:', parentAssetData.name);
+
+    const response = await fetch(`${BACKEND_URL}/api/suggest-child-assets`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        parent_asset_name: parentAssetData.name,
+        parent_asset_make: parentAssetData.make,
+        parent_asset_model: parentAssetData.model,
+        parent_asset_category: parentAssetData.category,
+        environment: parentAssetData.environment,
+        additional_context: parentAssetData.notes,
+        top_n: 8
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || `HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    console.log('✅ Child asset suggestions received:', data.suggestions);
+    return data.suggestions;
+
+  } catch (error) {
+    console.error('❌ Error requesting child asset suggestions:', error);
+    throw error;
+  }
+};

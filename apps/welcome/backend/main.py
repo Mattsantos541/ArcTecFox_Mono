@@ -25,6 +25,7 @@ from pdf_export import (
     export_assets_data_to_pdf,
     export_detailed_pm_plans_to_pdf
 )
+from api.suggest_child_assets import router as child_assets_router
 
 # Load environment variables
 load_dotenv()
@@ -35,6 +36,9 @@ logger = logging.getLogger(__name__)
 
 # Initialize FastAPI app
 app = FastAPI(title="PM Planning AI API", version="1.0.0")
+
+# Include routers
+app.include_router(child_assets_router, prefix="/api", tags=["child-assets"])
 
 # Environment-based CORS configuration
 cors_origins_env = os.getenv("CORS_ORIGIN", "https://arctecfox-mono.vercel.app")
@@ -316,6 +320,7 @@ async def export_pdf(request: PDFExportRequest):
         import traceback
         logger.error("❌ Error generating PDF:\n%s", traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Internal error during PDF generation: {str(e)}")
+
 
 # Debug Gemini connection
 @app.get("/api/debug-gemini")
