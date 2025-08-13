@@ -328,76 +328,71 @@ pm_tasks (
 - Loading states and error handling for plan fetching
 - Database schema updates for new child asset fields
 
-#### Latest Session - Advanced Asset Management Features:
+#### Latest Session - AI-Powered Child Asset Suggestions & UI Enhancements:
 
-**PM Plan Status Indicators:**
-- **New PM Plan Column**: Replaced "Op. Hours" column in child asset table with visual PM Plan status indicators
-- **Green Checkmark (✓)**: Displayed in green circle for child assets that have current PM plans
-- **Red X (✗)**: Displayed in red circle for child assets without PM plans
-- **Real-time Status Updates**: PM plan statuses automatically refresh after creating/updating plans
-- **Database Integration**: Uses efficient queries to check `pm_plans` table for 'Current' status plans
+**AI-Powered Child Asset Suggestions:**
+- **New FastAPI Router**: Created `/apps/welcome/backend/api/suggest_child_assets.py` with organized endpoint structure
+- **Google AI Integration**: Uses same Gemini-2.0-flash-exp model and infrastructure as PM plan generation
+- **Smart Asset Suggestions**: AI analyzes parent asset details (name, make, model, category, environment) to suggest relevant child components
+- **Comprehensive Data Structure**: Each suggestion includes name, make, model, category, function, criticality level, common failures, PM relevance, and additional notes
+- **Intelligent Prompting**: Focused on components that would typically have their own maintenance schedules
+- **Backend Router Organization**: Properly structured FastAPI router with consistent error handling and logging
 
-**Direct PM Plan Generation from Asset View:**
-- **Create/Update PM Plan Button**: Dynamic button that shows "Create PM Plan" or "Update PM Plan" based on existing plan status
-- **Identical PMPlanner Process**: Uses exact same AI generation process, data structure, and loading modal as PMPlanner
-- **Loading Modal Integration**: Shows professional loading screen with progress indicators during plan generation
-- **Automatic Plan Display**: After successful generation, automatically displays new plan details using existing format
-- **Plan Versioning**: Marks old plans as 'Replaced' when creating new plans, maintains 'Current' status for active plans
+**Child Asset Suggestion UI:**
+- **Post-Creation Popup**: AI suggestion modal appears automatically after successful parent asset creation
+- **Professional Modal Design**: Clean interface with suggestion cards showing all AI-generated details
+- **Checkbox Selection**: Users can select multiple suggested child assets for batch creation
+- **Loading States**: Professional loading modal during AI processing with progress indicators
+- **Error Handling**: Graceful error handling with user-friendly messages and fallback options
 
-**Enhanced Child Asset Field Management:**
-- **Complete Field Support**: Child assets now properly save and display make, model, and serial number fields
-- **Database Field Mapping**: Proper mapping between frontend `serial_number` field and database `serial_no` field
-- **Consistent Data Flow**: 
-  - **Create**: `serial_number` → `serial_no` (frontend to database)
-  - **Edit Load**: `serial_no` → `serial_number` (database to frontend)
-  - **Edit Save**: `serial_number` → `serial_no` (frontend to database)
-  - **Display**: Direct reference to `serial_no` field from database
+**Custom Confirmation Modals:**
+- **Enhanced Delete Experience**: Replaced browser `confirm()` popups with custom confirmation modals
+- **Professional Design**: Styled confirmation dialogs with clear messaging and action buttons
+- **Consistent UX**: Applied to both parent and child asset delete operations
+- **Better Accessibility**: Improved accessibility with proper focus management and keyboard navigation
 
-**Environment Field Inheritance:**
-- **Simplified Data Model**: Child assets no longer collect environment separately - inherited from parent assets
-- **PMPlanner Integration**: Environment field auto-populated from parent asset via JOIN queries
-- **Reduced Data Duplication**: Eliminated redundant environment storage across asset hierarchy
+**Child Asset Creation Fixes:**
+- **Database Compatibility**: Fixed 400 errors when creating child assets from AI suggestions
+- **Null Value Handling**: Proper handling of empty/null values instead of empty strings for database fields
+- **Field Mapping**: Correct mapping between frontend and database field names (especially `serial_number` ↔ `serial_no`)
+- **Validation Updates**: Updated validation to handle optional fields properly
 
-**Advanced PM Plan Query Optimization:**
-- **Simplified API Calls**: Replaced complex JOIN queries with separate API calls to avoid RLS conflicts
-- **Error-Resistant Queries**: Implemented fallback patterns for database query issues
-- **Status-Based Filtering**: All PM plan queries now filter for 'Current' status to show only active plans
-- **Performance Optimization**: Efficient batch queries for PM plan status checking
+**Advanced Category Management:**
+- **Union Category Dropdown**: Child asset category field now displays both dim_assets categories AND custom category values
+- **Custom Category Preservation**: When editing child assets with custom categories not in dim_assets table, the custom value appears in dropdown with "(Custom)" label
+- **Dynamic Options**: `getCategoryOptions()` helper function creates union of standard categories plus current custom value
+- **Error Prevention**: Added safety checks to prevent `toString()` errors on undefined id fields
 
-**Technical Implementation Details:**
-- **State Management**: Added `childAssetPlanStatuses` state to track PM plan existence for all child assets
-- **Loading States**: Comprehensive loading indicators for plan generation, status checking, and plan display
-- **Error Handling**: Robust error handling with user-friendly messages and fallback behaviors
-- **Data Consistency**: Automatic status refresh after plan operations to maintain UI accuracy
+**Technical Implementation:**
+- **API Endpoint**: `POST /api/suggest-child-assets` with structured input validation using Pydantic models
+- **Frontend Integration**: `suggestChildAssets()` function in `/src/api.js` with proper error handling
+- **State Management**: Added suggestion-related state variables in ManageAssets component
+- **Loading Management**: Comprehensive loading states for AI processing and asset creation
+- **Error Recovery**: Robust error handling throughout the suggestion pipeline
 
-**Key Functions Added:**
-- `loadChildAssetPlanStatuses()` - Efficiently checks PM plan status for multiple child assets
-- `handleCreateUpdatePMPlan()` - Generates PM plans directly from asset view with identical PMPlanner process
-- Enhanced `fetchPMPlansByAsset()` - Simplified query structure to avoid JOIN-related errors
-- Updated modal data mapping functions for proper field handling
+**Database Integration:**
+- **Efficient Queries**: Optimized database queries for child asset creation and category management
+- **RLS Compatibility**: All queries work properly with Supabase Row Level Security policies
+- **Transaction Safety**: Proper handling of database transactions during batch asset creation
+- **Data Validation**: Server-side validation of AI-generated suggestions before database insertion
 
-**Table Layout & UI Optimization:**
-- **Table Width Optimization**: Changed from `min-w-full overflow-x-auto` to `w-full table-fixed overflow-hidden` to prevent horizontal scrolling
-- **Fixed Column Widths**: Applied specific width classes (`w-1/8`, etc.) to ensure consistent table layout
-- **Reduced Padding**: Changed from `px-6` to `px-3` throughout table cells for better space utilization
-- **Text Truncation**: Added `truncate` classes to prevent text overflow in table cells
-- **Smaller Action Buttons**: Reduced button text size to `text-xs` and spacing to `space-x-1`
+**Key Files Modified:**
+- `/apps/welcome/backend/api/suggest_child_assets.py` - New AI suggestion endpoint
+- `/apps/welcome/backend/main.py` - Router registration for child asset suggestions
+- `/apps/welcome/frontend/src/api.js` - New API function for suggestion requests
+- `/apps/welcome/frontend/src/pages/ManageAssets.jsx` - Complete suggestion UI integration and custom category handling
 
-**Child Asset Header Improvements:**
-- **Compact Header Design**: Implemented stacked "Child Asset" header with `flex-col` layout for minimal horizontal space
-- **Left Alignment**: Changed from centered to left-aligned (`text-left`) with reduced padding (`pl-2`) 
-- **Consistent Typography**: Maintained `font-medium` and `uppercase` styling to match other table headers
-- **Fixed Width**: Applied `w-16` to Child Asset header column for consistent narrow width
+**User Experience Improvements:**
+- **Streamlined Workflow**: Create parent asset → AI suggests children → select and create in batch
+- **Visual Feedback**: Clear loading states, success messages, and error recovery options
+- **Professional UI**: Consistent modal design language throughout the application
+- **Accessibility**: Proper focus management, keyboard navigation, and screen reader support
 
-**Button Layout & Alignment:**
-- **Actions Column Integration**: Moved child asset edit/delete buttons to align with parent asset actions in rightmost column
-- **Consistent Styling**: Applied same button styling (`text-xs`, `space-x-1`) across parent and child asset actions
-- **Proper Event Handling**: Maintained `stopPropagation()` for button clicks within clickable rows
-
-**First Column Optimization:**
-- **Narrower Name Column**: Reduced parent asset name column from `w-1/6` to `w-1/8` 
-- **Reduced Padding**: Changed from `px-3` to `px-2` for first column cells
-- **Consistent Spacing**: Applied uniform padding reduction to both parent and child asset name cells
+**Error Resolution:**
+- **toString() Error Fix**: Added null safety checks when rendering category options to prevent undefined id errors
+- **Custom Category Support**: Proper handling of categories not in dim_assets table during edit operations
+- **Loading State Management**: Fixed loading modal display issues during AI processing
+- **API Integration**: Resolved API_BASE_URL issues and proper backend communication
 
 ### Terminology
 

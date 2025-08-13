@@ -37,6 +37,31 @@ function LoadingModal({ isOpen }) {
   );
 }
 
+// AI Suggestions Loading Modal
+function SuggestionsLoadingModal({ isOpen }) {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-8 max-w-md mx-4 text-center">
+        <div className="mb-6">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-green-100 rounded-full mb-4">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600" />
+          </div>
+          <h3 className="text-xl font-semibold text-gray-800 mb-2">🤖 Getting AI Suggestions</h3>
+          <p className="text-gray-600 mb-4">
+            Our AI is analyzing your parent asset and suggesting relevant child components...
+          </p>
+          <div className="flex justify-center">
+            <div className="text-sm text-green-600">
+              This may take a few moments...
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const ManageAssets = () => {
   const { user } = useAuth();
   const [parentAssets, setParentAssets] = useState([]);
@@ -117,6 +142,17 @@ const ManageAssets = () => {
   const [selectedSuggestions, setSelectedSuggestions] = useState({});
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [createdParentAsset, setCreatedParentAsset] = useState(null);
+
+  // Custom confirmation modal state
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [confirmConfig, setConfirmConfig] = useState({
+    title: '',
+    message: '',
+    confirmText: 'Delete',
+    cancelText: 'Cancel',
+    onConfirm: () => {},
+    dangerous: true
+  });
 
   useEffect(() => {
     if (user) {
@@ -545,43 +581,50 @@ const ManageAssets = () => {
   };
 
   const handleDeleteManual = async (manualId, assetId) => {
-    if (!confirm('Are you sure you want to delete this manual?')) {
-      return;
-    }
+    const performDelete = async () => {
+      try {
+        // Get manual details before deleting
+        const { data: manual, error: fetchError } = await supabase
+          .from('loaded_manuals')
+          .select('file_path')
+          .eq('id', manualId)
+          .single();
 
-    try {
-      // Get manual details before deleting
-      const { data: manual, error: fetchError } = await supabase
-        .from('loaded_manuals')
-        .select('file_path')
-        .eq('id', manualId)
-        .single();
+        if (fetchError) throw fetchError;
 
-      if (fetchError) throw fetchError;
+        // Delete from storage
+        const storageService = await createStorageService();
+        await storageService.deleteUserManual(manual.file_path);
 
-      // Delete from storage
-      const storageService = await createStorageService();
-      await storageService.deleteUserManual(manual.file_path);
+        // Delete from database
+        const { error } = await supabase
+          .from('loaded_manuals')
+          .delete()
+          .eq('id', manualId);
 
-      // Delete from database
-      const { error } = await supabase
-        .from('loaded_manuals')
-        .delete()
-        .eq('id', manualId);
+        if (error) throw error;
 
-      if (error) throw error;
+        // Update local state
+        setLoadedManuals(prev => ({
+          ...prev,
+          [assetId]: prev[assetId]?.filter(m => m.id !== manualId) || []
+        }));
 
-      // Update local state
-      setLoadedManuals(prev => ({
-        ...prev,
-        [assetId]: prev[assetId]?.filter(m => m.id !== manualId) || []
-      }));
+        setError(null);
+      } catch (err) {
+        console.error('Error deleting manual:', err);
+        setError('Failed to delete manual');
+      }
+    };
 
-      setError(null);
-    } catch (err) {
-      console.error('Error deleting manual:', err);
-      setError('Failed to delete manual');
-    }
+    showConfirmation({
+      title: 'Delete Manual',
+      message: 'Are you sure you want to delete this manual? This action cannot be undone.',
+      confirmText: 'Delete Manual',
+      cancelText: 'Cancel',
+      onConfirm: performDelete,
+      dangerous: true
+    });
   };
 
   const getSignedUrl = async (filePath) => {
@@ -732,11 +775,8 @@ const ManageAssets = () => {
   };
 
   const handleDeleteParentAsset = async (assetId) => {
-    if (!confirm('Are you sure you want to delete this parent asset? All child assets will also be deleted.')) {
-      return;
-    }
-
-    try {
+    const performDelete = async () => {
+      try {
       const { error: childError } = await supabase
         .from('child_assets')
         .update({
@@ -765,18 +805,25 @@ const ManageAssets = () => {
         setChildAssets([]);
       }
       setError(null);
-    } catch (err) {
-      console.error('Error deleting parent asset:', err);
-      setError('Failed to delete parent asset');
-    }
+      } catch (err) {
+        console.error('Error deleting parent asset:', err);
+        setError('Failed to delete parent asset');
+      }
+    };
+
+    showConfirmation({
+      title: 'Delete Parent Asset',
+      message: 'Are you sure you want to delete this parent asset? All child assets will also be deleted. This action cannot be undone.',
+      confirmText: 'Delete Asset',
+      cancelText: 'Cancel',
+      onConfirm: performDelete,
+      dangerous: true
+    });
   };
 
   const handleDeleteChildAsset = async (assetId) => {
-    if (!confirm('Are you sure you want to delete this child asset?')) {
-      return;
-    }
-
-    try {
+    const performDelete = async () => {
+      try {
       const { error } = await supabase
         .from('child_assets')
         .update({
@@ -790,10 +837,20 @@ const ManageAssets = () => {
 
       await loadChildAssets(selectedParentAsset.id);
       setError(null);
-    } catch (err) {
-      console.error('Error deleting child asset:', err);
-      setError('Failed to delete child asset');
-    }
+      } catch (err) {
+        console.error('Error deleting child asset:', err);
+        setError('Failed to delete child asset');
+      }
+    };
+
+    showConfirmation({
+      title: 'Delete Child Asset',
+      message: 'Are you sure you want to delete this child asset? This action cannot be undone.',
+      confirmText: 'Delete Asset',
+      cancelText: 'Cancel',
+      onConfirm: performDelete,
+      dangerous: true
+    });
   };
 
   const startEditingParent = (asset) => {
@@ -838,6 +895,29 @@ const ManageAssets = () => {
   const formatDate = (dateString) => {
     if (!dateString) return '';
     return new Date(dateString).toLocaleDateString();
+  };
+
+  // Helper function to get category options including current value if not in dim_assets
+  const getCategoryOptions = (currentCategory = '') => {
+    // Start with all categories from dim_assets
+    const standardCategories = [...assetCategories];
+    
+    // If current category exists and is not already in the list, add it
+    if (currentCategory && currentCategory.trim() !== '') {
+      const categoryExists = assetCategories.some(cat => 
+        cat.asset_name.toLowerCase() === currentCategory.toLowerCase()
+      );
+      
+      if (!categoryExists) {
+        // Add the current category as a custom option
+        standardCategories.unshift({
+          id: `custom-${currentCategory}`,
+          asset_name: currentCategory
+        });
+      }
+    }
+    
+    return standardCategories;
   };
 
   // PM Plan display components (copied from PMPlanner)
@@ -949,6 +1029,17 @@ const ManageAssets = () => {
     }));
   };
 
+  // Helper function to show confirmation modal
+  const showConfirmation = (config) => {
+    setConfirmConfig(config);
+    setShowConfirmModal(true);
+  };
+
+  const handleConfirmAction = () => {
+    confirmConfig.onConfirm();
+    setShowConfirmModal(false);
+  };
+
   // Handle creating child assets from suggestions
   const handleCreateSuggestedAssets = async () => {
     const selectedIndices = Object.keys(selectedSuggestions).filter(key => selectedSuggestions[key]);
@@ -968,33 +1059,36 @@ const ManageAssets = () => {
         // Create child asset with AI-suggested data
         const childAssetData = {
           name: suggestion.name,
-          make: suggestion.make || '',
-          model: suggestion.model || '',
-          serial_no: '', // User will fill this in
-          category: suggestion.category || '',
-          purchase_date: '',
-          install_date: '',
+          make: suggestion.make || null,
+          model: suggestion.model || null,
+          serial_no: null, // User will fill this in later
+          category: suggestion.category || null,
+          purchase_date: null,
+          install_date: null,
           notes: [
             suggestion.function ? `Function: ${suggestion.function}` : '',
             suggestion.pm_relevance ? `PM Relevance: ${suggestion.pm_relevance}` : '',
             suggestion.common_failures?.length > 0 ? `Common Failures: ${suggestion.common_failures.join(', ')}` : '',
             suggestion.additional_notes ? `Additional Notes: ${suggestion.additional_notes}` : ''
-          ].filter(Boolean).join('\n\n'),
-          operating_hours: '',
-          addtl_context: suggestion.criticality_level ? `Criticality: ${suggestion.criticality_level}` : '',
-          plan_start_date: '',
+          ].filter(Boolean).join('\n\n') || null,
+          operating_hours: null,
+          addtl_context: suggestion.criticality_level ? `Criticality: ${suggestion.criticality_level}` : null,
+          plan_start_date: null,
           parent_asset_id: createdParentAsset.id,
           status: 'active',
           created_by: user.id
         };
 
+        console.log('Inserting child asset data:', childAssetData);
+        
         const { error } = await supabase
           .from('child_assets')
           .insert([childAssetData]);
 
         if (error) {
           console.error('Error creating suggested child asset:', error);
-          throw new Error(`Failed to create child asset: ${suggestion.name}`);
+          console.error('Failed data:', childAssetData);
+          throw new Error(`Failed to create child asset: ${suggestion.name} - ${error.message}`);
         }
       }
 
@@ -1639,9 +1733,10 @@ const ManageAssets = () => {
                                       className="block w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                                     >
                                       <option value="">Select a category</option>
-                                      {assetCategories.map((cat) => (
+                                      {getCategoryOptions(newChildAsset.category).map((cat) => (
                                         <option key={cat.id} value={cat.asset_name}>
                                           {cat.asset_name}
+                                          {cat.id && cat.id.toString().startsWith('custom-') && ' (Custom)'}
                                         </option>
                                       ))}
                                     </select>
@@ -2086,9 +2181,10 @@ const ManageAssets = () => {
                       className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                     >
                       <option value="">Select a category</option>
-                      {assetCategories.map((cat) => (
+                      {getCategoryOptions(editModalData.category).map((cat) => (
                         <option key={cat.id} value={cat.asset_name}>
                           {cat.asset_name}
+                          {cat.id && cat.id.toString().startsWith('custom-') && ' (Custom)'}
                         </option>
                       ))}
                     </select>
@@ -2474,6 +2570,58 @@ const ManageAssets = () => {
           </div>
         </div>
       )}
+
+      {/* Custom Confirmation Modal */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <div className="flex items-center mb-4">
+              <div className={`flex-shrink-0 w-10 h-10 mx-auto flex items-center justify-center rounded-full ${
+                confirmConfig.dangerous ? 'bg-red-100' : 'bg-blue-100'
+              }`}>
+                {confirmConfig.dangerous ? (
+                  <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                  </svg>
+                ) : (
+                  <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                )}
+              </div>
+              <div className="ml-4 flex-1">
+                <h3 className="text-lg font-medium text-gray-900">
+                  {confirmConfig.title}
+                </h3>
+                <p className="text-sm text-gray-500 mt-1">
+                  {confirmConfig.message}
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end space-x-3 mt-6">
+              <button
+                onClick={() => setShowConfirmModal(false)}
+                className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+              >
+                {confirmConfig.cancelText}
+              </button>
+              <button
+                onClick={handleConfirmAction}
+                className={`px-4 py-2 rounded-lg transition-colors ${
+                  confirmConfig.dangerous
+                    ? 'bg-red-600 hover:bg-red-700 text-white'
+                    : 'bg-blue-600 hover:bg-blue-700 text-white'
+                }`}
+              >
+                {confirmConfig.confirmText}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Loading Modal for AI Suggestions */}
+      <SuggestionsLoadingModal isOpen={loadingSuggestions} />
 
       {/* Loading Modal for PM Plan Generation */}
       <LoadingModal isOpen={generatingPlan} />
