@@ -6,7 +6,8 @@ import {
   getUserAdminSites,
   fetchPMPlansByAsset,
   generatePMPlan,
-  fetchUserSites
+  fetchUserSites,
+  suggestChildAssets
 } from '../api';
 import FileUpload from '../components/forms/FileUpload';
 import { createStorageService } from '../services/storageService';
@@ -109,6 +110,13 @@ const ManageAssets = () => {
 
   // PM Plan status tracking for child assets
   const [childAssetPlanStatuses, setChildAssetPlanStatuses] = useState({});
+
+  // Child Asset AI Suggestions state
+  const [showSuggestionsModal, setShowSuggestionsModal] = useState(false);
+  const [suggestedAssets, setSuggestedAssets] = useState([]);
+  const [selectedSuggestions, setSelectedSuggestions] = useState({});
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+  const [createdParentAsset, setCreatedParentAsset] = useState(null);
 
   useEffect(() => {
     if (user) {
@@ -388,6 +396,11 @@ const ManageAssets = () => {
       }
 
       await loadParentAssets();
+      
+      // Store created asset and trigger AI suggestions
+      setCreatedParentAsset({...createdAsset, environment: userSites.find(s => s.id === createdAsset.site_id)?.environment});
+      await requestChildAssetSuggestions(createdAsset);
+      
       setShowAddParentAsset(false);
       setNewParentAsset({
         name: '',
@@ -903,6 +916,99 @@ const ManageAssets = () => {
   const handleChildAssetClick = (childAsset) => {
     setSelectedChildAssetForPlan(childAsset);
     loadPMPlansForAsset(selectedParentAsset.id, childAsset.id);
+  };
+
+  // Request AI-powered child asset suggestions
+  const requestChildAssetSuggestions = async (parentAsset) => {
+    try {
+      setLoadingSuggestions(true);
+      setError(null);
+      
+      const suggestions = await suggestChildAssets(parentAsset);
+      
+      if (suggestions && suggestions.child_assets && suggestions.child_assets.length > 0) {
+        setSuggestedAssets(suggestions.child_assets);
+        setSelectedSuggestions({});
+        setShowSuggestionsModal(true);
+      } else {
+        console.log('No child asset suggestions received');
+      }
+    } catch (error) {
+      console.error('Error getting child asset suggestions:', error);
+      setError('Failed to get AI suggestions for child assets: ' + error.message);
+    } finally {
+      setLoadingSuggestions(false);
+    }
+  };
+
+  // Handle suggestion checkbox changes
+  const handleSuggestionToggle = (index, checked) => {
+    setSelectedSuggestions(prev => ({
+      ...prev,
+      [index]: checked
+    }));
+  };
+
+  // Handle creating child assets from suggestions
+  const handleCreateSuggestedAssets = async () => {
+    const selectedIndices = Object.keys(selectedSuggestions).filter(key => selectedSuggestions[key]);
+    
+    if (selectedIndices.length === 0) {
+      setShowSuggestionsModal(false);
+      return;
+    }
+
+    try {
+      setError(null);
+      
+      for (const indexStr of selectedIndices) {
+        const index = parseInt(indexStr);
+        const suggestion = suggestedAssets[index];
+        
+        // Create child asset with AI-suggested data
+        const childAssetData = {
+          name: suggestion.name,
+          make: suggestion.make || '',
+          model: suggestion.model || '',
+          serial_no: '', // User will fill this in
+          category: suggestion.category || '',
+          purchase_date: '',
+          install_date: '',
+          notes: [
+            suggestion.function ? `Function: ${suggestion.function}` : '',
+            suggestion.pm_relevance ? `PM Relevance: ${suggestion.pm_relevance}` : '',
+            suggestion.common_failures?.length > 0 ? `Common Failures: ${suggestion.common_failures.join(', ')}` : '',
+            suggestion.additional_notes ? `Additional Notes: ${suggestion.additional_notes}` : ''
+          ].filter(Boolean).join('\n\n'),
+          operating_hours: '',
+          addtl_context: suggestion.criticality_level ? `Criticality: ${suggestion.criticality_level}` : '',
+          plan_start_date: '',
+          parent_asset_id: createdParentAsset.id,
+          status: 'active',
+          created_by: user.id
+        };
+
+        const { error } = await supabase
+          .from('child_assets')
+          .insert([childAssetData]);
+
+        if (error) {
+          console.error('Error creating suggested child asset:', error);
+          throw new Error(`Failed to create child asset: ${suggestion.name}`);
+        }
+      }
+
+      // Reload child assets, select parent asset, and close modal
+      setSelectedParentAsset(createdParentAsset);
+      await loadChildAssets(createdParentAsset.id);
+      setShowSuggestionsModal(false);
+      setSuggestedAssets([]);
+      setSelectedSuggestions({});
+      
+    } catch (error) {
+      console.error('Error creating suggested child assets:', error);
+      setError('Failed to create some suggested child assets: ' + error.message);
+    }
   };
 
   // Handle Create/Update PM Plan (matching PMPlanner process exactly)
@@ -2261,6 +2367,110 @@ const ManageAssets = () => {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* AI Child Asset Suggestions Modal */}
+      {showSuggestionsModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h3 className="text-xl font-semibold text-gray-800">
+                  🤖 AI-Suggested Child Assets
+                </h3>
+                <p className="text-sm text-gray-600 mt-1">
+                  Based on your parent asset "{createdParentAsset?.name}", our AI has suggested these child components:
+                </p>
+              </div>
+              <button
+                onClick={() => setShowSuggestionsModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                ✕
+              </button>
+            </div>
+
+            {loadingSuggestions ? (
+              <div className="text-center py-8">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                <p className="text-gray-600">Getting AI suggestions...</p>
+              </div>
+            ) : (
+              <>
+                <div className="mb-6">
+                  <p className="text-sm text-gray-600 mb-4">
+                    Select the child assets you'd like to create. Each will be added with AI-generated details in the notes field:
+                  </p>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {suggestedAssets.map((asset, index) => (
+                      <div
+                        key={index}
+                        className={`border rounded-lg p-4 transition-colors ${
+                          selectedSuggestions[index] ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                      >
+                        <div className="flex items-start space-x-3">
+                          <input
+                            type="checkbox"
+                            id={`suggestion-${index}`}
+                            checked={selectedSuggestions[index] || false}
+                            onChange={(e) => handleSuggestionToggle(index, e.target.checked)}
+                            className="mt-1 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <div className="flex-1">
+                            <label htmlFor={`suggestion-${index}`} className="cursor-pointer">
+                              <h4 className="font-semibold text-gray-900">{asset.name}</h4>
+                              <div className="text-sm text-gray-600 mt-1 space-y-1">
+                                {asset.make && <p><span className="font-medium">Make:</span> {asset.make}</p>}
+                                {asset.model && <p><span className="font-medium">Model:</span> {asset.model}</p>}
+                                {asset.category && <p><span className="font-medium">Category:</span> {asset.category}</p>}
+                                {asset.criticality_level && (
+                                  <p>
+                                    <span className="font-medium">Criticality:</span> 
+                                    <span className={`ml-1 px-2 py-0.5 rounded-full text-xs ${
+                                      asset.criticality_level === 'High' ? 'bg-red-100 text-red-800' :
+                                      asset.criticality_level === 'Medium' ? 'bg-yellow-100 text-yellow-800' :
+                                      'bg-green-100 text-green-800'
+                                    }`}>
+                                      {asset.criticality_level}
+                                    </span>
+                                  </p>
+                                )}
+                                {asset.function && <p><span className="font-medium">Function:</span> {asset.function}</p>}
+                              </div>
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex justify-between items-center pt-4 border-t">
+                  <div className="text-sm text-gray-600">
+                    {Object.values(selectedSuggestions).filter(Boolean).length} of {suggestedAssets.length} selected
+                  </div>
+                  <div className="flex space-x-3">
+                    <button
+                      onClick={() => setShowSuggestionsModal(false)}
+                      className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+                    >
+                      Skip for Now
+                    </button>
+                    <button
+                      onClick={handleCreateSuggestedAssets}
+                      disabled={Object.values(selectedSuggestions).filter(Boolean).length === 0}
+                      className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Create Selected Assets
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
