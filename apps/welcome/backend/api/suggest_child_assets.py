@@ -1,10 +1,12 @@
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import google.generativeai as genai
 from typing import Optional
 import logging
 import json
 import os
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 router = APIRouter()
 logger = logging.getLogger("main")
@@ -12,23 +14,27 @@ logger = logging.getLogger("main")
 # Configure Google AI (using the same setup as main.py)
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
+# Rate limiter (will inherit from main app's limiter)
+limiter = Limiter(key_func=get_remote_address)
+
 # =============================
 # Pydantic Models
 # =============================
 class ChildSuggestInput(BaseModel):
-    parent_asset_name: str
-    parent_asset_make: Optional[str] = None
-    parent_asset_model: Optional[str] = None
-    parent_asset_category: Optional[str] = None
-    environment: Optional[str] = None
-    additional_context: Optional[str] = None
-    top_n: Optional[int] = 8
+    parent_asset_name: str = Field(..., max_length=255, min_length=1, description="Parent asset name")
+    parent_asset_make: Optional[str] = Field(None, max_length=255, description="Parent asset make/manufacturer")
+    parent_asset_model: Optional[str] = Field(None, max_length=255, description="Parent asset model")
+    parent_asset_category: Optional[str] = Field(None, max_length=255, description="Parent asset category")
+    environment: Optional[str] = Field(None, max_length=500, description="Environmental conditions")
+    additional_context: Optional[str] = Field(None, max_length=1000, description="Additional context for suggestions")
+    top_n: Optional[int] = Field(8, ge=1, le=20, description="Number of suggestions to generate")
 
 # =============================
 # Child Asset Suggestions Endpoint
 # =============================
 @router.post("/suggest-child-assets")
-async def suggest_child_assets(input_data: ChildSuggestInput, request: Request):
+@limiter.limit("5/minute")
+async def suggest_child_assets(request: Request, input_data: ChildSuggestInput):
     """
     Generate AI-powered child asset suggestions based on parent asset details.
     Uses the same Google AI infrastructure as PM plan generation.
