@@ -461,6 +461,77 @@ task_signoff (
 - Status tracking uses pm_tasks.status, not task_signoff status column
 - Pending signoffs identified by `comp_date IS NULL`
 
+#### Enhanced Task View & Scheduled Date Management (Latest Session):
+
+**Task View Display Improvements:**
+- **Separated Date Columns**: Replaced single "Date & Time" column with separate "Due" and "Scheduled" columns
+- **Due Date Column**: Shows actual due date from `task_signoff.due_date` with date filter
+- **Scheduled Column**: Shows scheduled date and time from `task_signoff.scheduled_date/scheduled_time` with independent date filter
+- **Independent Filtering**: Each date column has its own filter input for precise task management
+- **Improved Clarity**: Users can now distinguish between when tasks are due vs when they're scheduled
+
+**Database Schema Updates - task_signoff Table:**
+```sql
+task_signoff (
+  -- Previous fields
+  id uuid PRIMARY KEY,
+  tech_id uuid REFERENCES users(id),
+  task_id uuid REFERENCES pm_tasks(id),
+  due_date date,
+  comp_date date,
+  total_expense numeric,
+  -- New fields added
+  scheduled_date date,     -- When task is scheduled to be performed
+  scheduled_time time,     -- Specific time for scheduled task
+  created_at timestamptz,
+  id_bad bigint
+)
+```
+
+**Task Display Logic:**
+- **Initial Creation**: `scheduled_date` automatically set to `due_date` when task_signoff records are created
+- **Task Editing**: Both `scheduled_date` and `scheduled_time` can be updated through task edit interface
+- **Task Completion**: When tasks are completed, next occurrence includes `scheduled_date = due_date`
+- **Filtering**: Independent date filters for due date and scheduled date provide precise task management
+
+**Performance Optimizations:**
+- **Eliminated Multiple Page Loads**: Fixed React hooks violations and redundant authentication calls
+- **Removed Redundant API Calls**: Consolidated multiple `supabase.auth.getUser()` calls to use single `useAuth()` hook
+- **Optimized Re-renders**: Removed excessive debug logging and optimized state updates
+- **Fixed Loading Issues**: Eliminated race conditions causing multiple component re-renders
+
+**Technical Implementation:**
+- Updated task data mapping to include `dueDate`, `scheduledDate`, and `scheduledTime` fields
+- Enhanced database queries to include `scheduled_date` and `scheduled_time` from task_signoff table
+- Fixed task_signoff updates to use `.is('comp_date', null)` instead of `.eq('comp_date', null)`
+- Added new filter state `filterScheduledDate` with persistence
+- Updated sorting logic to handle both due date and scheduled date fields
+
+**Key Database Operations:**
+- **createInitialTaskSignoffs()**: Sets `scheduled_date = due_date` and `scheduled_time = null`
+- **updateTask()**: Updates both pm_tasks and task_signoff tables simultaneously
+- **createNextTask()**: Creates next occurrence with proper scheduled_date initialization
+- **Task View Queries**: Sources display dates from task_signoff table with proper fallbacks
+
+**User Experience Improvements:**
+- **Clear Separation**: Due dates vs scheduled dates are visually distinct
+- **Flexible Scheduling**: Users can schedule tasks for different dates than due dates
+- **Better Filtering**: Independent filters allow finding tasks by either due date or scheduled date
+- **Faster Loading**: Performance optimizations eliminate multiple loading attempts
+- **Consistent Data**: All date/time information sourced from task_signoff table for consistency
+
+**Files Modified:**
+- `/apps/welcome/frontend/src/components/dashboard/maintenance-schedule.tsx` - Enhanced task view with dual date columns and performance optimizations
+- `/apps/welcome/frontend/src/api.js` - Updated createInitialTaskSignoffs to include scheduled_date field
+- Task filtering, sorting, and display logic updated throughout the component
+
+**Performance Fixes Applied:**
+- Removed React hooks order violations (useMemo placed after conditional returns)
+- Eliminated redundant `supabase.auth.getUser()` calls throughout component
+- Removed excessive console.log statements affecting render performance
+- Fixed syntax errors with missing semicolons causing babel parser issues
+- Optimized task status update timing to avoid immediate re-renders
+
 ### Terminology
 
 - **Site Admin / Super Admin**: These terms are used interchangeably in the codebase. A "super admin" is actually a site admin with administrative privileges for managing sites, users, and assets.
