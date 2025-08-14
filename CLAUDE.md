@@ -394,6 +394,73 @@ pm_tasks (
 - **Loading State Management**: Fixed loading modal display issues during AI processing
 - **API Integration**: Resolved API_BASE_URL issues and proper backend communication
 
+#### Task Due Date Management & task_signoff System (Latest Session):
+
+**New Task Signoff Workflow Implementation:**
+- **Core Change**: Due dates now calculated using `child_assets.plan_start_date` + `pm_tasks.maintenance_interval` (format: "# months")
+- **Weekend Adjustment**: All due dates automatically moved to previous Friday if they fall on weekends
+- **task_signoff Table Integration**: Due dates sourced from `task_signoff` table instead of `pm_tasks.scheduled_dates`
+
+**Database Schema - task_signoff Table:**
+```sql
+task_signoff (
+  id_bad bigint (auto-generated legacy),
+  created_at timestamptz (auto-generated),
+  tech_id uuid REFERENCES users(id),
+  task_id uuid REFERENCES pm_tasks(id),
+  total_expense numeric,
+  due_date date,
+  comp_date date,  -- NULL = pending, filled = completed
+  id uuid PRIMARY KEY (auto-generated)
+)
+```
+
+**Workflow Logic:**
+1. **PM Plan Creation**: Automatically creates task_signoff records with calculated due dates
+2. **Task Status**: Uses `pm_tasks.status` + due date comparison for Overdue detection
+3. **Signoff Status**: `comp_date IS NULL` = pending, `comp_date IS NOT NULL` = completed
+4. **Due Date Updates**: Updates both `pm_tasks.scheduled_dates` and `task_signoff.due_date`
+5. **Task Completion**: Updates existing signoff record + creates next occurrence
+
+**Key Integration Points:**
+- **Asset Creation**: Creates initial task_signoff records when PM plans are generated
+- **Asset Deletion**: Cleans up task_signoff records when child assets/plans are deleted
+- **Plan Updates**: Removes old signoffs and creates new ones when plans are replaced
+- **plan_start_date Changes**: Recalculates all task_signoff due dates automatically
+- **Task View**: Sources due dates from task_signoff table, shows proper status
+
+**Backend Utilities:**
+- `/apps/welcome/backend/api/task_due_dates.py` - Due date calculation and weekend adjustment
+- `parseMaintenanceInterval()` - Parses "# months" format from AI
+- `calculateDueDate()` - Calculates due dates with weekend adjustment
+- `recalculateTaskSignoffDates()` - Updates due dates when plan_start_date changes
+
+**Frontend Functions:**
+- `createInitialTaskSignoffs()` - Creates signoff records when PM plans are saved
+- `recalculateTaskSignoffDates()` - Recalculates due dates when base dates change
+- Enhanced task view to display due dates from task_signoff table
+- Signoff popup updates existing records instead of creating duplicates
+
+**Cleanup Operations:**
+- Child asset deletion → Marks PM plans as 'Replaced' + cleans pending signoffs
+- PM plan replacement → Removes old signoffs before creating new plan
+- Task deletion → Removes associated signoff records
+- Plan start date edits → Recalculates all due dates
+
+**Testing Checklist:**
+- ✅ Create PM plan → task_signoff records created with proper due dates
+- ✅ Weekend dates → automatically adjusted to previous Friday
+- ✅ Edit plan_start_date → all due dates recalculated
+- ✅ Delete child asset → PM plans marked 'Replaced', signoffs cleaned
+- ✅ Complete task → existing signoff updated, next occurrence created
+- ✅ Task view → shows dates from task_signoff table
+
+**Important Notes:**
+- Maintenance intervals must be in "# months" format from AI
+- All due date logic uses child asset's plan_start_date as base
+- Status tracking uses pm_tasks.status, not task_signoff status column
+- Pending signoffs identified by `comp_date IS NULL`
+
 ### Terminology
 
 - **Site Admin / Super Admin**: These terms are used interchangeably in the codebase. A "super admin" is actually a site admin with administrative privileges for managing sites, users, and assets.

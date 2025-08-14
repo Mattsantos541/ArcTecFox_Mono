@@ -237,6 +237,148 @@ export const savePMPlanInput = async (planData) => {
   }
 };
 
+// Helper function to parse maintenance interval (e.g., "3 months" -> 3)
+export const parseMaintenanceInterval = (intervalStr) => {
+  if (!intervalStr) return 0;
+  const cleaned = intervalStr.toLowerCase().replace('months', '').replace('month', '').trim();
+  return parseInt(cleaned) || 0;
+};
+
+// Helper function to adjust date for weekends
+export const adjustForWeekend = (date) => {
+  const dayOfWeek = date.getDay();
+  if (dayOfWeek === 0) { // Sunday
+    date.setDate(date.getDate() - 2);
+  } else if (dayOfWeek === 6) { // Saturday
+    date.setDate(date.getDate() - 1);
+  }
+  return date;
+};
+
+// Calculate due date based on start date and interval
+export const calculateDueDate = (startDate, intervalMonths) => {
+  const date = new Date(startDate);
+  date.setMonth(date.getMonth() + intervalMonths);
+  return adjustForWeekend(date).toISOString().split('T')[0];
+};
+
+// Recalculate task_signoff due dates when plan_start_date changes
+export const recalculateTaskSignoffDates = async (childAssetId, newStartDate) => {
+  try {
+    console.log('📅 Recalculating task_signoff dates for child asset:', childAssetId);
+    
+    // Get all PM plans for this child asset
+    const { data: plans, error: plansError } = await supabase
+      .from('pm_plans')
+      .select('id')
+      .eq('child_asset_id', childAssetId)
+      .eq('status', 'Current');
+    
+    if (plansError || !plans || plans.length === 0) {
+      console.log('No current PM plans found for child asset');
+      return;
+    }
+    
+    // Get all tasks for these plans
+    const planIds = plans.map(p => p.id);
+    const { data: tasks, error: tasksError } = await supabase
+      .from('pm_tasks')
+      .select('id, maintenance_interval')
+      .in('pm_plan_id', planIds);
+    
+    if (tasksError || !tasks || tasks.length === 0) {
+      console.log('No tasks found for PM plans');
+      return;
+    }
+    
+    // Update each task_signoff record with new due date
+    for (const task of tasks) {
+      const intervalMonths = parseMaintenanceInterval(task.maintenance_interval);
+      const newDueDate = intervalMonths > 0 
+        ? calculateDueDate(newStartDate, intervalMonths)
+        : calculateDueDate(newStartDate, 1);
+      
+      const { error: updateError } = await supabase
+        .from('task_signoff')
+        .update({ 
+          due_date: newDueDate
+        })
+        .eq('task_id', task.id)
+        .is('comp_date', null);
+      
+      if (updateError) {
+        console.error('Error updating task_signoff due date:', updateError);
+      }
+    }
+    
+    console.log('✅ Recalculated due dates for', tasks.length, 'tasks');
+  } catch (error) {
+    console.error('Error recalculating task_signoff dates:', error);
+  }
+};
+
+// Create initial task_signoff records when PM plan is created
+const createInitialTaskSignoffs = async (pmPlanId, tasks) => {
+  try {
+    console.log('📝 Creating initial task_signoff records for PM plan:', pmPlanId);
+    
+    // Get the PM plan with child asset details
+    const { data: planData, error: planError } = await supabase
+      .from('pm_plans')
+      .select('*, child_assets!inner(plan_start_date)')
+      .eq('id', pmPlanId)
+      .single();
+    
+    if (planError) {
+      console.error('Error fetching PM plan:', planError);
+      return;
+    }
+    
+    const planStartDate = planData?.child_assets?.plan_start_date || new Date().toISOString().split('T')[0];
+    console.log('📅 Using plan start date:', planStartDate);
+    
+    // Get current user
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    // Create signoff records for each task
+    const signoffRecords = tasks.map(task => {
+      const intervalMonths = parseMaintenanceInterval(task.maintenance_interval);
+      const dueDate = intervalMonths > 0 
+        ? calculateDueDate(planStartDate, intervalMonths)
+        : calculateDueDate(planStartDate, 1); // Default to 1 month if no interval
+      
+      console.log(`📋 Task: ${task.task_name}, Interval: ${task.maintenance_interval}, Months: ${intervalMonths}, Due: ${dueDate}`);
+      
+      return {
+        task_id: task.id,
+        due_date: dueDate,
+        tech_id: null, // No technician assigned yet
+        total_expense: null, // No expense yet
+        comp_date: null // Not completed yet
+      };
+    });
+    
+    if (signoffRecords.length > 0) {
+      console.log('📝 Attempting to insert signoff records:', signoffRecords);
+      
+      const { data, error } = await supabase
+        .from('task_signoff')
+        .insert(signoffRecords)
+        .select();
+      
+      if (error) {
+        console.error('❌ Error creating task_signoff records:', error);
+        console.error('❌ Error details:', JSON.stringify(error, null, 2));
+        console.error('❌ Failed records:', JSON.stringify(signoffRecords, null, 2));
+      } else {
+        console.log('✅ Created', data.length, 'task_signoff records');
+      }
+    }
+  } catch (error) {
+    console.error('Error in createInitialTaskSignoffs:', error);
+  }
+};
+
 export const savePMPlanResults = async (pmPlanId, aiGeneratedPlan) => {
   try {
     console.log('💾 Saving PM plan results to database:', { pmPlanId, taskCount: aiGeneratedPlan.length });
@@ -277,6 +419,9 @@ export const savePMPlanResults = async (pmPlanId, aiGeneratedPlan) => {
     
     // Debug: Check what was actually saved to database
     console.log('🔍 FRONTEND: First saved task consumables:', data[0]?.consumables);
+    
+    // Create task_signoff records for each task
+    await createInitialTaskSignoffs(pmPlanId, data);
     
     return data;
   } catch (error) {

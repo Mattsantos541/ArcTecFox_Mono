@@ -47,10 +47,21 @@ export default function MaintenanceSchedule() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [showExportDialog, setShowExportDialog] = useState(false)
   const [exportingTask, setExportingTask] = useState(null)
+  // Add state for sign-off functionality
+  const [showSignOffDialog, setShowSignOffDialog] = useState(false)
+  const [signingOffTask, setSigningOffTask] = useState(null)
+  const [signOffData, setSignOffData] = useState({
+    technician_id: '',
+    completion_date: new Date().toISOString().split('T')[0],
+    total_expense: '',
+    consumables: [],
+    uploaded_file: null
+  })
+  const [siteUsers, setSiteUsers] = useState([])
+  const [loadingSignOff, setLoadingSignOff] = useState(false)
 
   // Add state for edited task values
   const [editedStatus, setEditedStatus] = useState("")
-  const [editedTechnician, setEditedTechnician] = useState("")
   const [editedDate, setEditedDate] = useState("")
   const [editedTime, setEditedTime] = useState("")
   const [editedTaskName, setEditedTaskName] = useState("")
@@ -73,7 +84,6 @@ export default function MaintenanceSchedule() {
   // Filter state
   const [filterStatus, setFilterStatus] = useState("all")
   const [filterPriority, setFilterPriority] = useState("all")
-  const [filterTechnician, setFilterTechnician] = useState("all")
   const [filterDateRange, setFilterDateRange] = useState({ start: "", end: "" })
   const [filterAsset, setFilterAsset] = useState("")
   const [filterTask, setFilterTask] = useState("")
@@ -118,7 +128,7 @@ export default function MaintenanceSchedule() {
       }
       
       // Simplified query to avoid JOIN issues - we'll get asset data separately if needed
-      // Only fetch tasks associated with Current PM plans
+      // Only fetch tasks associated with Current PM plans, including task_signoff data
       const { data, error } = await supabase
         .from('pm_tasks')
         .select(`
@@ -134,6 +144,11 @@ export default function MaintenanceSchedule() {
               email,
               full_name
             )
+          ),
+          task_signoff (
+            id,
+            due_date,
+            comp_date
           )
         `)
         .eq('pm_plans.status', 'Current');
@@ -165,17 +180,29 @@ export default function MaintenanceSchedule() {
           }
         }
         
+        // Get the most recent task_signoff for due date (no status filter needed)
+        const latestSignoff = task.task_signoff?.[0]; // Assuming ordered by most recent
+        const dueDate = latestSignoff?.due_date || 
+                       ((task.scheduled_dates && task.scheduled_dates.length > 0) ? task.scheduled_dates[0] : 'No date');
+        
+        // Use pm_tasks.status for task status, but enhance based on due date
+        let taskStatus = task.status || 'Scheduled';
+        if (taskStatus !== 'Completed' && dueDate !== 'No date' && new Date(dueDate) < new Date()) {
+          taskStatus = 'Overdue';
+        }
+        
         return {
           id: task.id,
           asset: assetName,
           task: task.task_name || 'No description',
-          date: (task.scheduled_dates && task.scheduled_dates.length > 0) ? task.scheduled_dates[0] : 'No date',
+          date: dueDate,
           time: '09:00',
           technician: task.pm_plans?.users?.full_name || 'Unassigned',
           duration: task.est_minutes ? `${task.est_minutes} min` : (task.maintenance_interval || 'Unknown'),
-          status: task.completed_at ? 'Completed' : 'Scheduled',
+          status: taskStatus,
           priority: task.priority || 'High', // Use task priority or default to High
           planId: task.pm_plan_id,
+          signoffId: latestSignoff?.id, // Store signoff ID for updates
           siteId: task.pm_plans?.site_id,
           createdByEmail: task.pm_plans?.users?.email,
           notes: task.notes,
@@ -202,6 +229,9 @@ export default function MaintenanceSchedule() {
 
       console.log('Setting scheduled tasks:', transformedTasks);
       setScheduledTasks(transformedTasks)
+      
+      // Update task statuses based on dates and re-fetch if needed
+      await updateTaskStatusesBasedOnDate()
     } catch (err) {
       console.error('Error fetching tasks:', err)
       setError(err.message)
@@ -339,6 +369,17 @@ export default function MaintenanceSchedule() {
         console.log('Error in auth debug:', e);
       }
 
+      // First delete any associated task_signoff records
+      const { error: signoffError } = await supabase
+        .from('task_signoff')
+        .delete()
+        .eq('task_id', taskId);
+      
+      if (signoffError) {
+        console.error('Error deleting task_signoff records:', signoffError);
+      }
+      
+      // Then delete the task itself
       const { error } = await supabase
         .from('pm_tasks')
         .delete()
@@ -432,7 +473,6 @@ export default function MaintenanceSchedule() {
     
     setEditingTask(task)
     setEditedStatus(task.status)
-    setEditedTechnician(task.technician)
     setEditedDate(task.date)
     setEditedTime(task.time)
     setEditedTaskName(task.task || '')
@@ -503,7 +543,6 @@ export default function MaintenanceSchedule() {
         safety_precautions: editedSafetyPrecautions,
         consumables: editedConsumables,
         status: editedStatus,
-        assigned_technician: editedTechnician,
         scheduled_date: editedDate,
         scheduled_time: editedTime
       }
@@ -555,7 +594,7 @@ export default function MaintenanceSchedule() {
         console.error('Error creating audit record:', auditError);
       }
 
-      // Update the task date
+      // Update the task date in pm_tasks
       const { error: updateError } = await supabase
         .from('pm_tasks')
         .update({ 
@@ -564,6 +603,19 @@ export default function MaintenanceSchedule() {
         .eq('id', taskId);
 
       if (updateError) throw updateError;
+      
+      // Also update the task_signoff table (most recent record without comp_date)
+      const { error: signoffError } = await supabase
+        .from('task_signoff')
+        .update({ 
+          due_date: newDate
+        })
+        .eq('task_id', taskId)
+        .is('comp_date', null);
+      
+      if (signoffError) {
+        console.error('Error updating task_signoff:', signoffError);
+      }
 
       // Refresh tasks to show the change
       await fetchTasks();
@@ -859,6 +911,363 @@ export default function MaintenanceSchedule() {
     setShowExportDialog(true)
   }
 
+  const handleSignOffTask = async (task) => {
+    setSigningOffTask(task)
+    
+    // Initialize consumables from task data
+    const taskConsumables = task.consumables ? task.consumables.split(',').map(item => item.trim()) : []
+    const initialConsumables = taskConsumables.map((consumable, index) => ({
+      id: index,
+      name: consumable,
+      needed: false,
+      brand: '',
+      version: '',
+      cost: ''
+    }))
+    
+    setSignOffData({
+      technician_id: '',
+      completion_date: new Date().toISOString().split('T')[0],
+      total_expense: '',
+      consumables: initialConsumables,
+      uploaded_file: null
+    })
+    
+    // Load site users for technician dropdown
+    await loadSiteUsers(task)
+    setShowSignOffDialog(true)
+  }
+
+  const loadSiteUsers = async (task) => {
+    try {
+      // Follow the relationship chain: task → plan → child_asset → parent_asset → site
+      // First get the site_id through the relationship chain
+      const { data: siteData, error: siteError } = await supabase
+        .from('pm_tasks')
+        .select(`
+          pm_plans!inner(
+            child_assets!inner(
+              parent_assets!inner(
+                site_id
+              )
+            )
+          )
+        `)
+        .eq('id', task.id)
+        .single()
+
+      if (siteError) throw siteError
+
+      const siteId = siteData?.pm_plans?.child_assets?.parent_assets?.site_id
+      
+      if (!siteId) {
+        throw new Error('Could not determine site for this task')
+      }
+
+      // Now get users for this site through the site_users junction table
+      const { data: users, error: usersError } = await supabase
+        .from('site_users')
+        .select(`
+          users!inner(
+            id,
+            email,
+            full_name
+          )
+        `)
+        .eq('site_id', siteId)
+        
+      if (usersError) throw usersError
+      setSiteUsers(users || [])
+    } catch (error) {
+      console.error('Error loading site users:', error)
+      toast({
+        title: "Error",
+        description: "Failed to load technicians for this site",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const handleSubmitSignOff = async () => {
+    if (!signOffData.technician_id || !signOffData.completion_date) {
+      toast({
+        title: "Error",
+        description: "Please fill in all required fields",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setLoadingSignOff(true)
+    
+    try {
+      // Check if there's an existing task_signoff record without comp_date (pending)
+      const { data: existingSignoff, error: fetchError } = await supabase
+        .from('task_signoff')
+        .select('*')
+        .eq('task_id', signingOffTask.id)
+        .is('comp_date', null)
+        .single()
+      
+      if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 = no rows returned
+        throw fetchError
+      }
+      
+      let createdSignOff;
+      
+      if (existingSignoff) {
+        // Update existing record
+        const { data: updatedSignOff, error: updateError } = await supabase
+          .from('task_signoff')
+          .update({
+            tech_id: signOffData.technician_id,
+            total_expense: parseFloat(signOffData.total_expense) || 0,
+            comp_date: signOffData.completion_date
+          })
+          .eq('id', existingSignoff.id)
+          .select()
+          .single()
+        
+        if (updateError) throw updateError
+        createdSignOff = updatedSignOff
+      } else {
+        // Create new record if none exists (backward compatibility)
+        const signOffRecord = {
+          tech_id: signOffData.technician_id,
+          task_id: signingOffTask.id,
+          total_expense: parseFloat(signOffData.total_expense) || 0,
+          due_date: signingOffTask.date,
+          comp_date: signOffData.completion_date
+        }
+
+        const { data: newSignOff, error: signOffError } = await supabase
+          .from('task_signoff')
+          .insert([signOffRecord])
+          .select()
+          .single()
+
+        if (signOffError) throw signOffError
+        createdSignOff = newSignOff
+      }
+
+      // Create consumables records in signoff_consumables table
+      if (signOffData.consumables.length > 0) {
+        const consumableRecords = signOffData.consumables.map(consumable => ({
+          so_id: createdSignOff.id,
+          consumable: consumable.name,
+          used: consumable.needed,
+          brand: consumable.needed ? consumable.brand : null,
+          version: consumable.needed ? consumable.version : null,
+          cost: consumable.needed ? (parseFloat(consumable.cost) || 0) : null
+        }))
+
+        const { error: consumablesError } = await supabase
+          .from('signoff_consumables')
+          .insert(consumableRecords)
+
+        if (consumablesError) throw consumablesError
+      }
+
+      // Handle file upload if provided
+      if (signOffData.uploaded_file) {
+        const fileName = `signoff_${createdSignOff.id}_${Date.now()}_${signOffData.uploaded_file.name}`
+        const filePath = `${user.id}/${fileName}`
+
+        // Upload file to storage
+        const { error: uploadError } = await supabase.storage
+          .from('user-manuals')
+          .upload(filePath, signOffData.uploaded_file)
+
+        if (uploadError) throw uploadError
+
+        // Create record in loaded_signoff_docs table
+        const docRecord = {
+          so_Id: createdSignOff.id,
+          file_path: filePath,
+          file_name: fileName,
+          original_name: signOffData.uploaded_file.name,
+          file_size: signOffData.uploaded_file.size.toString(),
+          file_type: signOffData.uploaded_file.type
+        }
+
+        const { error: docError } = await supabase
+          .from('loaded_signoff_docs')
+          .insert([docRecord])
+
+        if (docError) throw docError
+      }
+
+      // Update the task status to 'Completed'
+      const { error: taskUpdateError } = await supabase
+        .from('pm_tasks')
+        .update({ status: 'Completed' })
+        .eq('id', signingOffTask.id)
+
+      if (taskUpdateError) {
+        console.error('Error updating task status:', taskUpdateError)
+        console.error('Task update error details:', JSON.stringify(taskUpdateError, null, 2))
+        // Don't throw here, just log as the sign-off was successful
+      }
+
+      // Create next occurrence of the task based on maintenance interval
+      await createNextTask(signingOffTask)
+
+      toast({
+        title: "Success",
+        description: "Task sign-off completed successfully. Next occurrence scheduled.",
+        variant: "default",
+      })
+
+      setShowSignOffDialog(false)
+      setSigningOffTask(null)
+      
+      // Refresh the tasks list to reflect any status changes
+      await fetchTasks()
+      
+    } catch (error) {
+      console.error('Error submitting sign-off:', error)
+      console.error('Error details:', JSON.stringify(error, null, 2))
+      toast({
+        title: "Error",
+        description: `Failed to submit sign-off: ${error.message || 'Please try again.'}`,
+        variant: "destructive",
+      })
+    } finally {
+      setLoadingSignOff(false)
+    }
+  }
+
+  const createNextTask = async (completedTask) => {
+    try {
+      // Parse the maintenance interval to calculate next due date
+      const interval = completedTask.maintenance_interval
+      // Use the completion date as the basis for the next due date
+      const completionDate = new Date(signOffData.completion_date)
+      let nextDate = new Date(completionDate)
+
+      // Helper function to parse maintenance interval (e.g., "3 months" -> 3)
+      const parseMaintenanceInterval = (intervalStr) => {
+        if (!intervalStr) return 0;
+        const cleaned = intervalStr.toLowerCase().replace('months', '').replace('month', '').trim();
+        return parseInt(cleaned) || 0;
+      };
+
+      // Helper function to adjust date for weekends
+      const adjustForWeekend = (date) => {
+        const dayOfWeek = date.getDay();
+        if (dayOfWeek === 0) { // Sunday
+          date.setDate(date.getDate() - 2);
+        } else if (dayOfWeek === 6) { // Saturday
+          date.setDate(date.getDate() - 1);
+        }
+        return date;
+      };
+
+      // Parse interval and calculate next date
+      const intervalMonths = parseMaintenanceInterval(interval);
+      if (intervalMonths > 0) {
+        nextDate.setMonth(nextDate.getMonth() + intervalMonths);
+      } else {
+        // Default to 1 month if no valid interval
+        nextDate.setMonth(nextDate.getMonth() + 1);
+      }
+
+      // Adjust for weekend
+      nextDate = adjustForWeekend(nextDate);
+
+      // Create the next task_signoff record for the next occurrence
+      const nextSignoffData = {
+        task_id: completedTask.id,
+        due_date: nextDate.toISOString().split('T')[0],
+        tech_id: null,
+        total_expense: null,
+        comp_date: null
+      }
+
+      console.log('Creating next task_signoff record:', JSON.stringify(nextSignoffData, null, 2))
+      
+      const { error: createError } = await supabase
+        .from('task_signoff')
+        .insert([nextSignoffData])
+
+      if (createError) {
+        console.error('Error creating next task_signoff:', createError)
+        console.error('Create task_signoff error details:', JSON.stringify(createError, null, 2))
+        throw createError
+      }
+
+      console.log('Next task_signoff created successfully for date:', nextDate.toISOString().split('T')[0])
+    } catch (error) {
+      console.error('Error in createNextTask:', error)
+      // Don't throw error to avoid disrupting the sign-off process
+    }
+  }
+
+  const updateTaskStatusesBasedOnDate = async (shouldRefetch = false) => {
+    try {
+      const today = new Date().toISOString().split('T')[0]
+
+      // Fetch all non-completed tasks to check their dates
+      const { data: allTasks, error: fetchError } = await supabase
+        .from('pm_tasks')
+        .select('id, scheduled_dates, status')
+        .neq('status', 'Completed')
+
+      if (fetchError) {
+        console.error('Error fetching tasks for status update:', fetchError)
+        return
+      }
+
+      const tasksToUpdate = []
+      
+      allTasks?.forEach(task => {
+        if (task.scheduled_dates && task.scheduled_dates.length > 0) {
+          const taskDate = task.scheduled_dates[0] // First scheduled date
+          
+          if (taskDate < today && task.status !== 'Overdue') {
+            tasksToUpdate.push({ id: task.id, newStatus: 'Overdue' })
+          } else if (taskDate === today && task.status !== 'Due Today') {
+            tasksToUpdate.push({ id: task.id, newStatus: 'Due Today' })
+          }
+        }
+      })
+
+      // Update tasks in batches
+      const updatePromises = tasksToUpdate.map(task => 
+        supabase
+          .from('pm_tasks')
+          .update({ status: task.newStatus })
+          .eq('id', task.id)
+      )
+
+      if (updatePromises.length > 0) {
+        const results = await Promise.all(updatePromises)
+        const errors = results.filter(result => result.error)
+        
+        if (errors.length > 0) {
+          console.error('Some status updates failed:', errors)
+        }
+
+        console.log(`Task statuses updated based on dates: ${tasksToUpdate.length} tasks updated`)
+        
+        // Update local state to reflect changes
+        setScheduledTasks(prevTasks => 
+          prevTasks.map(task => {
+            const updatedTask = tasksToUpdate.find(t => t.id === task.id)
+            if (updatedTask) {
+              return { ...task, status: updatedTask.newStatus }
+            }
+            return task
+          })
+        )
+      } else {
+        console.log('No tasks needed status updates')
+      }
+    } catch (error) {
+      console.error('Error in updateTaskStatusesBasedOnDate:', error)
+    }
+  }
+
   const getStatusColor = (status) => {
     switch (status) {
       case "Completed":
@@ -869,9 +1278,20 @@ export default function MaintenanceSchedule() {
         return "outline"
       case "Overdue":
         return "destructive"
+      case "Due Today":
+        return "default"
       default:
         return "outline"
     }
+  }
+
+  const getRowClassName = (task) => {
+    if (task.status === "Overdue") {
+      return "bg-red-50 border-red-200"
+    } else if (task.status === "Due Today") {
+      return "bg-yellow-50 border-yellow-200"
+    }
+    return ""
   }
 
   const getPriorityColor = (priority) => {
@@ -971,15 +1391,13 @@ export default function MaintenanceSchedule() {
     )
   }
   
-  // Get unique technicians for filter
-  const uniqueTechnicians = [...new Set(scheduledTasks.map(task => task.technician).filter(Boolean))]
   
   // Filter and sort tasks
   let processedTasks = scheduledTasks.filter(task => {
     // Debug logging
-    if (filterStatus !== "all" || filterPriority !== "all" || filterTechnician !== "all") {
-      console.log('Filter values:', { filterStatus, filterPriority, filterTechnician });
-      console.log('Task values:', { status: task.status, priority: task.priority, technician: task.technician });
+    if (filterStatus !== "all" || filterPriority !== "all") {
+      console.log('Filter values:', { filterStatus, filterPriority });
+      console.log('Task values:', { status: task.status, priority: task.priority });
     }
     
     // Status filter
@@ -994,11 +1412,6 @@ export default function MaintenanceSchedule() {
       return false;
     }
     
-    // Technician filter
-    if (filterTechnician !== "all" && task.technician !== filterTechnician) {
-      console.log(`Technician filter: ${task.technician} !== ${filterTechnician}`);
-      return false;
-    }
     
     // Date filter (exact match or after selected date)
     if (filterDateRange.start && task.date !== filterDateRange.start) return false
@@ -1050,7 +1463,6 @@ export default function MaintenanceSchedule() {
   const resetFilters = () => {
     setFilterStatus("all")
     setFilterPriority("all")
-    setFilterTechnician("all")
     setFilterDateRange({ start: "", end: "" })
     setFilterAsset("")
     setFilterTask("")
@@ -1147,7 +1559,7 @@ export default function MaintenanceSchedule() {
                       <CardDescription>All upcoming and recent maintenance activities</CardDescription>
                     </div>
                     <div className="flex items-center gap-2">
-                      {(filterStatus !== "all" || filterPriority !== "all" || filterTechnician !== "all" || filterDateRange.start || filterAsset || filterTask) && (
+                      {(filterStatus !== "all" || filterPriority !== "all" || filterDateRange.start || filterAsset || filterTask) && (
                         <>
                           <Badge variant="secondary">
                             {filteredTasks.length} of {scheduledTasks.length} tasks
@@ -1269,38 +1681,6 @@ export default function MaintenanceSchedule() {
                           <TableHead>
                             <div className="space-y-2">
                               <div className="flex items-center gap-2">
-                                <span>Technician</span>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-6 w-6 p-0"
-                                  onClick={() => handleSort('technician')}
-                                >
-                                  {sortField === 'technician' ? (
-                                    sortDirection === 'asc' ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
-                                  ) : (
-                                    <ArrowUpDown className="h-4 w-4" />
-                                  )}
-                                </Button>
-                              </div>
-                              <select
-                                value={filterTechnician}
-                                onChange={(e) => {
-                                  console.log('Technician filter changed to:', e.target.value);
-                                  setFilterTechnician(e.target.value);
-                                }}
-                                className="h-8 text-xs flex w-full rounded-md border border-gray-300 bg-white px-3 py-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                              >
-                                <option value="all">All Technicians</option>
-                                {uniqueTechnicians.map(tech => (
-                                  <option key={tech} value={tech}>{tech}</option>
-                                ))}
-                              </select>
-                            </div>
-                          </TableHead>
-                          <TableHead>
-                            <div className="space-y-2">
-                              <div className="flex items-center gap-2">
                                 <span>Priority</span>
                                 <Button
                                   variant="ghost"
@@ -1359,6 +1739,7 @@ export default function MaintenanceSchedule() {
                                 <option value="Scheduled">Scheduled</option>
                                 <option value="In Progress">In Progress</option>
                                 <option value="Completed">Completed</option>
+                                <option value="Due Today">Due Today</option>
                                 <option value="Overdue">Overdue</option>
                               </select>
                             </div>
@@ -1368,19 +1749,13 @@ export default function MaintenanceSchedule() {
                       </TableHeader>
                       <TableBody>
                         {filteredTasks.map((task) => (
-                          <TableRow key={task.id}>
+                          <TableRow key={task.id} className={getRowClassName(task)}>
                             <TableCell className="font-medium whitespace-nowrap">{task.asset}</TableCell>
                             <TableCell>{task.task}</TableCell>
                             <TableCell>
                               <div className="space-y-1">
                                 <div>{task.date}</div>
                                 <div className="text-sm text-muted-foreground">{task.time}</div>
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex items-center space-x-1">
-                                <User className="h-4 w-4" />
-                                <span>{task.technician}</span>
                               </div>
                             </TableCell>
                             <TableCell>
@@ -1434,6 +1809,16 @@ export default function MaintenanceSchedule() {
                                   </TooltipTrigger>
                                   <TooltipContent>
                                     <p>Export task</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button variant="ghost" size="sm" onClick={() => handleSignOffTask(task)}>
+                                      <CheckCircle className="h-4 w-4" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>Sign off task</p>
                                   </TooltipContent>
                                 </Tooltip>
                               </div>
@@ -2025,20 +2410,6 @@ export default function MaintenanceSchedule() {
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="space-y-2">
-                      <Label>Technician</Label>
-                      <Select value={editedTechnician} onValueChange={setEditedTechnician}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="John Smith">John Smith</SelectItem>
-                          <SelectItem value="Sarah Johnson">Sarah Johnson</SelectItem>
-                          <SelectItem value="Mike Wilson">Mike Wilson</SelectItem>
-                          <SelectItem value="Emily Davis">Emily Davis</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
@@ -2334,6 +2705,232 @@ export default function MaintenanceSchedule() {
                 <div className="flex justify-end space-x-2">
                   <Button variant="outline" onClick={() => setShowExportDialog(false)}>
                     Cancel
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+          )}
+
+          {/* Sign Off Dialog */}
+          {showSignOffDialog && signingOffTask && (
+            <Dialog open={showSignOffDialog} onOpenChange={setShowSignOffDialog}>
+              <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center space-x-2">
+                    <CheckCircle className="h-5 w-5 text-green-500" />
+                    <span>Sign Off Task</span>
+                  </DialogTitle>
+                  <DialogDescription>
+                    Complete the sign-off for task "{signingOffTask.task}" for {signingOffTask.asset}
+                  </DialogDescription>
+                </DialogHeader>
+
+                <div className="space-y-6">
+                  {/* Basic Sign-off Information */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <Label htmlFor="technician">Technician</Label>
+                      <select
+                        id="technician"
+                        value={signOffData.technician_id}
+                        onChange={(e) => setSignOffData(prev => ({ ...prev, technician_id: e.target.value }))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="">Select Technician</option>
+                        {siteUsers.map(siteUser => (
+                          <option key={siteUser.users.id} value={siteUser.users.id}>
+                            {siteUser.users.full_name || siteUser.users.email}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    
+                    <div>
+                      <Label htmlFor="completion_date">Completion Date</Label>
+                      <Input
+                        id="completion_date"
+                        type="date"
+                        value={signOffData.completion_date}
+                        onChange={(e) => setSignOffData(prev => ({ ...prev, completion_date: e.target.value }))}
+                      />
+                    </div>
+                    
+                    <div>
+                      <Label htmlFor="total_expense">Total Expense ($)</Label>
+                      <Input
+                        id="total_expense"
+                        type="number"
+                        step="0.01"
+                        value={signOffData.total_expense}
+                        onChange={(e) => setSignOffData(prev => ({ ...prev, total_expense: e.target.value }))}
+                        placeholder="0.00"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Task Due Date (read-only) */}
+                  <div>
+                    <Label>Original Due Date</Label>
+                    <Input
+                      value={signingOffTask.date}
+                      disabled
+                      className="bg-gray-100"
+                    />
+                  </div>
+
+                  {/* Consumables Section */}
+                  <div>
+                    <div className="flex items-center justify-between mb-4">
+                      <Label className="text-lg font-semibold">Consumables</Label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const newConsumable = {
+                            id: Date.now(),
+                            name: '',
+                            needed: false,
+                            brand: '',
+                            version: '',
+                            cost: ''
+                          }
+                          setSignOffData(prev => ({
+                            ...prev,
+                            consumables: [...prev.consumables, newConsumable]
+                          }))
+                        }}
+                      >
+                        Add Consumable
+                      </Button>
+                    </div>
+
+                    <div className="space-y-3">
+                      {signOffData.consumables.map((consumable, index) => (
+                        <div key={consumable.id} className="border rounded-lg p-4 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1 mr-4">
+                              <Label>Consumable Name</Label>
+                              <Input
+                                value={consumable.name}
+                                onChange={(e) => {
+                                  const newConsumables = [...signOffData.consumables]
+                                  newConsumables[index].name = e.target.value
+                                  setSignOffData(prev => ({ ...prev, consumables: newConsumables }))
+                                }}
+                                placeholder="Enter consumable name"
+                              />
+                            </div>
+                            
+                            <div className="flex items-center space-x-2">
+                              <input
+                                type="checkbox"
+                                id={`needed-${consumable.id}`}
+                                checked={consumable.needed}
+                                onChange={(e) => {
+                                  const newConsumables = [...signOffData.consumables]
+                                  newConsumables[index].needed = e.target.checked
+                                  if (!e.target.checked) {
+                                    // Clear other fields when unchecked
+                                    newConsumables[index].brand = ''
+                                    newConsumables[index].version = ''
+                                    newConsumables[index].cost = ''
+                                  }
+                                  setSignOffData(prev => ({ ...prev, consumables: newConsumables }))
+                                }}
+                              />
+                              <Label htmlFor={`needed-${consumable.id}`}>Needed</Label>
+                              
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  const newConsumables = signOffData.consumables.filter((_, i) => i !== index)
+                                  setSignOffData(prev => ({ ...prev, consumables: newConsumables }))
+                                }}
+                              >
+                                Remove
+                              </Button>
+                            </div>
+                          </div>
+
+                          {consumable.needed && (
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                              <div>
+                                <Label>Brand</Label>
+                                <Input
+                                  value={consumable.brand}
+                                  onChange={(e) => {
+                                    const newConsumables = [...signOffData.consumables]
+                                    newConsumables[index].brand = e.target.value
+                                    setSignOffData(prev => ({ ...prev, consumables: newConsumables }))
+                                  }}
+                                  placeholder="Brand name"
+                                />
+                              </div>
+                              
+                              <div>
+                                <Label>Version</Label>
+                                <Input
+                                  value={consumable.version}
+                                  onChange={(e) => {
+                                    const newConsumables = [...signOffData.consumables]
+                                    newConsumables[index].version = e.target.value
+                                    setSignOffData(prev => ({ ...prev, consumables: newConsumables }))
+                                  }}
+                                  placeholder="Version/Model"
+                                />
+                              </div>
+                              
+                              <div>
+                                <Label>Cost ($)</Label>
+                                <Input
+                                  type="number"
+                                  step="0.01"
+                                  value={consumable.cost}
+                                  onChange={(e) => {
+                                    const newConsumables = [...signOffData.consumables]
+                                    newConsumables[index].cost = e.target.value
+                                    setSignOffData(prev => ({ ...prev, consumables: newConsumables }))
+                                  }}
+                                  placeholder="0.00"
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* File Upload Section */}
+                  <div>
+                    <Label className="text-lg font-semibold">Load Sign Off Confirmation</Label>
+                    <div className="mt-2">
+                      <Input
+                        type="file"
+                        onChange={(e) => setSignOffData(prev => ({ ...prev, uploaded_file: e.target.files[0] }))}
+                        accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png,.gif"
+                        className="cursor-pointer"
+                      />
+                      <p className="text-sm text-gray-500 mt-1">
+                        Supported formats: PDF, DOC, DOCX, TXT, JPG, PNG, GIF (Max 30MB)
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-end space-x-2 mt-6">
+                  <Button variant="outline" onClick={() => setShowSignOffDialog(false)}>
+                    Cancel
+                  </Button>
+                  <Button 
+                    onClick={() => handleSubmitSignOff()}
+                    disabled={!signOffData.technician_id || !signOffData.completion_date || loadingSignOff}
+                  >
+                    {loadingSignOff && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Submit Sign Off
                   </Button>
                 </div>
               </DialogContent>
