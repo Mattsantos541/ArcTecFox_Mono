@@ -15,9 +15,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel, Field, validator
 from supabase import create_client, Client
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
+# Rate limiting imports (optional - graceful fallback if not available)
+try:
+    from slowapi import Limiter, _rate_limit_exceeded_handler
+    from slowapi.util import get_remote_address
+    from slowapi.errors import RateLimitExceeded
+    RATE_LIMITING_AVAILABLE = True
+except ImportError:
+    RATE_LIMITING_AVAILABLE = False
+    logger.warning("⚠️ slowapi not available - rate limiting disabled")
 from PIL import Image
 import PyPDF2
 from docx import Document
@@ -38,30 +44,34 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Rate limiting setup - user-based rate limiting
-def get_user_id_for_rate_limit(request: Request) -> str:
-    """Extract user ID from request for rate limiting. Falls back to IP if no user."""
-    try:
-        # Try to get user ID from Authorization header or session
-        auth_header = request.headers.get("authorization", "")
-        if auth_header.startswith("Bearer "):
-            # In a real implementation, you'd decode the JWT to get user ID
-            # For now, we'll use IP address as fallback
+if RATE_LIMITING_AVAILABLE:
+    def get_user_id_for_rate_limit(request: Request) -> str:
+        """Extract user ID from request for rate limiting. Falls back to IP if no user."""
+        try:
+            # Try to get user ID from Authorization header or session
+            auth_header = request.headers.get("authorization", "")
+            if auth_header.startswith("Bearer "):
+                # In a real implementation, you'd decode the JWT to get user ID
+                # For now, we'll use IP address as fallback
+                return get_remote_address(request)
+            
+            # Fallback to IP address
             return get_remote_address(request)
-        
-        # Fallback to IP address
-        return get_remote_address(request)
-    except:
-        return get_remote_address(request)
+        except:
+            return get_remote_address(request)
 
-# Initialize rate limiter
-limiter = Limiter(key_func=get_user_id_for_rate_limit)
+    # Initialize rate limiter
+    limiter = Limiter(key_func=get_user_id_for_rate_limit)
+else:
+    limiter = None
 
 # Initialize FastAPI app
 app = FastAPI(title="PM Planning AI API", version="1.0.0")
 
-# Add rate limiter to app
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+# Add rate limiter to app (only if available)
+if RATE_LIMITING_AVAILABLE and limiter:
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Include routers
 app.include_router(child_assets_router, prefix="/api", tags=["child-assets"])
@@ -187,9 +197,8 @@ async def debug_cors(request: Request):
         "user_agent": request.headers.get("user-agent", "No user-agent")
     }
 
-# Main PM generation route with rate limiting
+# Main PM generation route with optional rate limiting
 @app.post("/api/generate-ai-plan", response_model=AIPlanResponse)
-@limiter.limit("5/minute")
 async def generate_ai_plan(request: Request, plan_request: GenerateAIPlanRequest):
     try:
         plan_data = plan_request.planData

@@ -5,8 +5,13 @@ from typing import Optional
 import logging
 import json
 import os
-from slowapi import Limiter
-from slowapi.util import get_remote_address
+# Optional rate limiting
+try:
+    from slowapi import Limiter
+    from slowapi.util import get_remote_address
+    RATE_LIMITING_AVAILABLE = True
+except ImportError:
+    RATE_LIMITING_AVAILABLE = False
 
 router = APIRouter()
 logger = logging.getLogger("main")
@@ -14,8 +19,11 @@ logger = logging.getLogger("main")
 # Configure Google AI (using the same setup as main.py)
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
-# Rate limiter (will inherit from main app's limiter)
-limiter = Limiter(key_func=get_remote_address)
+# Rate limiter (optional)
+if RATE_LIMITING_AVAILABLE:
+    limiter = Limiter(key_func=get_remote_address)
+else:
+    limiter = None
 
 # =============================
 # Pydantic Models
@@ -33,7 +41,6 @@ class ChildSuggestInput(BaseModel):
 # Child Asset Suggestions Endpoint
 # =============================
 @router.post("/suggest-child-assets")
-@limiter.limit("5/minute")
 async def suggest_child_assets(request: Request, input_data: ChildSuggestInput):
     """
     Generate AI-powered child asset suggestions based on parent asset details.
