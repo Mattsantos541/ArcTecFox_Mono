@@ -556,6 +556,18 @@ const ManageAssets = () => {
   const handleUpdateChildAsset = async (assetId, updates = null) => {
     try {
       const dataToUpdate = updates || editingChildData;
+      
+      // Check if plan_start_date is being updated
+      const { data: currentAsset } = await supabase
+        .from('child_assets')
+        .select('plan_start_date')
+        .eq('id', assetId)
+        .single();
+      
+      const isDateChanging = currentAsset && dataToUpdate.plan_start_date && 
+                            currentAsset.plan_start_date !== dataToUpdate.plan_start_date;
+      
+      // Update the child asset
       const { error } = await supabase
         .from('child_assets')
         .update({
@@ -566,6 +578,12 @@ const ManageAssets = () => {
         .eq('id', assetId);
 
       if (error) throw error;
+      
+      // If plan_start_date changed, recalculate task_signoff due dates
+      if (isDateChanging) {
+        const { recalculateTaskSignoffDates } = await import('../api');
+        await recalculateTaskSignoffDates(assetId, dataToUpdate.plan_start_date);
+      }
 
       await loadChildAssets(selectedParentAsset.id);
       if (!updates) {
@@ -824,19 +842,67 @@ const ManageAssets = () => {
   const handleDeleteChildAsset = async (assetId) => {
     const performDelete = async () => {
       try {
-      const { error } = await supabase
-        .from('child_assets')
-        .update({
-          status: 'deleted',
-          updated_by: user.id,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', assetId);
+        // First, mark any associated PM plans as 'Replaced'
+        const { error: planError } = await supabase
+          .from('pm_plans')
+          .update({
+            status: 'Replaced',
+            updated_by: user.id,
+            updated_at: new Date().toISOString()
+          })
+          .eq('child_asset_id', assetId)
+          .eq('status', 'Current');
+        
+        if (planError) {
+          console.error('Error updating PM plans:', planError);
+        }
+        
+        // Clean up any pending task_signoff records for tasks associated with this asset
+        // First get the task IDs for this child asset's PM plans
+        const { data: planData } = await supabase
+          .from('pm_plans')
+          .select('id')
+          .eq('child_asset_id', assetId);
+        
+        if (planData && planData.length > 0) {
+          const planIds = planData.map(p => p.id);
+          
+          const { data: tasks } = await supabase
+            .from('pm_tasks')
+            .select('id')
+            .in('pm_plan_id', planIds);
+          
+          if (tasks && tasks.length > 0) {
+            const taskIds = tasks.map(t => t.id);
+            
+            // Delete task_signoff records without completion date (pending)
+            const { error: signoffError } = await supabase
+              .from('task_signoff')
+              .delete()
+              .in('task_id', taskIds)
+              .is('comp_date', null);
+            
+            if (signoffError) {
+              console.error('Error cleaning up task_signoff records:', signoffError);
+            }
+          }
+        }
+        
+        // Now soft delete the child asset
+        const { error } = await supabase
+          .from('child_assets')
+          .update({
+            status: 'deleted',
+            updated_by: user.id,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', assetId);
 
-      if (error) throw error;
+        if (error) throw error;
 
-      await loadChildAssets(selectedParentAsset.id);
-      setError(null);
+        await loadChildAssets(selectedParentAsset.id);
+        setSelectedChildAssetForPlan(null);
+        setError(null);
       } catch (err) {
         console.error('Error deleting child asset:', err);
         setError('Failed to delete child asset');
@@ -1111,9 +1177,32 @@ const ManageAssets = () => {
       setGeneratingPlan(true);
       setError(null);
       
-      // If updating existing plan, mark it as 'Replaced'
+      // If updating existing plan, mark it as 'Replaced' and clean up task_signoffs
       if (existingPlans.length > 0) {
         const existingPlanId = existingPlans[0].id;
+        
+        // Get tasks for the old plan
+        const { data: oldTasks } = await supabase
+          .from('pm_tasks')
+          .select('id')
+          .eq('pm_plan_id', existingPlanId);
+        
+        if (oldTasks && oldTasks.length > 0) {
+          const oldTaskIds = oldTasks.map(t => t.id);
+          
+          // Delete task_signoff records without completion date (pending)
+          const { error: signoffError } = await supabase
+            .from('task_signoff')
+            .delete()
+            .in('task_id', oldTaskIds)
+            .is('comp_date', null);
+          
+          if (signoffError) {
+            console.error('Error cleaning up old task_signoff records:', signoffError);
+          }
+        }
+        
+        // Mark the old plan as replaced
         const { error: updateError } = await supabase
           .from('pm_plans')
           .update({ status: 'Replaced' })
