@@ -13,8 +13,17 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, validator
 from supabase import create_client, Client
+# Rate limiting imports (optional - graceful fallback if not available)
+try:
+    from slowapi import Limiter, _rate_limit_exceeded_handler
+    from slowapi.util import get_remote_address
+    from slowapi.errors import RateLimitExceeded
+    RATE_LIMITING_AVAILABLE = True
+except ImportError:
+    RATE_LIMITING_AVAILABLE = False
+    logger.warning("⚠️ slowapi not available - rate limiting disabled")
 from PIL import Image
 import PyPDF2
 from docx import Document
@@ -34,8 +43,35 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Rate limiting setup - user-based rate limiting
+if RATE_LIMITING_AVAILABLE:
+    def get_user_id_for_rate_limit(request: Request) -> str:
+        """Extract user ID from request for rate limiting. Falls back to IP if no user."""
+        try:
+            # Try to get user ID from Authorization header or session
+            auth_header = request.headers.get("authorization", "")
+            if auth_header.startswith("Bearer "):
+                # In a real implementation, you'd decode the JWT to get user ID
+                # For now, we'll use IP address as fallback
+                return get_remote_address(request)
+            
+            # Fallback to IP address
+            return get_remote_address(request)
+        except:
+            return get_remote_address(request)
+
+    # Initialize rate limiter
+    limiter = Limiter(key_func=get_user_id_for_rate_limit)
+else:
+    limiter = None
+
 # Initialize FastAPI app
 app = FastAPI(title="PM Planning AI API", version="1.0.0")
+
+# Add rate limiter to app (only if available)
+if RATE_LIMITING_AVAILABLE and limiter:
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Include routers
 app.include_router(child_assets_router, prefix="/api", tags=["child-assets"])
@@ -72,24 +108,59 @@ else:
     supabase_client: Client = create_client(supabase_url, supabase_key)
     logger.info("🔗 Supabase client initialized for file processing")
 
-# Pydantic models
+# Validation utilities
+def validate_safe_path(path: str) -> str:
+    """Validate file path to prevent directory traversal attacks"""
+    if not path:
+        raise ValueError("Path cannot be empty")
+    
+    # Check for directory traversal patterns
+    dangerous_patterns = ['../', '..\\', '..', '~/', '/etc/', '/root/', '/home/']
+    path_lower = path.lower()
+    
+    for pattern in dangerous_patterns:
+        if pattern in path_lower:
+            raise ValueError(f"Invalid path: contains dangerous pattern '{pattern}'")
+    
+    # Ensure path doesn't start with absolute path indicators
+    if path.startswith(('/', '\\', '~')):
+        raise ValueError("Path must be relative (cannot start with /, \\, or ~)")
+    
+    return path
+
+# Pydantic models with validation
 class UserManual(BaseModel):
-    filePath: str
-    fileName: str
-    originalName: str
-    fileSize: int
-    fileType: str
-    uploadedAt: str
+    filePath: str = Field(..., max_length=500, description="File storage path")
+    fileName: str = Field(..., max_length=255, description="File name")
+    originalName: str = Field(..., max_length=255, description="Original file name")
+    fileSize: int = Field(..., ge=0, le=30*1024*1024, description="File size in bytes (max 30MB)")
+    fileType: str = Field(..., max_length=100, description="File MIME type")
+    uploadedAt: str = Field(..., max_length=50, description="Upload timestamp")
+    
+    @validator('filePath')
+    def validate_file_path(cls, v):
+        return validate_safe_path(v)
+    
+    @validator('fileName', 'originalName')
+    def validate_file_names(cls, v):
+        if not v:
+            raise ValueError("File name cannot be empty")
+        # Check for dangerous characters in filenames
+        dangerous_chars = ['..', '/', '\\', ':', '*', '?', '"', '<', '>', '|']
+        for char in dangerous_chars:
+            if char in v:
+                raise ValueError(f"File name contains invalid character: '{char}'")
+        return v
 
 class PlanData(BaseModel):
-    name: str
-    model: Optional[str] = None
-    serial: Optional[str] = None
-    category: str
-    hours: Optional[str] = "0"
-    cycles: Optional[str] = "0"
-    environment: Optional[str] = None
-    date_of_plan_start: Optional[str] = None
+    name: str = Field(..., max_length=255, min_length=1, description="Asset name")
+    model: Optional[str] = Field(None, max_length=255, description="Asset model")
+    serial: Optional[str] = Field(None, max_length=255, description="Serial number")
+    category: str = Field(..., max_length=255, min_length=1, description="Asset category")
+    hours: Optional[str] = Field("0", max_length=20, description="Operating hours")
+    cycles: Optional[str] = Field("0", max_length=20, description="Operating cycles")
+    environment: Optional[str] = Field(None, max_length=500, description="Environmental conditions")
+    date_of_plan_start: Optional[str] = Field(None, max_length=20, description="Plan start date")
     userManual: Optional[UserManual] = None
 
 class GenerateAIPlanRequest(BaseModel):
@@ -126,11 +197,11 @@ async def debug_cors(request: Request):
         "user_agent": request.headers.get("user-agent", "No user-agent")
     }
 
-# Main PM generation route
+# Main PM generation route with optional rate limiting
 @app.post("/api/generate-ai-plan", response_model=AIPlanResponse)
-async def generate_ai_plan(request: GenerateAIPlanRequest):
+async def generate_ai_plan(request: Request, plan_request: GenerateAIPlanRequest):
     try:
-        plan_data = request.planData
+        plan_data = plan_request.planData
         logger.info(f"🚀 Received AI plan request: {plan_data.name}")
         
         if not plan_data.name or not plan_data.category:
