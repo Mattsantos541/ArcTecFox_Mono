@@ -401,6 +401,8 @@ const createInitialTaskSignoffs = async (pmPlanId, tasks) => {
       return {
         task_id: task.id,
         due_date: dueDate,
+        scheduled_date: dueDate, // Set scheduled_date = due_date initially
+        scheduled_time: null, // No time scheduled yet
         tech_id: null, // No technician assigned yet
         total_expense: null, // No expense yet
         comp_date: null // Not completed yet
