@@ -14,36 +14,51 @@ export const AuthProvider = ({ children }) => {
 
   // Check for existing auth session and listen for changes
   useEffect(() => {
+    let mounted = true;
+    
     // Get initial session
     const getInitialSession = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        setUser(session?.user ?? null);
+        if (mounted) {
+          setUser(session?.user ?? null);
+        }
       } catch (error) {
         console.error('Error getting initial session:', error);
       } finally {
-        setLoading(false);
+        if (mounted) {
+          setLoading(false);
+        }
       }
     };
 
     getInitialSession();
 
     // Listen for auth state changes (this handles OAuth redirects)
+    // Only update state for significant auth events, not on every tab focus
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        console.log('Auth state changed:', event, session?.user?.email);
-        
-        setUser(session?.user ?? null);
-        setLoading(false);
-        
-        // Clear any error when successfully authenticated
-        if (session?.user) {
-          setError(null);
+        // Only handle significant auth events
+        if (event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'USER_UPDATED' || event === 'TOKEN_REFRESHED') {
+          console.log('Auth state changed:', event, session?.user?.email);
+          
+          if (mounted) {
+            setUser(session?.user ?? null);
+            setLoading(false);
+            
+            // Clear any error when successfully authenticated
+            if (session?.user) {
+              setError(null);
+            }
+          }
         }
       }
     );
 
-    return () => subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const checkUser = async () => {

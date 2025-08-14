@@ -8,7 +8,9 @@ export default defineConfig({
     port: 3000,
     strictPort: true, // This ensures it always uses port 3000 or fails
     host: '0.0.0.0',
-    hmr: false
+    hmr: {
+      overlay: false // Disable error overlay but keep HMR active
+    }
   },
   resolve: {
     alias: {
