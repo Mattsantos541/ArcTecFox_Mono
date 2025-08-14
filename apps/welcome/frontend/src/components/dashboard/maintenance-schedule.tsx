@@ -97,6 +97,7 @@ export default function MaintenanceSchedule() {
   const [filterStatus, setFilterStatusInternal] = useState(() => loadState('filterStatus', 'all'))
   const [filterPriority, setFilterPriorityInternal] = useState(() => loadState('filterPriority', 'all'))
   const [filterDateRange, setFilterDateRangeInternal] = useState(() => loadState('filterDateRange', { start: "", end: "" }))
+  const [filterScheduledDate, setFilterScheduledDateInternal] = useState(() => loadState('filterScheduledDate', ''))
   const [filterAsset, setFilterAssetInternal] = useState(() => loadState('filterAsset', ''))
   const [filterTask, setFilterTaskInternal] = useState(() => loadState('filterTask', ''))
   const [showCompletedTasks, setShowCompletedTasksInternal] = useState(() => loadState('showCompletedTasks', false))
@@ -113,6 +114,11 @@ export default function MaintenanceSchedule() {
   const setFilterDateRange = (range) => {
     setFilterDateRangeInternal(range)
     saveState('filterDateRange', range)
+  }
+  
+  const setFilterScheduledDate = (date) => {
+    setFilterScheduledDateInternal(date)
+    saveState('filterScheduledDate', date)
   }
   const setFilterAsset = (asset) => {
     setFilterAssetInternal(asset)
@@ -133,38 +139,11 @@ export default function MaintenanceSchedule() {
 
   // Fetch tasks from database
   const fetchTasks = async () => {
-    console.log('=== FETCH TASKS CALLED ===');
     if (!user) return
 
     try {
-      console.log('=== INSIDE TRY BLOCK ===');
       setLoading(true)
       setError(null)
-      
-      console.log('=== USING SHARED SUPABASE CLIENT ===');
-      
-      const { data: { session } } = await supabase.auth.getSession();
-      console.log('Current session:', session?.user?.id);
-      
-      // Debug: Check current user info
-      try {
-        const { data: { user }, error: userError } = await supabase.auth.getUser();
-        console.log('=== AUTH DEBUG ===');
-        console.log('Current authenticated user email:', user?.email);
-        console.log('Current authenticated user ID:', user?.id);
-        
-        // Check what's in users table for this email
-        const { data: dbUser } = await supabase
-          .from('users')
-          .select('id, email')
-          .eq('email', user?.email)
-          .single();
-        console.log('Database user record:', dbUser);
-        console.log('IDs match?', user?.id === dbUser?.id);
-        console.log('==================');
-      } catch (e) {
-        console.log('Error in auth debug:', e);
-      }
       
       // Simplified query to avoid JOIN issues - we'll get asset data separately if needed
       // Only fetch tasks associated with Current PM plans, including task_signoff data
@@ -187,6 +166,8 @@ export default function MaintenanceSchedule() {
           task_signoff (
             id,
             due_date,
+            scheduled_date,
+            scheduled_time,
             comp_date
           )
         `)
@@ -215,14 +196,18 @@ export default function MaintenanceSchedule() {
               assetName = childAsset.name;
             }
           } catch (assetError) {
-            console.log('Could not fetch asset name for task:', task.id);
+            // Could not fetch asset name for task
           }
         }
         
-        // Get the most recent task_signoff for due date (no status filter needed)
+        // Get the most recent task_signoff for due date and scheduled info
         const latestSignoff = task.task_signoff?.[0]; // Assuming ordered by most recent
         const dueDate = latestSignoff?.due_date || 
                        ((task.scheduled_dates && task.scheduled_dates.length > 0) ? task.scheduled_dates[0] : 'No date');
+        
+        // Use scheduled_date and scheduled_time from task_signoff, fallback to due_date and default time
+        const scheduledDate = latestSignoff?.scheduled_date || dueDate;
+        const scheduledTime = latestSignoff?.scheduled_time || '09:00';
         
         // Use pm_tasks.status for task status, but enhance based on due date
         let taskStatus = task.status || 'Scheduled';
@@ -234,8 +219,11 @@ export default function MaintenanceSchedule() {
           id: task.id,
           asset: assetName,
           task: task.task_name || 'No description',
-          date: dueDate,
-          time: '09:00',
+          date: scheduledDate, // Keep for backward compatibility
+          time: scheduledTime, // Keep for backward compatibility
+          dueDate: dueDate, // Actual due date from task_signoff
+          scheduledDate: scheduledDate, // Scheduled date from task_signoff
+          scheduledTime: scheduledTime, // Scheduled time from task_signoff
           technician: task.pm_plans?.users?.full_name || 'Unassigned',
           duration: task.est_minutes ? `${task.est_minutes} min` : (task.maintenance_interval || 'Unknown'),
           status: taskStatus,
@@ -266,11 +254,10 @@ export default function MaintenanceSchedule() {
         };
       }));
 
-      console.log('Setting scheduled tasks:', transformedTasks);
       setScheduledTasks(transformedTasks)
       
-      // Update task statuses based on dates and re-fetch if needed
-      await updateTaskStatusesBasedOnDate()
+      // Update task statuses based on dates (optimize to avoid immediate re-render)
+      setTimeout(() => updateTaskStatusesBasedOnDate(), 100)
     } catch (err) {
       console.error('Error fetching tasks:', err)
       setError(err.message)
@@ -284,11 +271,10 @@ export default function MaintenanceSchedule() {
     }
   }
 
-  // Update task in database with audit trail
-  const updateTask = async (taskId, updates, originalTask = null) => {
+  // Update task in database with audit trail and task_signoff updates
+  const updateTask = async (taskId, updates, originalTask = null, signoffUpdates = null) => {
     try {
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError || !user) {
+      if (!user) {
         throw new Error('User not authenticated');
       }
       
@@ -312,15 +298,28 @@ export default function MaintenanceSchedule() {
           criticality: 'Criticality'
         };
         
+        // Get current task data - using the same query structure as the main fetch to work with RLS
+        const { data: currentTaskArray, error: fetchError } = await supabase
+          .from('pm_tasks')
+          .select(`
+            *,
+            pm_plans!inner (
+              id,
+              created_by,
+              site_id
+            )
+          `)
+          .eq('id', taskId);
+          
+        const currentTask = currentTaskArray?.[0];
+          
+        if (fetchError) {
+          console.error('Error fetching current task for audit:', fetchError);
+          // Continue with update even if audit fails
+        }
+
         // Compare each field and create audit records for changes
         for (const [field, value] of Object.entries(updates)) {
-          // Get the original value from the database
-          const { data: currentTask } = await supabase
-            .from('pm_tasks')
-            .select(field)
-            .eq('id', taskId)
-            .single();
-            
           const originalValue = currentTask?.[field];
           
           // Handle array comparison for instructions
@@ -375,11 +374,27 @@ export default function MaintenanceSchedule() {
 
       if (error) throw error;
       
+      // Update task_signoff table if signoffUpdates provided
+      if (signoffUpdates && (signoffUpdates.scheduled_date || signoffUpdates.scheduled_time)) {
+        const { error: signoffError } = await supabase
+          .from('task_signoff')
+          .update(signoffUpdates)
+          .eq('task_id', taskId)
+          .is('comp_date', null); // Only update pending signoffs
+          
+        if (signoffError) {
+          console.error('Error updating task_signoff:', signoffError);
+          // Don't fail the main update if signoff update fails
+        }
+      }
+      
       // Refresh tasks after successful update
       await fetchTasks();
       return { success: true, data };
     } catch (e) {
-      console.log('Error updating task:', e);
+      console.error('Error updating task:', e);
+      console.error('Task ID:', taskId);
+      console.error('Updates attempted:', updates);
       return { success: false, error: e.message };
     }
   }
@@ -387,26 +402,8 @@ export default function MaintenanceSchedule() {
   // Delete task from database
   const deleteTaskFromDB = async (taskId) => {
     try {
-      console.log('=== USING SHARED SUPABASE CLIENT ===');
-      
-      // Debug: Check current user info
-      try {
-        const { data: { user }, error: userError } = await supabase.auth.getUser();
-        console.log('=== AUTH DEBUG ===');
-        console.log('Current authenticated user email:', user?.email);
-        console.log('Current authenticated user ID:', user?.id);
-        
-        // Check what's in users table for this email
-        const { data: dbUser } = await supabase
-          .from('users')
-          .select('id, email')
-          .eq('email', user?.email)
-          .single();
-        console.log('Database user record:', dbUser);
-        console.log('IDs match?', user?.id === dbUser?.id);
-        console.log('==================');
-      } catch (e) {
-        console.log('Error in auth debug:', e);
+      if (!user) {
+        throw new Error('User not authenticated');
       }
 
       // First delete any associated task_signoff records
@@ -423,30 +420,25 @@ export default function MaintenanceSchedule() {
       const { error } = await supabase
         .from('pm_tasks')
         .delete()
-        .eq('id', taskId)
+        .eq('id', taskId);
 
-      if (error) throw error
+      if (error) throw error;
 
       // Refresh tasks
-      await fetchTasks()
-      return { success: true }
+      await fetchTasks();
+      return { success: true };
     } catch (err) {
-      console.error('Error deleting task:', err)
-      return { success: false, error: err.message }
+      console.error('Error deleting task:', err);
+      return { success: false, error: err.message };
     }
   }
 
   // Load data when component mounts
   useEffect(() => {
-    console.log('=== USE EFFECT TRIGGERED ===');
-    console.log('user:', !!user);
     if (user) {
-      console.log('=== CALLING FETCH TASKS FROM USE EFFECT ===');
       fetchTasks()
-    } else {
-      console.log('=== NOT CALLING FETCH TASKS - MISSING USER ===');
     }
-  }, [user]) // Removed supabaseClient dependency since we're using the shared client
+  }, [user])
 
 
   // Add navigation handler
@@ -515,45 +507,52 @@ export default function MaintenanceSchedule() {
       return
     }
     
-    setEditingTask(task)
-    setEditedStatus(task.status)
-    setEditedDate(task.date)
-    setEditedTime(task.time)
-    setEditedTaskName(task.task || '')
-    setEditedCriticality(task.priority || 'Medium') // Set criticality from priority field
-    setEditedInstructions(Array.isArray(task.instructions) ? task.instructions.join('\n') : (task.instructions || ''))
-    setEditedEstMinutes(task.est_minutes || '')
-    setEditedToolsNeeded(task.tools_needed || '')
-    setEditedNoTechsNeeded(task.no_techs_needed || '')
+    // Clear previous state first to prevent stale data
+    setEditingTask(null)
+    setShowEditDialog(false)
     
-    // Parse tools and consumables into lists
-    const toolsArray = task.tools_needed ? task.tools_needed.split(',').map(item => item.trim()).filter(item => item) : []
-    const consumablesArray = task.consumables ? task.consumables.split(',').map(item => item.trim()).filter(item => item) : []
-    setEditedToolsList(toolsArray)
-    setEditedConsumablesList(consumablesArray)
-    setEditedReason(task.reason || '')
-    setEditedSafetyPrecautions(task.safety_precautions || '')
-    setEditedConsumables(task.consumables || '')
-    
-    // Store original values for audit trail
-    setOriginalTaskValues({
-      task_name: task.task,
-      instructions: task.instructions,
-      est_minutes: task.est_minutes,
-      tools_needed: task.tools_needed,
-      no_techs_needed: task.no_techs_needed,
-      reason: task.reason,
-      safety_precautions: task.safety_precautions,
-      engineering_rationale: task.engineering_rationale,
-      common_failures_prevented: task.common_failures_prevented,
-      usage_insights: task.usage_insights,
-      consumables: task.consumables,
-      status: task.status,
-      assigned_technician: task.technician,
-      scheduled_date: task.date,
-      scheduled_time: task.time
-    })
-    setShowEditDialog(true)
+    // Use setTimeout to ensure state clearing happens before setting new values
+    setTimeout(() => {
+      setEditingTask(task)
+      setEditedStatus(task.status)
+      setEditedDate(task.scheduledDate || task.dueDate)
+      setEditedTime(task.time)
+      setEditedTaskName(task.task || '')
+      setEditedCriticality(task.priority || 'Medium') // Set criticality from priority field
+      setEditedInstructions(Array.isArray(task.instructions) ? task.instructions.join('\n') : (task.instructions || ''))
+      setEditedEstMinutes(parseEstimatedMinutes(task.est_minutes))
+      setEditedToolsNeeded(task.tools_needed || '')
+      setEditedNoTechsNeeded(task.no_techs_needed || '')
+      
+      // Parse tools and consumables into lists
+      const toolsArray = task.tools_needed ? task.tools_needed.split(',').map(item => item.trim()).filter(item => item) : []
+      const consumablesArray = task.consumables ? task.consumables.split(',').map(item => item.trim()).filter(item => item) : []
+      setEditedToolsList(toolsArray)
+      setEditedConsumablesList(consumablesArray)
+      setEditedReason(task.reason || '')
+      setEditedSafetyPrecautions(task.safety_precautions || '')
+      setEditedConsumables(task.consumables || '')
+      
+      // Store original values for audit trail
+      setOriginalTaskValues({
+        task_name: task.task,
+        instructions: task.instructions,
+        est_minutes: task.est_minutes,
+        tools_needed: task.tools_needed,
+        no_techs_needed: task.no_techs_needed,
+        reason: task.reason,
+        safety_precautions: task.safety_precautions,
+        engineering_rationale: task.engineering_rationale,
+        common_failures_prevented: task.common_failures_prevented,
+        usage_insights: task.usage_insights,
+        consumables: task.consumables,
+        status: task.status,
+        assigned_technician: task.technician,
+        scheduled_date: task.scheduledDate || task.dueDate,
+        scheduled_time: task.time
+      })
+      setShowEditDialog(true)
+    }, 10) // Small delay to ensure state clearing
   }
 
   const handleDeleteTask = (task) => {
@@ -582,49 +581,135 @@ export default function MaintenanceSchedule() {
     }
   }
 
+  // Helper function to parse estimated minutes from various formats
+  const parseEstimatedMinutes = (value) => {
+    if (!value) return ''
+    
+    // If it's already a number, return as string
+    if (typeof value === 'number') return value.toString()
+    
+    const str = value.toString().toLowerCase()
+    
+    // Handle different formats
+    if (str.includes('hour')) {
+      // Extract number before 'hour' - handles "1.5 hours", "2 hours", etc.
+      const match = str.match(/(\d+\.?\d*)\s*hours?/)
+      if (match) {
+        return (parseFloat(match[1]) * 60).toString() // Convert hours to minutes
+      }
+    }
+    
+    if (str.includes('min')) {
+      // Extract number before 'min' - handles "90 minutes", "45 min", etc.
+      const match = str.match(/(\d+\.?\d*)\s*min/)
+      if (match) {
+        return match[1]
+      }
+    }
+    
+    // If it's just a number string, return as is
+    if (/^\d+\.?\d*$/.test(str)) {
+      return str
+    }
+    
+    // If we can't parse it, return empty string
+    return ''
+  }
+
+  // Helper function to safely parse integer values
+  const safeParseInt = (value) => {
+    if (!value || value === '') return null
+    const parsed = parseInt(value)
+    return isNaN(parsed) ? null : parsed
+  }
+
+  // Function to clean up edit dialog state
+  const cleanupEditDialogState = () => {
+    setEditingTask(null)
+    setOriginalTaskValues(null)
+    setEditedTaskName('')
+    setEditedInstructions('')
+    setEditedEstMinutes('')
+    setEditedToolsNeeded('')
+    setEditedNoTechsNeeded('')
+    setEditedReason('')
+    setEditedSafetyPrecautions('')
+    setEditedConsumables('')
+    setEditedToolsList([])
+    setEditedConsumablesList([])
+    setEditedStatus('Scheduled')
+    setEditedDate('')
+    setEditedTime('')
+    setEditedCriticality('Medium')
+  }
+
   const saveTaskChanges = async () => {
     if (editingTask) {
       const updates = {
         task_name: editedTaskName,
         instructions: editedInstructions.split('\n').filter(line => line.trim()),
-        est_minutes: editedEstMinutes ? parseInt(editedEstMinutes) : null,
+        est_minutes: editedEstMinutes || null, // Keep as text to match schema
         tools_needed: editedToolsList.filter(tool => tool.trim()).join(', '),
-        no_techs_needed: editedNoTechsNeeded ? parseInt(editedNoTechsNeeded) : null,
+        no_techs_needed: safeParseInt(editedNoTechsNeeded),
         reason: editedReason,
         safety_precautions: editedSafetyPrecautions,
         consumables: editedConsumablesList.filter(item => item.trim()).join(', '),
-        criticality: editedCriticality, // Add criticality to updates
-        status: editedStatus,
-        scheduled_date: editedDate,
-        scheduled_time: editedTime
+        criticality: editedCriticality,
+        status: editedStatus
       }
 
-      // Now with full audit trail support
-      const result = await updateTask(editingTask.id, updates, originalTaskValues)
+      // Also update task_signoff table with scheduled date/time
+      const signoffUpdates = {
+        scheduled_date: editedDate || null,
+        scheduled_time: editedTime || null
+      }
+
+
+      // Debug logging
+      console.log('About to update task with:', updates);
+      console.log('Task ID:', editingTask.id);
+      
+      // Now with full audit trail support including task_signoff updates
+      const result = await updateTask(editingTask.id, updates, originalTaskValues, signoffUpdates)
       if (result.success) {
         toast({
           title: "Task Updated",
-          description: `Changes to ${editingTask.asset} task have been saved.`,
+          description: `Changes to ${editingTask.task || 'task'} have been saved.`,
           variant: "default",
         })
       } else {
+        console.error('Update failed with error:', result.error);
         toast({
           title: "Error Updating Task",
           description: result.error || "Failed to update task. Please try again.",
           variant: "destructive",
         })
       }
-      setShowEditDialog(false)
-      setEditingTask(null)
-      setOriginalTaskValues(null)
+      closeEditDialog()
     }
+  }
+
+  // Handle dialog open change with proper cleanup - prevent accidental closing
+  const handleEditDialogOpenChange = (open) => {
+    // Only allow closing when explicitly requested (ignore outside clicks/escape)
+    // The dialog should only close via Cancel or Save buttons
+    if (open === false) {
+      // Don't allow external close attempts
+      return
+    }
+    setShowEditDialog(open)
+  }
+
+  // Function to explicitly close the dialog with cleanup
+  const closeEditDialog = () => {
+    setShowEditDialog(false)
+    cleanupEditDialogState()
   }
 
   // Update task date with drag and drop
   const updateTaskDate = async (taskId, newDate, originalDate) => {
     try {
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError || !user) {
+      if (!user) {
         throw new Error('User not authenticated');
       }
 
@@ -768,7 +853,7 @@ export default function MaintenanceSchedule() {
       id: task.id,
       asset: task.asset,
       task: task.task,
-      date: task.date,
+      date: task.dueDate,
       time: task.time,
       technician: task.technician,
       duration: task.duration,
@@ -808,7 +893,7 @@ export default function MaintenanceSchedule() {
           `${task.planId}-${task.id}`, // TASK_NUMBER
           task.task, // TASK_DESC
           "As Required", // FREQUENCY
-          task.date, // SCHEDULED_DATE
+          task.scheduledDate || task.dueDate, // SCHEDULED_DATE
           task.time, // SCHEDULED_TIME
           task.duration
             .replace(" min", "/60")
@@ -1231,6 +1316,8 @@ export default function MaintenanceSchedule() {
       const nextSignoffData = {
         task_id: completedTask.id,
         due_date: nextDate.toISOString().split('T')[0],
+        scheduled_date: nextDate.toISOString().split('T')[0], // Set scheduled_date = due_date initially
+        scheduled_time: null, // No time scheduled yet
         tech_id: null,
         total_expense: null,
         comp_date: null
@@ -1398,7 +1485,7 @@ export default function MaintenanceSchedule() {
 
   const getTasksForDate = (date) => {
     const dateString = date.toISOString().split('T')[0]
-    return filteredTasks.filter(task => task.date === dateString)
+    return filteredTasks.filter(task => (task.scheduledDate || task.dueDate) === dateString)
   }
 
   const navigateMonth = (direction) => {
@@ -1446,11 +1533,6 @@ export default function MaintenanceSchedule() {
   
   // Filter and sort tasks
   let processedTasks = scheduledTasks.filter(task => {
-    // Debug logging
-    if (filterStatus !== "all" || filterPriority !== "all") {
-      console.log('Filter values:', { filterStatus, filterPriority });
-      console.log('Task values:', { status: task.status, priority: task.priority });
-    }
     
     // Filter out completed tasks unless showCompletedTasks is true
     if (!showCompletedTasks && task.status === 'Completed') {
@@ -1459,19 +1541,20 @@ export default function MaintenanceSchedule() {
     
     // Status filter
     if (filterStatus !== "all" && task.status !== filterStatus) {
-      console.log(`Status filter: ${task.status} !== ${filterStatus}`);
       return false;
     }
     
     // Priority filter  
     if (filterPriority !== "all" && task.priority !== filterPriority) {
-      console.log(`Priority filter: ${task.priority} !== ${filterPriority}`);
       return false;
     }
     
     
-    // Date filter (exact match or after selected date)
-    if (filterDateRange.start && task.date !== filterDateRange.start) return false
+    // Due date filter (exact match)
+    if (filterDateRange.start && task.dueDate !== filterDateRange.start) return false
+    
+    // Scheduled date filter (exact match)
+    if (filterScheduledDate && task.scheduledDate !== filterScheduledDate) return false
     
     // Asset text filter
     if (filterAsset && !task.asset.toLowerCase().includes(filterAsset.toLowerCase())) return false
@@ -1489,9 +1572,9 @@ export default function MaintenanceSchedule() {
       let bValue = b[sortField]
       
       // Handle date sorting
-      if (sortField === 'date') {
-        aValue = new Date(aValue)
-        bValue = new Date(bValue)
+      if (sortField === 'date' || sortField === 'dueDate' || sortField === 'scheduledDate') {
+        aValue = new Date(aValue || '9999-12-31') // Put nulls at the end
+        bValue = new Date(bValue || '9999-12-31')
       }
       
       // Handle priority sorting (High > Medium > Low)
@@ -1513,7 +1596,7 @@ export default function MaintenanceSchedule() {
       return 0
     })
   }
-  
+
   const filteredTasks = processedTasks
   
   // Reset filters
@@ -1521,6 +1604,7 @@ export default function MaintenanceSchedule() {
     setFilterStatus("all")
     setFilterPriority("all")
     setFilterDateRange({ start: "", end: "" })
+    setFilterScheduledDate("")
     setFilterAsset("")
     setFilterTask("")
     setSortField("")
@@ -1551,7 +1635,7 @@ export default function MaintenanceSchedule() {
       date.setDate(weekStart.getDate() + i)
       
       const dateStr = date.toISOString().split('T')[0]
-      const tasksCount = filteredTasks.filter(task => task.date === dateStr).length
+      const tasksCount = filteredTasks.filter(task => (task.scheduledDate || task.dueDate) === dateStr).length
       
       const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
       
@@ -1628,7 +1712,7 @@ export default function MaintenanceSchedule() {
                           Show completed tasks
                         </Label>
                       </div>
-                      {(filterStatus !== "all" || filterPriority !== "all" || filterDateRange.start || filterAsset || filterTask) && (
+                      {(filterStatus !== "all" || filterPriority !== "all" || filterDateRange.start || filterScheduledDate || filterAsset || filterTask) && (
                         <>
                           <Badge variant="secondary">
                             {filteredTasks.length} of {scheduledTasks.length} tasks
@@ -1727,14 +1811,14 @@ export default function MaintenanceSchedule() {
                           <TableHead>
                             <div className="space-y-2">
                               <div className="flex items-center gap-2">
-                                <span>Date & Time</span>
+                                <span>Due</span>
                                 <Button
                                   variant="ghost"
                                   size="sm"
                                   className="h-6 w-6 p-0"
-                                  onClick={() => handleSort('date')}
+                                  onClick={() => handleSort('dueDate')}
                                 >
-                                  {sortField === 'date' ? (
+                                  {sortField === 'dueDate' ? (
                                     sortDirection === 'asc' ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
                                   ) : (
                                     <ArrowUpDown className="h-4 w-4" />
@@ -1747,6 +1831,32 @@ export default function MaintenanceSchedule() {
                                 onChange={(e) => setFilterDateRange(prev => ({ ...prev, start: e.target.value }))}
                                 className="h-8 text-xs"
                                 placeholder="Filter by date"
+                              />
+                            </div>
+                          </TableHead>
+                          <TableHead>
+                            <div className="space-y-2">
+                              <div className="flex items-center gap-2">
+                                <span>Scheduled</span>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 w-6 p-0"
+                                  onClick={() => handleSort('scheduledDate')}
+                                >
+                                  {sortField === 'scheduledDate' ? (
+                                    sortDirection === 'asc' ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                                  ) : (
+                                    <ArrowUpDown className="h-4 w-4" />
+                                  )}
+                                </Button>
+                              </div>
+                              <Input
+                                type="date"
+                                value={filterScheduledDate}
+                                onChange={(e) => setFilterScheduledDate(e.target.value)}
+                                className="h-8 text-xs"
+                                placeholder="Filter scheduled"
                               />
                             </div>
                           </TableHead>
@@ -1825,9 +1935,16 @@ export default function MaintenanceSchedule() {
                             <TableCell className="font-medium whitespace-nowrap">{task.asset}</TableCell>
                             <TableCell>{task.task}</TableCell>
                             <TableCell>
+                              <div className="text-sm">
+                                {task.dueDate || 'No date'}
+                              </div>
+                            </TableCell>
+                            <TableCell>
                               <div className="space-y-1">
-                                <div>{task.date}</div>
-                                <div className="text-sm text-muted-foreground">{task.time}</div>
+                                <div className="text-sm">{task.scheduledDate || 'Not scheduled'}</div>
+                                {task.scheduledTime && (
+                                  <div className="text-xs text-muted-foreground">{task.scheduledTime}</div>
+                                )}
                               </div>
                             </TableCell>
                             <TableCell>
@@ -2024,7 +2141,7 @@ export default function MaintenanceSchedule() {
                   <CardContent>
                     <div className="space-y-4">
                       {filteredTasks
-                        .filter((task) => task.date === selectedDate)
+                        .filter((task) => (task.scheduledDate || task.dueDate) === selectedDate)
                         .map((task) => (
                           <div 
                             key={task.id} 
@@ -2098,7 +2215,7 @@ export default function MaintenanceSchedule() {
                             </div>
                           </div>
                         ))}
-                      {filteredTasks.filter((task) => task.date === selectedDate).length === 0 && (
+                      {filteredTasks.filter((task) => (task.scheduledDate || task.dueDate) === selectedDate).length === 0 && (
                         <div className="text-center py-8 text-muted-foreground">
                           No tasks scheduled for this date
                         </div>
@@ -2448,8 +2565,12 @@ export default function MaintenanceSchedule() {
 
           {/* Edit Task Dialog */}
           {showEditDialog && editingTask && (
-            <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-              <DialogContent className="max-w-6xl w-[95vw] max-h-[90vh] flex flex-col">
+            <Dialog open={showEditDialog} onOpenChange={handleEditDialogOpenChange}>
+              <DialogContent 
+                className="max-w-6xl w-[95vw] max-h-[90vh] flex flex-col"
+                onPointerDownOutside={(e) => e.preventDefault()}
+                onEscapeKeyDown={(e) => e.preventDefault()}
+              >
                 <DialogHeader className="flex-shrink-0 pb-4">
                   <DialogTitle>Edit Task: {editingTask.task}</DialogTitle>
                   <DialogDescription>Modify task details and schedule</DialogDescription>
@@ -2679,7 +2800,7 @@ export default function MaintenanceSchedule() {
                   <div className="flex space-x-3">
                     <Button 
                       variant="outline" 
-                      onClick={() => setShowEditDialog(false)}
+                      onClick={closeEditDialog}
                       className="px-6"
                     >
                       Cancel
