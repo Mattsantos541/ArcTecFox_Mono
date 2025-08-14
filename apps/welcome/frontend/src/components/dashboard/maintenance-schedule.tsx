@@ -72,6 +72,7 @@ export default function MaintenanceSchedule() {
   const [editedReason, setEditedReason] = useState("")
   const [editedSafetyPrecautions, setEditedSafetyPrecautions] = useState("")
   const [editedConsumables, setEditedConsumables] = useState("")
+  const [editedCriticality, setEditedCriticality] = useState("")
   const [canEditTask, setCanEditTask] = useState(false)
   const [isEditMode, setIsEditMode] = useState(false)
   const [originalTaskValues, setOriginalTaskValues] = useState(null)
@@ -200,7 +201,7 @@ export default function MaintenanceSchedule() {
           technician: task.pm_plans?.users?.full_name || 'Unassigned',
           duration: task.est_minutes ? `${task.est_minutes} min` : (task.maintenance_interval || 'Unknown'),
           status: taskStatus,
-          priority: task.priority || 'High', // Use task priority or default to High
+          priority: task.criticality || 'Medium', // Use task criticality or default to Medium
           planId: task.pm_plan_id,
           signoffId: latestSignoff?.id, // Store signoff ID for updates
           siteId: task.pm_plans?.site_id,
@@ -269,7 +270,8 @@ export default function MaintenanceSchedule() {
           engineering_rationale: 'Engineering Rationale',
           common_failures_prevented: 'Common Failures Prevented',
           usage_insights: 'Usage Insights',
-          consumables: 'Consumables'
+          consumables: 'Consumables',
+          criticality: 'Criticality'
         };
         
         // Compare each field and create audit records for changes
@@ -476,6 +478,7 @@ export default function MaintenanceSchedule() {
     setEditedDate(task.date)
     setEditedTime(task.time)
     setEditedTaskName(task.task || '')
+    setEditedCriticality(task.priority || 'Medium') // Set criticality from priority field
     setEditedInstructions(Array.isArray(task.instructions) ? task.instructions.join('\n') : (task.instructions || ''))
     setEditedEstMinutes(task.est_minutes || '')
     setEditedToolsNeeded(task.tools_needed || '')
@@ -542,6 +545,7 @@ export default function MaintenanceSchedule() {
         reason: editedReason,
         safety_precautions: editedSafetyPrecautions,
         consumables: editedConsumables,
+        criticality: editedCriticality, // Add criticality to updates
         status: editedStatus,
         scheduled_date: editedDate,
         scheduled_time: editedTime
@@ -1527,13 +1531,14 @@ export default function MaintenanceSchedule() {
               <h2 className="text-2xl font-bold">Maintenance Schedule</h2>
               <p className="text-muted-foreground">View and manage scheduled maintenance tasks</p>
             </div>
+            {/* Hidden Generate New Plans button
             <button
               onClick={handleCreateNewPlans}
               className="px-6 py-2 sm:px-8 sm:py-3 rounded-lg font-semibold text-white text-sm sm:text-base bg-blue-600 hover:bg-blue-700 transition-colors flex items-center gap-2"
             >
               <CalendarDays className="h-4 w-4" />
               Generate New Plans
-            </button>
+            </button> */}
           </div>
 
           <Tabs value={viewMode} onValueChange={setViewMode} className="space-y-6">
@@ -1583,12 +1588,15 @@ export default function MaintenanceSchedule() {
                       <p className="text-lg font-medium text-gray-600">No maintenance tasks found</p>
                       <p className="text-gray-500 mb-4">{scheduledTasks.length > 0 ? "Try adjusting your filters" : "Create your first maintenance plan to get started"}</p>
                       {scheduledTasks.length === 0 ? (
+                        /* Hidden Generate New Plans button
                         <button
                           onClick={handleCreateNewPlans}
                           className="px-6 py-2 sm:px-8 sm:py-3 rounded-lg font-semibold text-white text-sm sm:text-base bg-blue-600 hover:bg-blue-700 transition-colors"
                         >
                           Generate New Plans
                         </button>
+                        */
+                        null
                       ) : (
                         <Button variant="outline" onClick={resetFilters}>
                           Reset Filters
@@ -2407,6 +2415,19 @@ export default function MaintenanceSchedule() {
                           <SelectItem value="In Progress">In Progress</SelectItem>
                           <SelectItem value="Completed">Completed</SelectItem>
                           <SelectItem value="Overdue">Overdue</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Criticality</Label>
+                      <Select value={editedCriticality} onValueChange={setEditedCriticality}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="High">High</SelectItem>
+                          <SelectItem value="Medium">Medium</SelectItem>
+                          <SelectItem value="Low">Low</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>

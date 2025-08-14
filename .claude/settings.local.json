@@ -35,6 +35,7 @@
       "Bash(pkill:*)",
       "Bash(fuser:*)"
     ],
-    "deny": []
+    "deny": [],
+    "defaultMode": "acceptEdits"
   }
 }
