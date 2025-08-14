@@ -101,7 +101,8 @@ const ManageAssets = () => {
     notes: '',
     operating_hours: '',
     addtl_context: '',
-    plan_start_date: ''
+    plan_start_date: '',
+    criticality: ''
   });
   const [parentManualFile, setParentManualFile] = useState(null);
   const [childManualFile, setChildManualFile] = useState(null);
@@ -485,6 +486,7 @@ const ManageAssets = () => {
         operating_hours: newChildAsset.operating_hours || null,
         addtl_context: newChildAsset.addtl_context || null,
         plan_start_date: newChildAsset.plan_start_date || null,
+        criticality: newChildAsset.criticality || null,
         parent_asset_id: selectedParentAsset.id,
         status: 'active',
         created_by: user.id
@@ -508,14 +510,17 @@ const ManageAssets = () => {
       setShowAddChildAsset(false);
       setNewChildAsset({
         name: '',
+        make: '',
+        model: '',
+        serial_number: '',
         category: '',
         purchase_date: '',
         install_date: '',
         notes: '',
         operating_hours: '',
         addtl_context: '',
-        environment: '',
-        plan_start_date: ''
+        plan_start_date: '',
+        criticality: ''
       });
       setChildManualFile(null);
       setChildFileUploadError(null);
@@ -1138,7 +1143,8 @@ const ManageAssets = () => {
             suggestion.additional_notes ? `Additional Notes: ${suggestion.additional_notes}` : ''
           ].filter(Boolean).join('\n\n') || null,
           operating_hours: null,
-          addtl_context: suggestion.criticality_level ? `Criticality: ${suggestion.criticality_level}` : null,
+          addtl_context: null,
+          criticality: suggestion.criticality_level || null, // Store criticality in dedicated field
           plan_start_date: null,
           parent_asset_id: createdParentAsset.id,
           status: 'active',
@@ -1875,6 +1881,21 @@ const ManageAssets = () => {
                                       className="block w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                                     />
                                   </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                      Criticality
+                                    </label>
+                                    <select
+                                      value={newChildAsset.criticality}
+                                      onChange={(e) => setNewChildAsset(prev => ({ ...prev, criticality: e.target.value }))}
+                                      className="block w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                    >
+                                      <option value="">Select criticality level</option>
+                                      <option value="High">High</option>
+                                      <option value="Medium">Medium</option>
+                                      <option value="Low">Low</option>
+                                    </select>
+                                  </div>
                                 </div>
                                 
                                 {/* Full width textarea field */}
@@ -2002,6 +2023,12 @@ const ManageAssets = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Operating Hours</label>
                   <p className="text-sm text-gray-900 bg-gray-50 px-3 py-2 rounded">
                     {selectedChildAssetForPlan.operating_hours ? `${selectedChildAssetForPlan.operating_hours} hrs/day` : '-'}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Criticality</label>
+                  <p className="text-sm text-gray-900 bg-gray-50 px-3 py-2 rounded">
+                    {selectedChildAssetForPlan.criticality || '-'}
                   </p>
                 </div>
                 
@@ -2325,6 +2352,21 @@ const ManageAssets = () => {
                         onChange={(e) => setEditModalData(prev => ({ ...prev, plan_start_date: e.target.value }))}
                         className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                       />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Criticality
+                      </label>
+                      <select
+                        value={editModalData.criticality || ''}
+                        onChange={(e) => setEditModalData(prev => ({ ...prev, criticality: e.target.value }))}
+                        className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                      >
+                        <option value="">Select criticality level</option>
+                        <option value="High">High</option>
+                        <option value="Medium">Medium</option>
+                        <option value="Low">Low</option>
+                      </select>
                     </div>
                   </>
                 )}
