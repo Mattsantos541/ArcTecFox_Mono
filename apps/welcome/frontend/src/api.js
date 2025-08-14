@@ -237,11 +237,50 @@ export const savePMPlanInput = async (planData) => {
   }
 };
 
-// Helper function to parse maintenance interval (e.g., "3 months" -> 3)
+// Helper function to parse maintenance interval (e.g., "3 months" -> 3, "annually" -> 12)
 export const parseMaintenanceInterval = (intervalStr) => {
   if (!intervalStr) return 0;
-  const cleaned = intervalStr.toLowerCase().replace('months', '').replace('month', '').trim();
-  return parseInt(cleaned) || 0;
+  
+  const interval = intervalStr.toLowerCase().trim();
+  
+  // Check for text-based intervals first
+  if (interval.includes('annual') || interval.includes('yearly')) {
+    return 12; // Annually = 12 months
+  }
+  if (interval.includes('biannual') || interval.includes('semi-annual') || interval.includes('twice yearly')) {
+    return 6; // Biannually = 6 months
+  }
+  if (interval.includes('quarter')) {
+    return 3; // Quarterly = 3 months
+  }
+  if (interval.includes('month')) {
+    // Handle "monthly" or "# months"
+    if (interval === 'monthly' || interval === 'month') {
+      return 1; // Monthly = 1 month
+    }
+    // Extract number from "# months" format
+    const cleaned = interval.replace('months', '').replace('month', '').trim();
+    return parseInt(cleaned) || 1;
+  }
+  if (interval.includes('week')) {
+    // Handle weekly, biweekly, etc.
+    if (interval === 'weekly' || interval === 'week') {
+      return 0.25; // Weekly ≈ 0.25 months
+    }
+    if (interval.includes('biweek') || interval.includes('bi-week')) {
+      return 0.5; // Biweekly ≈ 0.5 months
+    }
+  }
+  
+  // Try to parse as a plain number (assuming months)
+  const parsed = parseInt(interval);
+  if (!isNaN(parsed)) {
+    return parsed;
+  }
+  
+  // Default to 0 if unable to parse
+  console.warn(`Unable to parse maintenance interval: "${intervalStr}", defaulting to 0`);
+  return 0;
 };
 
 // Helper function to adjust date for weekends
@@ -258,7 +297,17 @@ export const adjustForWeekend = (date) => {
 // Calculate due date based on start date and interval
 export const calculateDueDate = (startDate, intervalMonths) => {
   const date = new Date(startDate);
-  date.setMonth(date.getMonth() + intervalMonths);
+  
+  // Handle fractional months (for weekly/biweekly)
+  if (intervalMonths < 1) {
+    // Convert fractional months to days (approximate: 1 month = 30 days)
+    const days = Math.round(intervalMonths * 30);
+    date.setDate(date.getDate() + days);
+  } else {
+    // Handle whole months
+    date.setMonth(date.getMonth() + Math.floor(intervalMonths));
+  }
+  
   return adjustForWeekend(date).toISOString().split('T')[0];
 };
 
@@ -379,9 +428,9 @@ const createInitialTaskSignoffs = async (pmPlanId, tasks) => {
   }
 };
 
-export const savePMPlanResults = async (pmPlanId, aiGeneratedPlan) => {
+export const savePMPlanResults = async (pmPlanId, aiGeneratedPlan, criticality = 'Medium') => {
   try {
-    console.log('💾 Saving PM plan results to database:', { pmPlanId, taskCount: aiGeneratedPlan.length });
+    console.log('💾 Saving PM plan results to database:', { pmPlanId, taskCount: aiGeneratedPlan.length, criticality });
     
     // Debug: Check if consumables are present in AI generated plan
     console.log('🔍 FRONTEND: Checking consumables in AI plan:');
@@ -405,7 +454,8 @@ export const savePMPlanResults = async (pmPlanId, aiGeneratedPlan) => {
       est_minutes: task.time_to_complete || null,
       tools_needed: task.tools_needed || null,
       no_techs_needed: task.number_of_technicians || 1,
-      consumables: task.consumables || null
+      consumables: task.consumables || null,
+      criticality: criticality // Add criticality field
     }));
 
     const { data, error } = await supabase
@@ -479,8 +529,9 @@ export const generatePMPlan = async (planData) => {
     // 3. Generate AI plan (secure backend call)
     const aiGeneratedPlan = await generateAIPlan(planData);
     
-    // 4. Save AI results (direct to Supabase)
-    await savePMPlanResults(savedPlanInput.id, aiGeneratedPlan);
+    // 4. Save AI results with criticality (direct to Supabase)
+    const criticality = planData.criticality || 'Medium'; // Get criticality from planData
+    await savePMPlanResults(savedPlanInput.id, aiGeneratedPlan, criticality);
     
     console.log('✅ Complete PM plan process finished');
     return aiGeneratedPlan;

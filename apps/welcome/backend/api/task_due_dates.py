@@ -13,21 +13,63 @@ supabase_key = os.getenv("SUPABASE_KEY")
 supabase: Client = create_client(supabase_url, supabase_key)
 
 
-def parse_maintenance_interval(interval_str: str) -> int:
+def parse_maintenance_interval(interval_str: str) -> float:
     """
     Parse maintenance interval string to get number of months.
-    Expected format: "# months" (e.g., "3 months", "12 months")
+    Handles formats like:
+    - "# months" (e.g., "3 months", "12 months")
+    - "annually", "yearly" -> 12 months
+    - "biannually", "semi-annually" -> 6 months
+    - "quarterly" -> 3 months
+    - "monthly" -> 1 month
+    - "weekly" -> 0.25 months
+    - "biweekly" -> 0.5 months
     """
     try:
         if not interval_str:
             return 0
         
-        # Remove 'months' and any extra whitespace
-        interval_str = interval_str.lower().replace('months', '').replace('month', '').strip()
+        interval = interval_str.lower().strip()
         
-        # Convert to integer
-        return int(float(interval_str))
-    except (ValueError, AttributeError) as e:
+        # Check for text-based intervals first
+        if 'annual' in interval or 'yearly' in interval:
+            return 12  # Annually = 12 months
+        
+        if 'biannual' in interval or 'semi-annual' in interval or 'twice yearly' in interval:
+            return 6  # Biannually = 6 months
+        
+        if 'quarter' in interval:
+            return 3  # Quarterly = 3 months
+        
+        if 'month' in interval:
+            # Handle "monthly" or "# months"
+            if interval in ['monthly', 'month']:
+                return 1  # Monthly = 1 month
+            # Extract number from "# months" format
+            cleaned = interval.replace('months', '').replace('month', '').strip()
+            try:
+                return int(float(cleaned)) if cleaned else 1
+            except ValueError:
+                return 1
+        
+        if 'week' in interval:
+            # Handle weekly, biweekly, etc.
+            if interval in ['weekly', 'week']:
+                return 0.25  # Weekly ≈ 0.25 months
+            if 'biweek' in interval or 'bi-week' in interval:
+                return 0.5  # Biweekly ≈ 0.5 months
+        
+        # Try to parse as a plain number (assuming months)
+        try:
+            return int(float(interval))
+        except ValueError:
+            pass
+        
+        # Default to 0 if unable to parse
+        logger.warning(f"Unable to parse maintenance interval: '{interval_str}', defaulting to 0")
+        return 0
+        
+    except (AttributeError, TypeError) as e:
         logger.error(f"Error parsing maintenance interval '{interval_str}': {e}")
         return 0
 
@@ -48,13 +90,13 @@ def adjust_for_weekend(date_obj: datetime) -> datetime:
     return date_obj
 
 
-def calculate_due_date(start_date: str, interval_months: int, from_date: Optional[str] = None) -> str:
+def calculate_due_date(start_date: str, interval_months: float, from_date: Optional[str] = None) -> str:
     """
     Calculate the next due date based on start date and interval.
     
     Args:
         start_date: The plan start date (ISO format string)
-        interval_months: Number of months between maintenance
+        interval_months: Number of months between maintenance (can be fractional)
         from_date: Optional date to calculate from (for next occurrence after completion)
     
     Returns:
@@ -66,8 +108,14 @@ def calculate_due_date(start_date: str, interval_months: int, from_date: Optiona
         else:
             base_date = datetime.fromisoformat(start_date.replace('Z', '+00:00')).replace(tzinfo=None)
         
-        # Add the interval months
-        next_date = base_date + relativedelta(months=interval_months)
+        # Handle fractional months (for weekly/biweekly)
+        if interval_months < 1:
+            # Convert fractional months to days (approximate: 1 month = 30 days)
+            days = round(interval_months * 30)
+            next_date = base_date + timedelta(days=days)
+        else:
+            # Add whole months using relativedelta for accurate month addition
+            next_date = base_date + relativedelta(months=int(interval_months))
         
         # Adjust for weekend
         next_date = adjust_for_weekend(next_date)
