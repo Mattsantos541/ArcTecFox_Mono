@@ -11,9 +11,12 @@ import { CalendarDays, Clock, User, CheckCircle, AlertCircle, Eye, Edit, Trash2,
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip"
 import ComponentErrorBoundary from "../ComponentErrorBoundary"
 import { MaintenanceScheduleLoading } from "../loading/LoadingStates"
+import { saveState, loadState } from "../../utils/statePersistence"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
+import { Switch } from "@/components/ui/switch"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select-radix"
 import { useToast } from "@/hooks/use-toast"
 import { useAuth } from "../../hooks/useAuth"
 import { supabase, isUserSiteAdmin, getUserAdminSites } from "../../api" // Import the shared client
@@ -30,10 +33,16 @@ export default function MaintenanceSchedule() {
     console.log('selectedDate changed:', selectedDate, 'type:', typeof selectedDate);
   }, [selectedDate])
   
-  const [viewMode, setViewMode] = useState("list")
+  const [viewMode, setViewModeInternal] = useState(() => loadState('maintenanceViewMode', 'assets'))
   const [scheduledTasks, setScheduledTasks] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  
+  // Wrapper for setViewMode to persist state
+  const setViewMode = (mode) => {
+    setViewModeInternal(mode)
+    saveState('maintenanceViewMode', mode)
+  }
   const { toast } = useToast()
   const navigate = useNavigate()
   const { user } = useAuth()
@@ -72,6 +81,8 @@ export default function MaintenanceSchedule() {
   const [editedReason, setEditedReason] = useState("")
   const [editedSafetyPrecautions, setEditedSafetyPrecautions] = useState("")
   const [editedConsumables, setEditedConsumables] = useState("")
+  const [editedConsumablesList, setEditedConsumablesList] = useState([])
+  const [editedToolsList, setEditedToolsList] = useState([])
   const [editedCriticality, setEditedCriticality] = useState("")
   const [canEditTask, setCanEditTask] = useState(false)
   const [isEditMode, setIsEditMode] = useState(false)
@@ -82,12 +93,39 @@ export default function MaintenanceSchedule() {
   const [draggedOverDate, setDraggedOverDate] = useState(null)
   const [isDragging, setIsDragging] = useState(false)
   
-  // Filter state
-  const [filterStatus, setFilterStatus] = useState("all")
-  const [filterPriority, setFilterPriority] = useState("all")
-  const [filterDateRange, setFilterDateRange] = useState({ start: "", end: "" })
-  const [filterAsset, setFilterAsset] = useState("")
-  const [filterTask, setFilterTask] = useState("")
+  // Filter state with persistence
+  const [filterStatus, setFilterStatusInternal] = useState(() => loadState('filterStatus', 'all'))
+  const [filterPriority, setFilterPriorityInternal] = useState(() => loadState('filterPriority', 'all'))
+  const [filterDateRange, setFilterDateRangeInternal] = useState(() => loadState('filterDateRange', { start: "", end: "" }))
+  const [filterAsset, setFilterAssetInternal] = useState(() => loadState('filterAsset', ''))
+  const [filterTask, setFilterTaskInternal] = useState(() => loadState('filterTask', ''))
+  const [showCompletedTasks, setShowCompletedTasksInternal] = useState(() => loadState('showCompletedTasks', false))
+  
+  // Wrapper functions to persist filter state
+  const setFilterStatus = (status) => {
+    setFilterStatusInternal(status)
+    saveState('filterStatus', status)
+  }
+  const setFilterPriority = (priority) => {
+    setFilterPriorityInternal(priority)
+    saveState('filterPriority', priority)
+  }
+  const setFilterDateRange = (range) => {
+    setFilterDateRangeInternal(range)
+    saveState('filterDateRange', range)
+  }
+  const setFilterAsset = (asset) => {
+    setFilterAssetInternal(asset)
+    saveState('filterAsset', asset)
+  }
+  const setFilterTask = (task) => {
+    setFilterTaskInternal(task)
+    saveState('filterTask', task)
+  }
+  const setShowCompletedTasks = (show) => {
+    setShowCompletedTasksInternal(show)
+    saveState('showCompletedTasks', show)
+  }
   
   // Sort state
   const [sortField, setSortField] = useState("")
@@ -420,7 +458,7 @@ export default function MaintenanceSchedule() {
   const checkCanEditPermission = async (siteId) => {
     if (!user || !siteId) {
       setCanEditTask(false)
-      return
+      return false
     }
 
     try {
@@ -435,13 +473,16 @@ export default function MaintenanceSchedule() {
       if (error) {
         console.error('Error checking edit permission:', error)
         setCanEditTask(false)
-        return
+        return false
       }
 
-      setCanEditTask(siteUser?.can_edit || false)
+      const hasPermission = siteUser?.can_edit || false
+      setCanEditTask(hasPermission)
+      return hasPermission
     } catch (err) {
       console.error('Error checking permission:', err)
       setCanEditTask(false)
+      return false
     }
   }
 
@@ -459,12 +500,13 @@ export default function MaintenanceSchedule() {
 
   const handleEditTask = async (task) => {
     // Check if user can edit this task
+    let hasPermission = true
     if (task.siteId) {
-      await checkCanEditPermission(task.siteId)
+      hasPermission = await checkCanEditPermission(task.siteId)
     }
     
     // Only show edit dialog if user has permission
-    if (!canEditTask) {
+    if (!hasPermission) {
       toast({
         title: "Permission Denied",
         description: "You don't have permission to edit tasks for this site.",
@@ -483,6 +525,12 @@ export default function MaintenanceSchedule() {
     setEditedEstMinutes(task.est_minutes || '')
     setEditedToolsNeeded(task.tools_needed || '')
     setEditedNoTechsNeeded(task.no_techs_needed || '')
+    
+    // Parse tools and consumables into lists
+    const toolsArray = task.tools_needed ? task.tools_needed.split(',').map(item => item.trim()).filter(item => item) : []
+    const consumablesArray = task.consumables ? task.consumables.split(',').map(item => item.trim()).filter(item => item) : []
+    setEditedToolsList(toolsArray)
+    setEditedConsumablesList(consumablesArray)
     setEditedReason(task.reason || '')
     setEditedSafetyPrecautions(task.safety_precautions || '')
     setEditedConsumables(task.consumables || '')
@@ -540,11 +588,11 @@ export default function MaintenanceSchedule() {
         task_name: editedTaskName,
         instructions: editedInstructions.split('\n').filter(line => line.trim()),
         est_minutes: editedEstMinutes ? parseInt(editedEstMinutes) : null,
-        tools_needed: editedToolsNeeded,
+        tools_needed: editedToolsList.filter(tool => tool.trim()).join(', '),
         no_techs_needed: editedNoTechsNeeded ? parseInt(editedNoTechsNeeded) : null,
         reason: editedReason,
         safety_precautions: editedSafetyPrecautions,
-        consumables: editedConsumables,
+        consumables: editedConsumablesList.filter(item => item.trim()).join(', '),
         criticality: editedCriticality, // Add criticality to updates
         status: editedStatus,
         scheduled_date: editedDate,
@@ -646,8 +694,8 @@ export default function MaintenanceSchedule() {
   const handleDragStart = async (e, task) => {
     // Check if user can edit this task
     if (task.siteId) {
-      await checkCanEditPermission(task.siteId);
-      if (!canEditTask) {
+      const hasPermission = await checkCanEditPermission(task.siteId);
+      if (!hasPermission) {
         e.preventDefault();
         toast({
           title: "Permission Denied",
@@ -1404,6 +1452,11 @@ export default function MaintenanceSchedule() {
       console.log('Task values:', { status: task.status, priority: task.priority });
     }
     
+    // Filter out completed tasks unless showCompletedTasks is true
+    if (!showCompletedTasks && task.status === 'Completed') {
+      return false;
+    }
+    
     // Status filter
     if (filterStatus !== "all" && task.status !== filterStatus) {
       console.log(`Status filter: ${task.status} !== ${filterStatus}`);
@@ -1472,6 +1525,7 @@ export default function MaintenanceSchedule() {
     setFilterTask("")
     setSortField("")
     setSortDirection("asc")
+    // Note: We don't reset showCompletedTasks as it's a view preference, not a filter
   }
   
   // Handle sorting
@@ -1563,7 +1617,17 @@ export default function MaintenanceSchedule() {
                       <CardTitle>Scheduled Maintenance Tasks ({filteredTasks.length})</CardTitle>
                       <CardDescription>All upcoming and recent maintenance activities</CardDescription>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          id="show-completed"
+                          checked={showCompletedTasks}
+                          onCheckedChange={setShowCompletedTasks}
+                        />
+                        <Label htmlFor="show-completed" className="cursor-pointer">
+                          Show completed tasks
+                        </Label>
+                      </div>
                       {(filterStatus !== "all" || filterPriority !== "all" || filterDateRange.start || filterAsset || filterTask) && (
                         <>
                           <Badge variant="secondary">
@@ -2385,153 +2449,248 @@ export default function MaintenanceSchedule() {
           {/* Edit Task Dialog */}
           {showEditDialog && editingTask && (
             <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-              <DialogContent className="max-w-2xl">
-                <DialogHeader>
+              <DialogContent className="max-w-6xl w-[95vw] max-h-[90vh] flex flex-col">
+                <DialogHeader className="flex-shrink-0 pb-4">
                   <DialogTitle>Edit Task: {editingTask.task}</DialogTitle>
                   <DialogDescription>Modify task details and schedule</DialogDescription>
                 </DialogHeader>
 
-                <div className="space-y-4 max-h-[60vh] overflow-y-auto">
+                <div className="flex-1 overflow-hidden">
+                  <div className="h-full overflow-y-auto space-y-6 pr-2" style={{ maxHeight: 'calc(90vh - 220px)' }}>
                   {/* Task Name */}
                   <div className="space-y-2">
-                    <Label>Task Name</Label>
+                    <Label className="text-sm font-medium">Task Name</Label>
                     <Input 
                       value={editedTaskName} 
                       onChange={(e) => setEditedTaskName(e.target.value)}
                       placeholder="Task name"
+                      className="max-w-full"
                     />
                   </div>
 
-                  {/* Schedule and Status */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Status</Label>
-                      <Select value={editedStatus} onValueChange={setEditedStatus}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Scheduled">Scheduled</SelectItem>
-                          <SelectItem value="In Progress">In Progress</SelectItem>
-                          <SelectItem value="Completed">Completed</SelectItem>
-                          <SelectItem value="Overdue">Overdue</SelectItem>
-                        </SelectContent>
-                      </Select>
+                  {/* Basic Information Grid */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Left Column - Status & Criticality */}
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium">Status</Label>
+                        <Select value={editedStatus} onValueChange={setEditedStatus}>
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Select status" />
+                          </SelectTrigger>
+                          <SelectContent className="z-[70] bg-white border border-gray-200 shadow-lg" position="popper" sideOffset={4} alignOffset={-2}>
+                            <SelectItem value="Scheduled">Scheduled</SelectItem>
+                            <SelectItem value="In Progress">In Progress</SelectItem>
+                            <SelectItem value="Completed">Completed</SelectItem>
+                            <SelectItem value="Overdue">Overdue</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium">Criticality</Label>
+                        <Select value={editedCriticality} onValueChange={setEditedCriticality}>
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Select criticality" />
+                          </SelectTrigger>
+                          <SelectContent className="z-[70] bg-white border border-gray-200 shadow-lg" position="popper" sideOffset={4} alignOffset={-2}>
+                            <SelectItem value="High">High</SelectItem>
+                            <SelectItem value="Medium">Medium</SelectItem>
+                            <SelectItem value="Low">Low</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
-                    <div className="space-y-2">
-                      <Label>Criticality</Label>
-                      <Select value={editedCriticality} onValueChange={setEditedCriticality}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="High">High</SelectItem>
-                          <SelectItem value="Medium">Medium</SelectItem>
-                          <SelectItem value="Low">Low</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Date</Label>
-                      <Input type="date" value={editedDate} onChange={(e) => setEditedDate(e.target.value)} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Time</Label>
-                      <Input type="time" value={editedTime} onChange={(e) => setEditedTime(e.target.value)} />
+                    {/* Right Column - Date & Time */}
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium">Scheduled Date</Label>
+                        <Input 
+                          type="date" 
+                          value={editedDate} 
+                          onChange={(e) => setEditedDate(e.target.value)}
+                          className="w-full"
+                        />
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium">Scheduled Time</Label>
+                        <Input 
+                          type="time" 
+                          value={editedTime} 
+                          onChange={(e) => setEditedTime(e.target.value)}
+                          className="w-full"
+                        />
+                      </div>
                     </div>
                   </div>
 
                   {/* Task Details */}
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label>Est. Minutes</Label>
+                      <Label className="text-sm font-medium">Est. Minutes</Label>
                       <Input 
                         type="number" 
                         value={editedEstMinutes} 
                         onChange={(e) => setEditedEstMinutes(e.target.value)}
                         placeholder="60"
+                        className="w-full"
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label>Techs Needed</Label>
+                      <Label className="text-sm font-medium">Techs Needed</Label>
                       <Input 
                         type="number" 
                         value={editedNoTechsNeeded} 
                         onChange={(e) => setEditedNoTechsNeeded(e.target.value)}
                         placeholder="1"
+                        className="w-full"
                       />
                     </div>
+                  </div>
+
+                  {/* Tools Needed - Full Width */}
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Tools Needed</Label>
                     <div className="space-y-2">
-                      <Label>Tools Needed</Label>
-                      <Input 
-                        value={editedToolsNeeded} 
-                        onChange={(e) => setEditedToolsNeeded(e.target.value)}
-                        placeholder="List tools"
+                      {editedToolsList.map((tool, index) => (
+                        <div key={index} className="flex gap-2">
+                          <Input 
+                            value={tool}
+                            onChange={(e) => {
+                              const newList = [...editedToolsList]
+                              newList[index] = e.target.value
+                              setEditedToolsList(newList)
+                            }}
+                            placeholder="Tool name"
+                            className="flex-1"
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              const newList = editedToolsList.filter((_, i) => i !== index)
+                              setEditedToolsList(newList)
+                            }}
+                            className="px-2"
+                          >
+                            ✕
+                          </Button>
+                        </div>
+                      ))}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setEditedToolsList([...editedToolsList, ''])}
+                        className="w-full"
+                      >
+                        + Add Tool
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Detailed Information */}
+                  <div className="space-y-6">
+                    {/* Instructions */}
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium">Instructions (one per line)</Label>
+                      <textarea
+                        className="w-full min-h-[120px] p-3 border border-input rounded-md text-sm focus:ring-2 focus:ring-ring focus:border-transparent resize-y"
+                        value={editedInstructions}
+                        onChange={(e) => setEditedInstructions(e.target.value)}
+                        placeholder="Enter detailed step-by-step instructions..."
                       />
                     </div>
-                  </div>
 
-                  {/* Instructions */}
-                  <div className="space-y-2">
-                    <Label>Instructions (one per line)</Label>
-                    <textarea
-                      className="w-full min-h-[100px] p-2 border rounded-md text-sm"
-                      value={editedInstructions}
-                      onChange={(e) => setEditedInstructions(e.target.value)}
-                      placeholder="Enter task instructions..."
-                    />
-                  </div>
+                    {/* Two-column layout for additional details */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium">Reason for Task</Label>
+                        <textarea
+                          className="w-full min-h-[80px] p-3 border border-input rounded-md text-sm focus:ring-2 focus:ring-ring focus:border-transparent resize-y"
+                          value={editedReason}
+                          onChange={(e) => setEditedReason(e.target.value)}
+                          placeholder="Why is this task necessary?"
+                        />
+                      </div>
 
-                  {/* Additional Details */}
-                  <div className="space-y-2">
-                    <Label>Reason for Task</Label>
-                    <textarea
-                      className="w-full min-h-[60px] p-2 border rounded-md text-sm"
-                      value={editedReason}
-                      onChange={(e) => setEditedReason(e.target.value)}
-                      placeholder="Why is this task necessary?"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Safety Precautions</Label>
-                    <textarea
-                      className="w-full min-h-[60px] p-2 border rounded-md text-sm"
-                      value={editedSafetyPrecautions}
-                      onChange={(e) => setEditedSafetyPrecautions(e.target.value)}
-                      placeholder="Safety measures to follow"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Consumables Required</Label>
-                    <textarea
-                      className="w-full min-h-[60px] p-2 border rounded-md text-sm"
-                      value={editedConsumables}
-                      onChange={(e) => setEditedConsumables(e.target.value)}
-                      placeholder="List of consumable materials needed"
-                    />
-                  </div>
-
-                  <div className="bg-gray-50 p-4 rounded-lg">
-                    <h4 className="font-medium mb-2">Task Summary</h4>
-                    <div className="text-sm text-muted-foreground space-y-1">
-                      <div>Asset: {editingTask.asset}</div>
-                      <div>Task: {editingTask.task}</div>
-                      <div>Duration: {editingTask.duration}</div>
-                      <div>Priority: {editingTask.priority}</div>
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium">Safety Precautions</Label>
+                        <textarea
+                          className="w-full min-h-[80px] p-3 border border-input rounded-md text-sm focus:ring-2 focus:ring-ring focus:border-transparent resize-y"
+                          value={editedSafetyPrecautions}
+                          onChange={(e) => setEditedSafetyPrecautions(e.target.value)}
+                          placeholder="Safety measures and PPE requirements..."
+                        />
+                      </div>
                     </div>
+
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium">Consumables Required</Label>
+                      <div className="space-y-2">
+                        {editedConsumablesList.map((consumable, index) => (
+                          <div key={index} className="flex gap-2">
+                            <Input 
+                              value={consumable}
+                              onChange={(e) => {
+                                const newList = [...editedConsumablesList]
+                                newList[index] = e.target.value
+                                setEditedConsumablesList(newList)
+                              }}
+                              placeholder="Consumable item (e.g., Oil filter, 2 quarts synthetic oil)"
+                              className="flex-1"
+                            />
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                const newList = editedConsumablesList.filter((_, i) => i !== index)
+                                setEditedConsumablesList(newList)
+                              }}
+                              className="px-2"
+                            >
+                              ✕
+                            </Button>
+                          </div>
+                        ))}
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setEditedConsumablesList([...editedConsumablesList, ''])}
+                          className="w-full"
+                        >
+                          + Add Consumable
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
                   </div>
                 </div>
 
-                <div className="flex justify-end space-x-2 mt-6">
-                  <Button variant="outline" onClick={() => setShowEditDialog(false)}>
-                    Cancel
-                  </Button>
-                  <Button onClick={saveTaskChanges}>Save Changes</Button>
+                <div className="flex-shrink-0 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pt-4 border-t border-slate-200 mt-4">
+                  <div className="text-sm text-slate-500">
+                    Changes will be logged for audit purposes
+                  </div>
+                  <div className="flex space-x-3">
+                    <Button 
+                      variant="outline" 
+                      onClick={() => setShowEditDialog(false)}
+                      className="px-6"
+                    >
+                      Cancel
+                    </Button>
+                    <Button 
+                      onClick={saveTaskChanges}
+                      className="px-6 bg-blue-600 hover:bg-blue-700"
+                    >
+                      Save Changes
+                    </Button>
+                  </div>
                 </div>
               </DialogContent>
             </Dialog>
