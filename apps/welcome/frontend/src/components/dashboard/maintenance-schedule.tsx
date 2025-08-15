@@ -727,7 +727,7 @@ export default function MaintenanceSchedule() {
   }
 
   // Update task date with drag and drop
-  const updateTaskDate = async (taskId, newDate, originalDate) => {
+  const updateTaskDate = async (taskId, signoffId, newDate, originalDate) => {
     try {
       if (!user) {
         throw new Error('User not authenticated');
@@ -751,27 +751,18 @@ export default function MaintenanceSchedule() {
         console.error('Error creating audit record:', auditError);
       }
 
-      // Update the task date in pm_tasks
-      const { error: updateError } = await supabase
-        .from('pm_tasks')
-        .update({ 
-          scheduled_dates: [newDate] // Update scheduled_dates array
-        })
-        .eq('id', taskId);
-
-      if (updateError) throw updateError;
-      
-      // Also update the task_signoff table (most recent record without comp_date)
+      // Update the specific task_signoff record using signoff ID
+      // This is the primary update since calendar view shows scheduled_date from task_signoff
       const { error: signoffError } = await supabase
         .from('task_signoff')
         .update({ 
-          due_date: newDate
+          scheduled_date: newDate
         })
-        .eq('task_id', taskId)
-        .is('comp_date', null);
+        .eq('id', signoffId);
       
       if (signoffError) {
         console.error('Error updating task_signoff:', signoffError);
+        throw signoffError;
       }
 
       // Refresh tasks to show the change
@@ -853,7 +844,7 @@ export default function MaintenanceSchedule() {
     }
 
     // Update the task date
-    await updateTaskDate(draggedTask.id, newDateStr, originalDateStr);
+    await updateTaskDate(draggedTask.id, draggedTask.signoffId, newDateStr, originalDateStr);
 
     // Reset drag state
     setDraggedTask(null);
@@ -1863,7 +1854,7 @@ export default function MaintenanceSchedule() {
             </TabsList>
 
             <TabsContent value="assets" className="space-y-6" forceMount hidden={viewMode !== 'assets'}>
-              <ManageAssets />
+              <ManageAssets onAssetUpdate={fetchTasks} onPlanCreate={fetchTasks} />
             </TabsContent>
 
             <TabsContent value="list" className="space-y-6" forceMount hidden={viewMode !== 'list'}>
