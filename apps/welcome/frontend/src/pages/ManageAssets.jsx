@@ -179,14 +179,21 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate }) => {
   });
 
   useEffect(() => {
+    console.log('🚀 [Component Mount] ManageAssets component mounted/updated');
+    console.log('🚀 [Component Mount] Current URL:', window.location.pathname);
+    console.log('🚀 [Component Mount] User exists:', !!user);
+    console.log('🚀 [Component Mount] Props:', { onAssetUpdate: !!onAssetUpdate, onPlanCreate: !!onPlanCreate });
+    
     if (user) {
       initializeComponent();
     }
   }, [user]);
 
   const initializeComponent = async () => {
+    console.log('🚀 [Initialization] Starting component initialization...');
     await checkUserPermissions();
     await loadAssetCategories();
+    console.log('🚀 [Initialization] Component initialization complete');
   };
 
   const loadAssetCategories = async () => {
@@ -450,21 +457,38 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate }) => {
   const handleCreateParentAsset = async (e) => {
     e.preventDefault();
     
+    // Debug logging to track different contexts
+    console.log('🔍 [Parent Asset Creation] Starting...');
+    console.log('🔍 [Context] Current URL:', window.location.pathname);
+    console.log('🔍 [Context] Props received:', { onAssetUpdate: !!onAssetUpdate, onPlanCreate: !!onPlanCreate });
+    console.log('🔍 [Context] User sites available:', userSites.length);
+    console.log('🔍 [Context] Parent manual file attached:', !!parentManualFile);
+    console.log('🔍 [Context] Component state:', {
+      loadingSuggestions,
+      showSuggestionsModal,
+      suggestedAssets: suggestedAssets.length,
+      createdParentAsset: !!createdParentAsset
+    });
+    
     if (userSites.length === 0) {
+      console.error('🔍 [Error] No user sites available');
       setError('You do not have access to any sites');
       return;
     }
 
     if (!newParentAsset.name.trim()) {
+      console.error('🔍 [Error] Asset name is empty');
       setError('Asset name is required');
       return;
     }
 
     if (!newParentAsset.site_id) {
+      console.error('🔍 [Error] Site ID is missing');
       setError('Site selection is required');
       return;
     }
 
+    console.log('🔍 [Validation] All checks passed, proceeding with creation');
     try {
       // Fix date handling to prevent timezone issues
       // Ensure dates are sent as pure YYYY-MM-DD strings or null
@@ -477,30 +501,47 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate }) => {
         created_by: user.id
       };
       
+      console.log('🔍 [Database] Inserting parent asset with data:', assetData);
       const { data, error } = await supabase
         .from('parent_assets')
         .insert([assetData])
         .select();
 
-      if (error) throw error;
+      if (error) {
+        console.error('🔍 [Database Error] Failed to insert parent asset:', error);
+        throw error;
+      }
 
       const createdAsset = data[0];
+      console.log('🔍 [Success] Parent asset created with ID:', createdAsset.id);
+      console.log('🔍 [Success] Created asset data:', createdAsset);
       
       // Upload manual if provided (don't let upload failure prevent child asset suggestions)
       if (parentManualFile) {
+        console.log('🔍 [File Upload] Attempting to upload manual...');
         try {
           await uploadManualForAsset(parentManualFile, newParentAsset.name, createdAsset.id, true);
+          console.log('🔍 [File Upload] Manual uploaded successfully');
         } catch (uploadError) {
-          console.error('File upload failed, but continuing with asset creation:', uploadError);
+          console.error('🔍 [File Upload Error] File upload failed, but continuing with asset creation:', uploadError);
           setParentFileUploadError(`Failed to upload manual: ${uploadError.message}`);
         }
+      } else {
+        console.log('🔍 [File Upload] No manual file attached, skipping upload');
       }
 
+      console.log('🔍 [Loading] Refreshing parent assets list...');
       await loadParentAssets();
+      console.log('🔍 [Loading] Parent assets list refreshed');
       
       // Store created asset and trigger AI suggestions
-      setCreatedParentAsset({...createdAsset, environment: userSites.find(s => s.id === createdAsset.site_id)?.environment});
+      const assetWithEnvironment = {...createdAsset, environment: userSites.find(s => s.id === createdAsset.site_id)?.environment};
+      console.log('🔍 [AI Suggestions] Storing created asset with environment:', assetWithEnvironment);
+      setCreatedParentAsset(assetWithEnvironment);
+      
+      console.log('🔍 [AI Suggestions] Calling requestChildAssetSuggestions with asset:', createdAsset);
       await requestChildAssetSuggestions(createdAsset);
+      console.log('🔍 [AI Suggestions] Request completed');
       
       setShowAddParentAsset(false);
       setNewParentAsset({
@@ -1286,24 +1327,65 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate }) => {
 
   // Request AI-powered child asset suggestions
   const requestChildAssetSuggestions = async (parentAsset) => {
+    console.log('🤖 [AI Suggestions] Starting requestChildAssetSuggestions...');
+    console.log('🤖 [AI Suggestions] Parent asset input:', parentAsset);
+    console.log('🤖 [AI Suggestions] Current state before request:', {
+      loadingSuggestions,
+      showSuggestionsModal,
+      suggestedAssets: suggestedAssets.length,
+      createdParentAsset: !!createdParentAsset,
+      error
+    });
+    
     try {
+      console.log('🤖 [AI Suggestions] Setting loading state to true');
       setLoadingSuggestions(true);
       setError(null);
       
+      console.log('🤖 [AI Suggestions] Calling suggestChildAssets API with:', {
+        name: parentAsset.name,
+        make: parentAsset.make,
+        model: parentAsset.model,
+        category: parentAsset.category,
+        id: parentAsset.id
+      });
+      
       const suggestions = await suggestChildAssets(parentAsset);
       
+      console.log('🤖 [AI Suggestions] API Response received:', suggestions);
+      console.log('🤖 [AI Suggestions] Response type:', typeof suggestions);
+      console.log('🤖 [AI Suggestions] Has child_assets property:', suggestions && 'child_assets' in suggestions);
+      console.log('🤖 [AI Suggestions] Child assets count:', suggestions?.child_assets?.length || 0);
+      
       if (suggestions && suggestions.child_assets && suggestions.child_assets.length > 0) {
+        console.log('🤖 [AI Suggestions] Valid suggestions received, setting state...');
         setSuggestedAssets(suggestions.child_assets);
         setSelectedSuggestions({});
+        console.log('🤖 [AI Suggestions] About to show modal by setting showSuggestionsModal to true');
         setShowSuggestionsModal(true);
+        console.log('🤖 [AI Suggestions] Modal state set, should be visible now');
       } else {
-        console.log('No child asset suggestions received');
+        console.log('🤖 [AI Suggestions] No child asset suggestions received or empty array');
+        console.log('🤖 [AI Suggestions] Full response for debugging:', JSON.stringify(suggestions, null, 2));
       }
     } catch (error) {
-      console.error('Error getting child asset suggestions:', error);
+      console.error('🤖 [AI Suggestions ERROR] Error getting child asset suggestions:', error);
+      console.error('🤖 [AI Suggestions ERROR] Error details:', {
+        message: error.message,
+        stack: error.stack,
+        response: error.response,
+        status: error.status
+      });
       setError('Failed to get AI suggestions for child assets: ' + error.message);
     } finally {
+      console.log('🤖 [AI Suggestions] Setting loading state to false');
       setLoadingSuggestions(false);
+      console.log('🤖 [AI Suggestions] Final state after request:', {
+        loadingSuggestions: false,
+        showSuggestionsModal,
+        suggestedAssets: suggestedAssets.length,
+        error
+      });
     }
   };
 
@@ -2892,6 +2974,12 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate }) => {
       )}
 
       {/* AI Child Asset Suggestions Modal */}
+      {(() => {
+        console.log('🎭 [Modal Render Check] showSuggestionsModal:', showSuggestionsModal);
+        console.log('🎭 [Modal Render Check] suggestedAssets count:', suggestedAssets.length);
+        console.log('🎭 [Modal Render Check] createdParentAsset:', createdParentAsset);
+        return null;
+      })()}
       {showSuggestionsModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
