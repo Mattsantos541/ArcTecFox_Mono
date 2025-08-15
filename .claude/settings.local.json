@@ -34,7 +34,8 @@
       "Bash(kill:*)",
       "Bash(pkill:*)",
       "Bash(fuser:*)",
-      "Bash(uvicorn:*)"
+      "Bash(uvicorn:*)",
+      "Bash(sudo fuser:*)"
     ],
     "deny": [],
     "defaultMode": "acceptEdits"

@@ -1855,11 +1855,11 @@ export default function MaintenanceSchedule() {
           </div>
 
           <Tabs value={viewMode} onValueChange={setViewMode} className="space-y-6">
-            <TabsList>
-              <TabsTrigger value="assets">Asset View</TabsTrigger>
-              <TabsTrigger value="list">Task View</TabsTrigger>
-              <TabsTrigger value="calendar">Calendar View</TabsTrigger>
-              <TabsTrigger value="weekly">Weekly View</TabsTrigger>
+            <TabsList className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200">
+              <TabsTrigger value="assets" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">Asset View</TabsTrigger>
+              <TabsTrigger value="list" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">Task View</TabsTrigger>
+              <TabsTrigger value="calendar" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white">Calendar View</TabsTrigger>
+              <TabsTrigger value="weekly" className="data-[state=active]:bg-cyan-600 data-[state=active]:text-white">Weekly View</TabsTrigger>
             </TabsList>
 
             <TabsContent value="assets" className="space-y-6" forceMount hidden={viewMode !== 'assets'}>
@@ -1867,12 +1867,15 @@ export default function MaintenanceSchedule() {
             </TabsContent>
 
             <TabsContent value="list" className="space-y-6" forceMount hidden={viewMode !== 'list'}>
-              <Card>
-                <CardHeader>
+              <Card className="border-t-4 border-t-blue-600 overflow-hidden">
+                <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50">
                   <div className="flex items-center justify-between">
                     <div>
-                      <CardTitle>Scheduled Maintenance Tasks ({filteredTasks.length})</CardTitle>
-                      <CardDescription>All upcoming and recent maintenance activities</CardDescription>
+                      <CardTitle className="text-blue-900 flex items-center gap-2">
+                        <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                        Scheduled Maintenance Tasks ({filteredTasks.length})
+                      </CardTitle>
+                      <CardDescription className="text-blue-600">All upcoming and recent maintenance activities</CardDescription>
                     </div>
                     <div className="flex items-center gap-4">
                       <div className="flex items-center gap-2">
@@ -2211,25 +2214,30 @@ export default function MaintenanceSchedule() {
                   </div>
                 </div>
               )}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center justify-between">
-                    <span>Calendar View</span>
-                    <div className="flex items-center space-x-2">
+              <Card className="border-t-4 border-t-indigo-600 overflow-hidden">
+                <CardHeader className="bg-gradient-to-r from-indigo-50 to-purple-50">
+                  <CardTitle className="flex items-center justify-between text-indigo-900">
+                    <span className="flex items-center gap-2">
+                      <div className="w-2 h-2 bg-indigo-500 rounded-full"></div>
+                      Calendar View
+                    </span>
+                    <div className="flex items-center space-x-2 shrink-0">
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => navigateMonth(-1)}
+                        className="shrink-0"
                       >
                         <ChevronLeft className="h-4 w-4" />
                       </Button>
-                      <span className="text-lg font-semibold min-w-[180px] text-center">
+                      <span className="text-lg font-semibold w-[180px] text-center shrink-0">
                         {formatMonthYear(currentMonth)}
                       </span>
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => navigateMonth(1)}
+                        className="shrink-0"
                       >
                         <ChevronRight className="h-4 w-4" />
                       </Button>
@@ -2238,21 +2246,22 @@ export default function MaintenanceSchedule() {
                   <CardDescription>View all scheduled maintenance tasks for the month</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="w-full">
-                    {/* Calendar Header */}
-                    <div className="grid grid-cols-7 gap-1 mb-2">
-                      {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
-                        <div key={day} className="p-2 text-center text-sm font-medium text-muted-foreground">
-                          {day}
-                        </div>
-                      ))}
-                    </div>
-                    
-                    {/* Calendar Grid */}
-                    <div className="grid grid-cols-7 gap-1">
+                  <div className="w-full overflow-x-auto">
+                    <div className="min-w-[980px]">
+                      {/* Calendar Header */}
+                      <div className="grid grid-cols-7 gap-1 mb-2">
+                        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+                          <div key={day} className="p-2 text-center text-sm font-medium text-muted-foreground w-[140px]">
+                            {day}
+                          </div>
+                        ))}
+                      </div>
+                      
+                      {/* Calendar Grid */}
+                      <div className="grid grid-cols-7 gap-1">
                       {getDaysInMonth(currentMonth).map((day, index) => {
                         if (day === null) {
-                          return <div key={`empty-${index}`} className="p-2 min-h-[100px]" />
+                          return <div key={`empty-${index}`} className="p-2 min-h-[100px] w-[140px]" />
                         }
                         
                         const cellDate = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day)
@@ -2265,17 +2274,24 @@ export default function MaintenanceSchedule() {
                         return (
                           <div
                             key={day}
-                            className={`border p-2 min-h-[100px] cursor-pointer transition-colors ${
-                              isToday ? 'bg-blue-50 border-blue-200' : 'hover:bg-gray-50'
+                            className={`border p-2 min-h-[100px] w-[140px] cursor-pointer transition-all ${
+                              isToday ? 'bg-blue-50 border-blue-300 shadow-md' : 'hover:bg-gray-50'
                             } ${isSelected ? 'ring-2 ring-blue-500' : ''} ${
                               isDraggedOver ? 'bg-green-100 border-green-300 border-2' : ''
-                            }`}
+                            } ${tasksForDay.length > 0 ? 'border-indigo-200 bg-indigo-50/30' : 'border-gray-200'}`}
                             onClick={() => setSelectedDate(cellDate.toISOString().split('T')[0])}
                             onDragOver={(e) => handleDragOver(e, dateStr)}
                             onDragLeave={handleDragLeave}
                             onDrop={(e) => handleDrop(e, cellDate)}
                           >
-                            <div className="font-medium text-sm mb-1">{day}</div>
+                            <div className="flex items-center justify-between mb-1">
+                              <div className="font-medium text-sm">{day}</div>
+                              {tasksForDay.length > 0 && (
+                                <div className="bg-indigo-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">
+                                  {tasksForDay.length}
+                                </div>
+                              )}
+                            </div>
                             <div className="space-y-1">
                               {tasksForDay.slice(0, 3).map((task) => (
                                 <div
@@ -2283,14 +2299,15 @@ export default function MaintenanceSchedule() {
                                   draggable={true}
                                   onDragStart={(e) => handleDragStart(e, task)}
                                   onDragEnd={handleDragEnd}
-                                  className={`text-xs p-1 rounded text-white truncate cursor-move select-none ${
-                                    task.priority === 'High' ? 'bg-red-500' :
-                                    task.priority === 'Medium' ? 'bg-yellow-500' :
-                                    'bg-green-500'
-                                  } ${draggedTask?.id === task.id ? 'opacity-50' : 'hover:opacity-80'}`}
-                                  title={`${task.asset} - ${task.task} (Drag to move)`}
+                                  className={`text-xs p-1.5 rounded-md text-white truncate cursor-move select-none shadow-sm border-l-2 ${
+                                    task.priority === 'High' ? 'bg-red-500 border-l-red-700' :
+                                    task.priority === 'Medium' ? 'bg-yellow-500 border-l-yellow-700' :
+                                    'bg-green-500 border-l-green-700'
+                                  } ${draggedTask?.id === task.id ? 'opacity-50' : 'hover:opacity-90 hover:scale-105 transition-all'}`}
+                                  title={`${task.asset} - ${task.task}${task.scheduledDate ? ` (Scheduled: ${task.scheduledDate})` : ` (Due: ${task.dueDate})`} - Drag to reschedule`}
                                 >
-                                  {task.asset}
+                                  <div className="font-medium">{task.asset}</div>
+                                  <div className="text-[10px] opacity-90 truncate">{task.task}</div>
                                 </div>
                               ))}
                               {tasksForDay.length > 3 && (
@@ -2302,6 +2319,7 @@ export default function MaintenanceSchedule() {
                           </div>
                         )
                       })}
+                      </div>
                     </div>
                   </div>
                 </CardContent>
@@ -2408,19 +2426,22 @@ export default function MaintenanceSchedule() {
             </TabsContent>
 
             <TabsContent value="weekly" className="space-y-6" forceMount hidden={viewMode !== 'weekly'}>
-              <Card>
-                <CardHeader>
-                  <CardTitle>Weekly Overview</CardTitle>
-                  <CardDescription>Maintenance tasks distribution for the week</CardDescription>
+              <Card className="border-t-4 border-t-cyan-600 overflow-hidden">
+                <CardHeader className="bg-gradient-to-r from-cyan-50 to-blue-50">
+                  <CardTitle className="text-cyan-900 flex items-center gap-2">
+                    <div className="w-2 h-2 bg-cyan-500 rounded-full"></div>
+                    Weekly Overview
+                  </CardTitle>
+                  <CardDescription className="text-cyan-600">Maintenance tasks distribution for the week</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-7 gap-4">
                     {weeklyView.map((day, index) => (
                       <div key={`week-${index}`} className="text-center">
                         <div className="font-medium mb-2">{day.date}</div>
-                        <div className="bg-blue-100 rounded-lg p-4 min-h-[100px] flex flex-col items-center justify-center">
-                          <div className="text-2xl font-bold text-blue-600">{day.tasks}</div>
-                          <div className="text-sm text-muted-foreground">{day.tasks === 1 ? "task" : "tasks"}</div>
+                        <div className="bg-gradient-to-br from-cyan-100 to-blue-100 border-l-4 border-l-cyan-500 rounded-lg p-4 min-h-[100px] flex flex-col items-center justify-center hover:from-cyan-200 hover:to-blue-200 transition-colors">
+                          <div className="text-2xl font-bold text-cyan-700">{day.tasks}</div>
+                          <div className="text-sm text-cyan-600">{day.tasks === 1 ? "task" : "tasks"}</div>
                         </div>
                       </div>
                     ))}
