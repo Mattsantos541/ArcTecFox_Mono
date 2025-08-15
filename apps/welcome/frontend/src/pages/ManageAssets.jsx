@@ -486,9 +486,14 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate }) => {
 
       const createdAsset = data[0];
       
-      // Upload manual if provided
+      // Upload manual if provided (don't let upload failure prevent child asset suggestions)
       if (parentManualFile) {
-        await uploadManualForAsset(parentManualFile, newParentAsset.name, createdAsset.id, true);
+        try {
+          await uploadManualForAsset(parentManualFile, newParentAsset.name, createdAsset.id, true);
+        } catch (uploadError) {
+          console.error('File upload failed, but continuing with asset creation:', uploadError);
+          setParentFileUploadError(`Failed to upload manual: ${uploadError.message}`);
+        }
       }
 
       await loadParentAssets();
@@ -2441,7 +2446,7 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate }) => {
                         <InfoBlock label="Usage Insights" value={task.usage_insights} bg="bg-green-50" />
                         {task.scheduled_dates?.length > 0 && (
                           <div className="mt-4">
-                            <p className="text-sm font-medium text-gray-600 mb-1">Scheduled Dates (Next 12 months):</p>
+                            <p className="text-sm font-medium text-gray-600 mb-1">Next Scheduled On:</p>
                             <div className="flex flex-wrap gap-2">
                               {Array.isArray(task.scheduled_dates) ? task.scheduled_dates.map((date, idx) => (
                                 <span key={idx} className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-medium">
