@@ -11,6 +11,7 @@ import {
 } from '../api';
 import FileUpload from '../components/forms/FileUpload';
 import { createStorageService } from '../services/storageService';
+import { saveState, loadState } from '../utils/statePersistence';
 
 // Loading Modal Component (copied from PMPlanner)
 function LoadingModal({ isOpen }) {
@@ -66,7 +67,17 @@ const ManageAssets = () => {
   const { user } = useAuth();
   const [parentAssets, setParentAssets] = useState([]);
   const [childAssets, setChildAssets] = useState([]);
-  const [selectedParentAsset, setSelectedParentAsset] = useState(null);
+  
+  // Persist selected parent asset across tab switches
+  const [selectedParentAsset, setSelectedParentAssetInternal] = useState(() => {
+    const saved = loadState('selectedParentAsset', null);
+    return saved;
+  });
+  
+  const setSelectedParentAsset = (asset) => {
+    setSelectedParentAssetInternal(asset);
+    saveState('selectedParentAsset', asset);
+  };
   const [sites, setSites] = useState([]);
   const [userSites, setUserSites] = useState([]);
   const [assetCategories, setAssetCategories] = useState([]);
@@ -125,8 +136,16 @@ const ManageAssets = () => {
   const [editModalFileError, setEditModalFileError] = useState(null);
   const [uploadingEditModalFile, setUploadingEditModalFile] = useState(false);
   
-  // PM Plan display state
-  const [selectedChildAssetForPlan, setSelectedChildAssetForPlan] = useState(null);
+  // PM Plan display state - persist selected child asset
+  const [selectedChildAssetForPlan, setSelectedChildAssetForPlanInternal] = useState(() => {
+    const saved = loadState('selectedChildAssetForPlan', null);
+    return saved;
+  });
+  
+  const setSelectedChildAssetForPlan = (asset) => {
+    setSelectedChildAssetForPlanInternal(asset);
+    saveState('selectedChildAssetForPlan', asset);
+  };
   const [existingPlans, setExistingPlans] = useState([]);
   const [loadingPlans, setLoadingPlans] = useState(false);
   const [showPlans, setShowPlans] = useState(false);
@@ -237,6 +256,19 @@ const ManageAssets = () => {
       if (error) throw error;
       
       setParentAssets(data || []);
+      
+      // Restore selected parent asset if it still exists
+      const savedParentId = loadState('selectedParentAsset', null)?.id;
+      if (savedParentId && data) {
+        const restoredParent = data.find(a => a.id === savedParentId);
+        if (restoredParent) {
+          // Restore the selection without triggering handleParentAssetSelect
+          // to avoid re-loading child assets unnecessarily
+          setSelectedParentAssetInternal(restoredParent);
+          // Load child assets for the restored parent
+          await loadChildAssets(savedParentId);
+        }
+      }
     } catch (err) {
       console.error('Error loading parent assets:', err);
       setError('Failed to load parent assets');
@@ -266,6 +298,19 @@ const ManageAssets = () => {
       
       // Load manuals for child assets
       await loadManuals(null, parentAssetId);
+      
+      // Restore selected child asset if it still exists
+      const savedChildId = loadState('selectedChildAssetForPlan', null)?.id;
+      if (savedChildId && data) {
+        const restoredChild = data.find(a => a.id === savedChildId);
+        if (restoredChild) {
+          setSelectedChildAssetForPlanInternal(restoredChild);
+          // Load existing plans for the restored child asset
+          const parentId = restoredChild.parent_asset_id;
+          const plans = await fetchPMPlansByAsset(parentId, savedChildId);
+          setExistingPlans(plans || []);
+        }
+      }
     } catch (err) {
       console.error('Error loading child assets:', err);
       setError('Failed to load child assets');
@@ -414,13 +459,19 @@ const ManageAssets = () => {
     }
 
     try {
+      // Fix date handling to prevent timezone issues
+      // Ensure dates are sent as pure YYYY-MM-DD strings or null
+      const assetData = {
+        ...newParentAsset,
+        purchase_date: newParentAsset.purchase_date ? newParentAsset.purchase_date : null,
+        install_date: newParentAsset.install_date ? newParentAsset.install_date : null,
+        status: 'active',
+        created_by: user.id
+      };
+      
       const { data, error } = await supabase
         .from('parent_assets')
-        .insert([{
-          ...newParentAsset,
-          status: 'active',
-          created_by: user.id
-        }])
+        .insert([assetData])
         .select();
 
       if (error) throw error;
@@ -474,18 +525,19 @@ const ManageAssets = () => {
 
     try {
       // Prepare child asset data - include make, model, serial_number mapped to correct fields
+      // Fix date handling to prevent timezone issues
       const childAssetData = {
         name: newChildAsset.name,
         make: newChildAsset.make || null,
         model: newChildAsset.model || null,
         serial_no: newChildAsset.serial_number || null, // Map serial_number to serial_no
         category: newChildAsset.category,
-        purchase_date: newChildAsset.purchase_date,
-        install_date: newChildAsset.install_date,
+        purchase_date: newChildAsset.purchase_date ? newChildAsset.purchase_date : null,
+        install_date: newChildAsset.install_date ? newChildAsset.install_date : null,
         notes: newChildAsset.notes,
         operating_hours: newChildAsset.operating_hours || null,
         addtl_context: newChildAsset.addtl_context || null,
-        plan_start_date: newChildAsset.plan_start_date || null,
+        plan_start_date: newChildAsset.plan_start_date ? newChildAsset.plan_start_date : null,
         criticality: newChildAsset.criticality || null,
         parent_asset_id: selectedParentAsset.id,
         status: 'active',
@@ -715,8 +767,8 @@ const ManageAssets = () => {
       id: asset.id,
       name: asset.name || '',
       category: asset.category || '',
-      purchase_date: asset.purchase_date || '',
-      install_date: asset.install_date || '',
+      purchase_date: formatDateForInput(asset.purchase_date),
+      install_date: formatDateForInput(asset.install_date),
       notes: asset.notes || ''
     };
     
@@ -732,7 +784,8 @@ const ManageAssets = () => {
       // Include additional fields for child assets
       modalData.operating_hours = asset.operating_hours || '';
       modalData.addtl_context = asset.addtl_context || '';
-      modalData.plan_start_date = asset.plan_start_date || '';
+      modalData.plan_start_date = formatDateForInput(asset.plan_start_date);
+      modalData.criticality = asset.criticality || '';
     }
     
     setEditModalData(modalData);
@@ -771,6 +824,12 @@ const ManageAssets = () => {
 
       // Prepare data for update - include make, model, serial_number for child assets with correct field mapping
       const dataToUpdate = { ...editModalData };
+      
+      // Fix date handling to prevent timezone shifting
+      // Ensure dates are properly formatted or null (never empty strings)
+      dataToUpdate.purchase_date = dataToUpdate.purchase_date ? dataToUpdate.purchase_date : null;
+      dataToUpdate.install_date = dataToUpdate.install_date ? dataToUpdate.install_date : null;
+      
       if (!editModalIsParent) {
         // Map the frontend field names to database field names for child assets
         if (dataToUpdate.serial_number !== undefined) {
@@ -780,7 +839,7 @@ const ManageAssets = () => {
         // Ensure new fields are included with proper null handling
         dataToUpdate.operating_hours = dataToUpdate.operating_hours || null;
         dataToUpdate.addtl_context = dataToUpdate.addtl_context || null;
-        dataToUpdate.plan_start_date = dataToUpdate.plan_start_date || null;
+        dataToUpdate.plan_start_date = dataToUpdate.plan_start_date ? dataToUpdate.plan_start_date : null;
       }
 
       // Save asset updates
@@ -800,34 +859,109 @@ const ManageAssets = () => {
   const handleDeleteParentAsset = async (assetId) => {
     const performDelete = async () => {
       try {
-      const { error: childError } = await supabase
-        .from('child_assets')
-        .update({
-          status: 'deleted',
-          updated_by: user.id,
-          updated_at: new Date().toISOString()
-        })
-        .eq('parent_asset_id', assetId);
+        // First, get all child assets for this parent
+        const { data: childAssets } = await supabase
+          .from('child_assets')
+          .select('id')
+          .eq('parent_asset_id', assetId)
+          .neq('status', 'deleted');
 
-      if (childError) throw childError;
+        // Soft delete related PM plans, tasks, and signoffs for all child assets
+        if (childAssets && childAssets.length > 0) {
+          const childAssetIds = childAssets.map(c => c.id);
+          
+          // Get all PM plans for these child assets
+          const { data: planData } = await supabase
+            .from('pm_plans')
+            .select('id')
+            .in('child_asset_id', childAssetIds);
+          
+          if (planData && planData.length > 0) {
+            const planIds = planData.map(p => p.id);
+            
+            // Get all PM tasks for these plans
+            const { data: tasks } = await supabase
+              .from('pm_tasks')
+              .select('id')
+              .in('pm_plan_id', planIds);
+            
+            if (tasks && tasks.length > 0) {
+              const taskIds = tasks.map(t => t.id);
+              
+              // Soft delete all task_signoff records
+              const { error: signoffError } = await supabase
+                .from('task_signoff')
+                .update({
+                  status: 'deleted',
+                  updated_at: new Date().toISOString()
+                })
+                .in('task_id', taskIds);
+              
+              if (signoffError) {
+                console.error('Error soft deleting task_signoff records:', signoffError);
+              }
+              
+              // Soft delete all PM tasks
+              const { error: taskError } = await supabase
+                .from('pm_tasks')
+                .update({
+                  status: 'Deleted',
+                  updated_by: user.id,
+                  updated_at: new Date().toISOString()
+                })
+                .in('id', taskIds);
+              
+              if (taskError) {
+                console.error('Error soft deleting PM tasks:', taskError);
+              }
+            }
+            
+            // Soft delete PM plans
+            const { error: planError } = await supabase
+              .from('pm_plans')
+              .update({
+                status: 'Deleted',
+                updated_by: user.id,
+                updated_at: new Date().toISOString()
+              })
+              .in('id', planIds);
+            
+            if (planError) {
+              console.error('Error soft deleting PM plans:', planError);
+            }
+          }
+        }
 
-      const { error: parentError } = await supabase
-        .from('parent_assets')
-        .update({
-          status: 'deleted',
-          updated_by: user.id,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', assetId);
+        // Soft delete all child assets
+        const { error: childError } = await supabase
+          .from('child_assets')
+          .update({
+            status: 'deleted',
+            updated_by: user.id,
+            updated_at: new Date().toISOString()
+          })
+          .eq('parent_asset_id', assetId);
 
-      if (parentError) throw parentError;
+        if (childError) throw childError;
 
-      await loadParentAssets();
-      if (selectedParentAsset?.id === assetId) {
-        setSelectedParentAsset(null);
-        setChildAssets([]);
-      }
-      setError(null);
+        // Soft delete the parent asset
+        const { error: parentError } = await supabase
+          .from('parent_assets')
+          .update({
+            status: 'deleted',
+            updated_by: user.id,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', assetId);
+
+        if (parentError) throw parentError;
+
+        await loadParentAssets();
+        if (selectedParentAsset?.id === assetId) {
+          setSelectedParentAsset(null);
+          setChildAssets([]);
+        }
+        setError(null);
       } catch (err) {
         console.error('Error deleting parent asset:', err);
         setError('Failed to delete parent asset');
@@ -862,7 +996,7 @@ const ManageAssets = () => {
           console.error('Error updating PM plans:', planError);
         }
         
-        // Clean up any pending task_signoff records for tasks associated with this asset
+        // Soft delete related PM tasks and task_signoff records
         // First get the task IDs for this child asset's PM plans
         const { data: planData } = await supabase
           .from('pm_plans')
@@ -880,15 +1014,31 @@ const ManageAssets = () => {
           if (tasks && tasks.length > 0) {
             const taskIds = tasks.map(t => t.id);
             
-            // Delete task_signoff records without completion date (pending)
+            // Soft delete all task_signoff records (pending and completed)
             const { error: signoffError } = await supabase
               .from('task_signoff')
-              .delete()
-              .in('task_id', taskIds)
-              .is('comp_date', null);
+              .update({
+                status: 'deleted',
+                updated_at: new Date().toISOString()
+              })
+              .in('task_id', taskIds);
             
             if (signoffError) {
-              console.error('Error cleaning up task_signoff records:', signoffError);
+              console.error('Error soft deleting task_signoff records:', signoffError);
+            }
+            
+            // Soft delete all PM tasks
+            const { error: taskError } = await supabase
+              .from('pm_tasks')
+              .update({
+                status: 'Deleted',
+                updated_by: user.id,
+                updated_at: new Date().toISOString()
+              })
+              .in('id', taskIds);
+            
+            if (taskError) {
+              console.error('Error soft deleting PM tasks:', taskError);
             }
           }
         }
@@ -965,7 +1115,42 @@ const ManageAssets = () => {
 
   const formatDate = (dateString) => {
     if (!dateString) return '';
+    // Handle date as string to avoid timezone issues
+    // If dateString is already in YYYY-MM-DD format, convert to readable format
+    if (typeof dateString === 'string' && dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      const [year, month, day] = dateString.split('-');
+      return new Date(year, month - 1, day).toLocaleDateString();
+    }
+    // Fallback for other formats
     return new Date(dateString).toLocaleDateString();
+  };
+
+  // Format date for HTML date input (always YYYY-MM-DD format)
+  const formatDateForInput = (dateString) => {
+    if (!dateString) return '';
+    
+    // If already in YYYY-MM-DD format, return as-is
+    if (typeof dateString === 'string' && dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      return dateString;
+    }
+    
+    // Handle ISO date strings from database (e.g., "2025-09-01T00:00:00.000Z")
+    if (typeof dateString === 'string' && dateString.includes('T')) {
+      // Extract just the date part before 'T'
+      return dateString.split('T')[0];
+    }
+    
+    // Convert from other date formats to YYYY-MM-DD format
+    // Force local timezone interpretation to prevent date shifts
+    const date = new Date(dateString + 'T00:00:00');
+    if (isNaN(date.getTime())) return '';
+    
+    // Get local date components to avoid timezone shift
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    
+    return `${year}-${month}-${day}`;
   };
 
   // Helper function to get category options including current value if not in dim_assets

@@ -405,7 +405,8 @@ const createInitialTaskSignoffs = async (pmPlanId, tasks) => {
         scheduled_time: null, // No time scheduled yet
         tech_id: null, // No technician assigned yet
         total_expense: null, // No expense yet
-        comp_date: null // Not completed yet
+        comp_date: null, // Not completed yet
+        status: 'pending' // Set initial status as pending
       };
     });
     
