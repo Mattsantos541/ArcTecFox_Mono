@@ -210,11 +210,8 @@ export class StorageService {
 
 // Helper function to create storage service instance
 export const createStorageService = async () => {
-  const { createClient } = await import("@supabase/supabase-js");
-  const supabase = createClient(
-    import.meta.env.VITE_SUPABASE_URL,
-    import.meta.env.VITE_SUPABASE_ANON_KEY
-  );
+  // Import the shared supabase client from api.js instead of creating a new one
+  const { supabase } = await import("../api");
   
   const storageService = new StorageService(supabase);
   

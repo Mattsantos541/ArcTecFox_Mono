@@ -247,6 +247,29 @@ git commit -m "Resolve conflicts"
 - Tab persistence prevents component unmounting/remounting
 - Date handling avoids timezone conversion issues
 
+## Development Best Practices
+
+### Code Reusability (CRITICAL)
+**ALWAYS reuse existing working functions and services instead of recreating them:**
+- **Supabase Client**: Always import and use the shared client from `api.js` (`import { supabase } from '../api'`)
+- **Storage Service**: Use the existing `createStorageService()` from `storageService.js`
+- **Authentication**: Use existing hooks (`useAuth`) and functions from `api.js`
+- **Common Utilities**: Check `utils/` folder for existing helper functions before creating new ones
+- **State Management**: Use existing contexts and providers rather than creating duplicate state logic
+
+**Why This Matters:**
+- Prevents authentication/session issues (multiple Supabase clients can have different auth states)
+- Ensures consistent behavior across the application
+- Reduces bundle size and improves performance
+- Makes debugging easier with single points of truth
+- Maintains data consistency across components
+
+**Before Creating Any New Function:**
+1. Search the codebase for similar functionality
+2. Check if an existing function can be extended/modified
+3. Import and reuse rather than copy-paste code
+4. If modification is needed, update the original function rather than creating a duplicate
+
 ## Calendar View Layout (CRITICAL - DO NOT MODIFY):
 
 **🚨 IMPORTANT: The calendar component layout is now PERFECT and should NOT be modified unless explicitly requested.**
