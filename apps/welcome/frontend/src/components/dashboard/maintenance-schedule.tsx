@@ -33,7 +33,10 @@ export default function MaintenanceSchedule() {
     console.log('selectedDate changed:', selectedDate, 'type:', typeof selectedDate);
   }, [selectedDate])
   
-  const [viewMode, setViewModeInternal] = useState(() => loadState('maintenanceViewMode', 'assets'))
+  const [viewMode, setViewModeInternal] = useState(() => {
+    const savedMode = loadState('maintenanceViewMode', 'assets')
+    return savedMode
+  })
   const [scheduledTasks, setScheduledTasks] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -43,6 +46,14 @@ export default function MaintenanceSchedule() {
     setViewModeInternal(mode)
     saveState('maintenanceViewMode', mode)
   }
+  
+  // Ensure tab state is maintained on component mount
+  useEffect(() => {
+    const savedMode = loadState('maintenanceViewMode', 'assets')
+    if (savedMode && savedMode !== viewMode) {
+      setViewModeInternal(savedMode)
+    }
+  }, [])
   const { toast } = useToast()
   const navigate = useNavigate()
   const { user } = useAuth()
@@ -145,77 +156,85 @@ export default function MaintenanceSchedule() {
       setLoading(true)
       setError(null)
       
-      // Simplified query to avoid JOIN issues - we'll get asset data separately if needed
-      // Only fetch tasks associated with Current PM plans, including task_signoff data
+      // Query starting from task_signoff as primary table (single source of truth)
+      // Filter out deleted signoffs and get all related data through joins
       const { data, error } = await supabase
-        .from('pm_tasks')
+        .from('task_signoff')
         .select(`
-          *,
-          pm_plans!inner (
+          id,
+          due_date,
+          scheduled_date,
+          scheduled_time,
+          comp_date,
+          status,
+          pm_tasks!inner (
             id,
-            created_by,
-            site_id,
-            status,
-            child_asset_id,
-            users (
+            task_name,
+            maintenance_interval,
+            est_minutes,
+            tools_needed,
+            no_techs_needed,
+            reason,
+            safety_precautions,
+            engineering_rationale,
+            common_failures_prevented,
+            usage_insights,
+            instructions,
+            consumables,
+            scheduled_dates,
+            criticality,
+            pm_plans!inner (
               id,
-              email,
-              full_name
+              status,
+              child_asset_id,
+              site_id,
+              created_by,
+              child_assets!inner (
+                id,
+                name,
+                criticality
+              )
             )
-          ),
-          task_signoff (
-            id,
-            due_date,
-            scheduled_date,
-            scheduled_time,
-            comp_date
           )
         `)
-        .eq('pm_plans.status', 'Current');
+        .neq('status', 'deleted')
+        .eq('pm_tasks.pm_plans.status', 'Current')
 
       if (error) {
         console.error('Supabase error:', error);
         throw error;
       }
 
-      // Transform data to match component expectations
-      // For now, we'll get asset names from a separate query if needed
-      const transformedTasks = await Promise.all(data.map(async (task) => {
-        let assetName = 'Unknown Asset';
+      // Transform data - each record is now a task_signoff with nested task/plan data
+      const transformedTasks = [];
+      
+      for (const signoff of data) {
+        const task = signoff.pm_tasks;
+        const plan = task.pm_plans;
+        const asset = plan.child_assets;
         
-        // Try to get asset name from child_assets table if child_asset_id exists
-        if (task.pm_plans?.child_asset_id) {
-          try {
-            const { data: childAsset } = await supabase
-              .from('child_assets')
-              .select('name')
-              .eq('id', task.pm_plans.child_asset_id)
-              .single();
-            
-            if (childAsset) {
-              assetName = childAsset.name;
-            }
-          } catch (assetError) {
-            // Could not fetch asset name for task
+        // Get asset name from nested child_assets data
+        const assetName = asset?.name || 'Unknown Asset';
+        
+        // Get due date from signoff record
+        const dueDate = signoff.due_date || 'No date';
+        
+        // Use scheduled_date and scheduled_time from task_signoff, fallback to due_date and default time
+        const scheduledDate = signoff.scheduled_date || dueDate;
+        const scheduledTime = signoff.scheduled_time || '09:00';
+        
+        // Determine task status based on signoff completion and due date
+        let taskStatus;
+        if (signoff.comp_date) {
+          taskStatus = 'Completed';
+        } else {
+          taskStatus = 'Scheduled';
+          if (dueDate !== 'No date' && new Date(dueDate) < new Date()) {
+            taskStatus = 'Overdue';
           }
         }
         
-        // Get the most recent task_signoff for due date and scheduled info
-        const latestSignoff = task.task_signoff?.[0]; // Assuming ordered by most recent
-        const dueDate = latestSignoff?.due_date || 
-                       ((task.scheduled_dates && task.scheduled_dates.length > 0) ? task.scheduled_dates[0] : 'No date');
-        
-        // Use scheduled_date and scheduled_time from task_signoff, fallback to due_date and default time
-        const scheduledDate = latestSignoff?.scheduled_date || dueDate;
-        const scheduledTime = latestSignoff?.scheduled_time || '09:00';
-        
-        // Use pm_tasks.status for task status, but enhance based on due date
-        let taskStatus = task.status || 'Scheduled';
-        if (taskStatus !== 'Completed' && dueDate !== 'No date' && new Date(dueDate) < new Date()) {
-          taskStatus = 'Overdue';
-        }
-        
-        return {
+        transformedTasks.push({
           id: task.id,
           asset: assetName,
           task: task.task_name || 'No description',
@@ -224,17 +243,17 @@ export default function MaintenanceSchedule() {
           dueDate: dueDate, // Actual due date from task_signoff
           scheduledDate: scheduledDate, // Scheduled date from task_signoff
           scheduledTime: scheduledTime, // Scheduled time from task_signoff
-          technician: task.pm_plans?.users?.full_name || 'Unassigned',
+          technician: 'Unassigned', // Will need to fetch user data separately if needed
           duration: task.est_minutes ? `${task.est_minutes} min` : (task.maintenance_interval || 'Unknown'),
           status: taskStatus,
-          priority: task.criticality || 'Medium', // Use task criticality or default to Medium
-          planId: task.pm_plan_id,
-          signoffId: latestSignoff?.id, // Store signoff ID for updates
-          siteId: task.pm_plans?.site_id,
-          createdByEmail: task.pm_plans?.users?.email,
-          notes: task.notes,
-          completedAt: task.completed_at,
-          actualDuration: task.actual_duration,
+          priority: task.criticality || 'Medium', // Task criticality from pm_tasks table
+          planId: plan.id,
+          signoffId: signoff.id, // Store signoff ID for updates
+          siteId: plan?.site_id,
+          createdByEmail: '', // Will need to fetch separately if needed
+          notes: '', // Notes field doesn't exist in pm_tasks
+          completedAt: signoff.comp_date, // Use comp_date from signoff
+          actualDuration: null, // Field doesn't exist
           instructions: task.instructions,
           // AI fields from pm_tasks table
           time_to_complete: task.est_minutes || 'N/A',
@@ -250,9 +269,10 @@ export default function MaintenanceSchedule() {
           scheduled_dates: task.scheduled_dates,
           consumables: task.consumables,
           // Asset information
-          childAssetId: task.pm_plans?.child_asset_id
-        };
-      }));
+          childAssetId: plan?.child_asset_id,
+          maintenance_interval: task.maintenance_interval // Needed for createNextTask
+        });
+      }
 
       setScheduledTasks(transformedTasks)
       
@@ -1159,7 +1179,8 @@ export default function MaintenanceSchedule() {
           .update({
             tech_id: signOffData.technician_id,
             total_expense: parseFloat(signOffData.total_expense) || 0,
-            comp_date: signOffData.completion_date
+            comp_date: signOffData.completion_date,
+            status: 'completed' // Mark as completed when signed off
           })
           .eq('id', existingSignoff.id)
           .select()
@@ -1174,7 +1195,8 @@ export default function MaintenanceSchedule() {
           task_id: signingOffTask.id,
           total_expense: parseFloat(signOffData.total_expense) || 0,
           due_date: signingOffTask.date,
-          comp_date: signOffData.completion_date
+          comp_date: signOffData.completion_date,
+          status: 'completed' // Mark as completed when signed off
         }
 
         const { data: newSignOff, error: signOffError } = await supabase
@@ -1234,17 +1256,8 @@ export default function MaintenanceSchedule() {
         if (docError) throw docError
       }
 
-      // Update the task status to 'Completed'
-      const { error: taskUpdateError } = await supabase
-        .from('pm_tasks')
-        .update({ status: 'Completed' })
-        .eq('id', signingOffTask.id)
-
-      if (taskUpdateError) {
-        console.error('Error updating task status:', taskUpdateError)
-        console.error('Task update error details:', JSON.stringify(taskUpdateError, null, 2))
-        // Don't throw here, just log as the sign-off was successful
-      }
+      // Note: We don't update the task status to 'Completed' because tasks are recurring.
+      // Only the task_signoff record is marked complete. The task remains active for future occurrences.
 
       // Create next occurrence of the task based on maintenance interval
       await createNextTask(signingOffTask)
@@ -1282,11 +1295,38 @@ export default function MaintenanceSchedule() {
       const completionDate = new Date(signOffData.completion_date)
       let nextDate = new Date(completionDate)
 
-      // Helper function to parse maintenance interval (e.g., "3 months" -> 3)
+      // Helper function to parse maintenance interval and convert to months
       const parseMaintenanceInterval = (intervalStr) => {
         if (!intervalStr) return 0;
-        const cleaned = intervalStr.toLowerCase().replace('months', '').replace('month', '').trim();
-        return parseInt(cleaned) || 0;
+        
+        const interval = intervalStr.toLowerCase().trim();
+        
+        // Handle text-based intervals
+        if (interval.includes('annual')) return 12;
+        if (interval.includes('semi-annual') || interval.includes('biannual')) return 6;
+        if (interval.includes('quarter')) return 3;
+        if (interval.includes('bimonth') || interval.includes('bi-month')) return 2;
+        if (interval.includes('month')) {
+          // Extract number from "# months" format
+          const match = interval.match(/(\d+)\s*month/);
+          return match ? parseInt(match[1]) : 1;
+        }
+        if (interval.includes('week')) {
+          // Convert weeks to months (approximate)
+          const match = interval.match(/(\d+)\s*week/);
+          const weeks = match ? parseInt(match[1]) : 1;
+          return Math.round(weeks / 4.33); // 4.33 weeks per month average
+        }
+        if (interval.includes('day')) {
+          // Convert days to months (approximate)
+          const match = interval.match(/(\d+)\s*day/);
+          const days = match ? parseInt(match[1]) : 1;
+          return Math.round(days / 30.44); // 30.44 days per month average
+        }
+        
+        // Try to extract just a number (assume months)
+        const numberMatch = interval.match(/(\d+)/);
+        return numberMatch ? parseInt(numberMatch[1]) : 1;
       };
 
       // Helper function to adjust date for weekends
@@ -1302,10 +1342,13 @@ export default function MaintenanceSchedule() {
 
       // Parse interval and calculate next date
       const intervalMonths = parseMaintenanceInterval(interval);
+      console.log(`Parsing maintenance interval: "${interval}" -> ${intervalMonths} months`);
+      
       if (intervalMonths > 0) {
         nextDate.setMonth(nextDate.getMonth() + intervalMonths);
       } else {
         // Default to 1 month if no valid interval
+        console.log('No valid interval found, defaulting to 1 month');
         nextDate.setMonth(nextDate.getMonth() + 1);
       }
 
@@ -1320,7 +1363,8 @@ export default function MaintenanceSchedule() {
         scheduled_time: null, // No time scheduled yet
         tech_id: null,
         total_expense: null,
-        comp_date: null
+        comp_date: null,
+        status: 'pending' // Set status as pending for new task occurrence
       }
 
       console.log('Creating next task_signoff record:', JSON.stringify(nextSignoffData, null, 2))
@@ -1339,6 +1383,90 @@ export default function MaintenanceSchedule() {
     } catch (error) {
       console.error('Error in createNextTask:', error)
       // Don't throw error to avoid disrupting the sign-off process
+    }
+  }
+
+  const copyPreviousConsumables = async (currentTask) => {
+    try {
+      // Find the most recent completed signoff for the same task
+      const { data: previousSignoffs, error: signoffError } = await supabase
+        .from('task_signoff')
+        .select(`
+          id,
+          comp_date,
+          signoff_consumables (
+            consumable,
+            used,
+            brand,
+            version,
+            cost
+          )
+        `)
+        .eq('task_id', currentTask.id)
+        .not('comp_date', 'is', null) // Only completed signoffs
+        .order('comp_date', { ascending: false })
+        .limit(1)
+
+      if (signoffError) {
+        console.error('Error fetching previous signoffs:', signoffError)
+        toast({
+          title: "Error",
+          description: "Failed to fetch previous signoff data",
+          variant: "destructive",
+        })
+        return
+      }
+
+      if (!previousSignoffs || previousSignoffs.length === 0) {
+        toast({
+          title: "No Previous Data",
+          description: "No previous signoffs found for this task",
+          variant: "default",
+        })
+        return
+      }
+
+      const previousSignoff = previousSignoffs[0]
+      const previousConsumables = previousSignoff.signoff_consumables || []
+
+      if (previousConsumables.length === 0) {
+        toast({
+          title: "No Consumables Data",
+          description: "No consumables data found in previous signoff",
+          variant: "default",
+        })
+        return
+      }
+
+      // Convert previous consumables to the current form format
+      const consumablesForForm = previousConsumables.map((item, index) => ({
+        id: Date.now() + index,
+        name: item.consumable || '',
+        needed: item.used || false,
+        brand: item.brand || '',
+        version: item.version || '',
+        cost: item.cost ? item.cost.toString() : ''
+      }))
+
+      // Update the form with previous consumables data
+      setSignOffData(prev => ({
+        ...prev,
+        consumables: consumablesForForm
+      }))
+
+      toast({
+        title: "Success",
+        description: `Copied ${consumablesForForm.length} consumables from previous signoff`,
+        variant: "default",
+      })
+
+    } catch (error) {
+      console.error('Error copying previous consumables:', error)
+      toast({
+        title: "Error",
+        description: "Failed to copy previous consumables data",
+        variant: "destructive",
+      })
     }
   }
 
@@ -1533,6 +1661,19 @@ export default function MaintenanceSchedule() {
   
   // Filter and sort tasks
   let processedTasks = scheduledTasks.filter(task => {
+    // Debug logging for problematic filters
+    const debugLog = false; // Set to true to enable debugging
+    if (debugLog && (filterAsset || filterTask)) {
+      console.log('Filtering task:', {
+        id: task.id,
+        asset: task.asset,
+        task: task.task,
+        filterAsset,
+        filterTask,
+        assetMatch: filterAsset ? (task.asset || '').toLowerCase().includes(filterAsset.toLowerCase()) : 'N/A',
+        taskMatch: filterTask ? (task.task || '').toLowerCase().includes(filterTask.toLowerCase()) : 'N/A'
+      });
+    }
     
     // Filter out completed tasks unless showCompletedTasks is true
     if (!showCompletedTasks && task.status === 'Completed') {
@@ -1557,10 +1698,44 @@ export default function MaintenanceSchedule() {
     if (filterScheduledDate && task.scheduledDate !== filterScheduledDate) return false
     
     // Asset text filter
-    if (filterAsset && !task.asset.toLowerCase().includes(filterAsset.toLowerCase())) return false
+    if (filterAsset) {
+      const assetLower = (task.asset || '').toLowerCase();
+      const filterLower = filterAsset.toLowerCase();
+      const matches = assetLower.includes(filterLower);
+      
+      if (debugLog) {
+        console.log('Asset filter check:', {
+          taskId: task.id,
+          originalAsset: task.asset,
+          assetLower,
+          filterLower,
+          matches,
+          willFilter: !matches
+        });
+      }
+      
+      if (!matches) return false;
+    }
     
-    // Task text filter
-    if (filterTask && !task.task.toLowerCase().includes(filterTask.toLowerCase())) return false
+    // Task text filter  
+    if (filterTask) {
+      const taskLower = (task.task || '').toLowerCase();
+      const filterLower = filterTask.toLowerCase();
+      const matches = taskLower.includes(filterLower);
+      
+      if (debugLog) {
+        console.log('Task filter check:', {
+          taskId: task.id,
+          originalTask: task.task,
+          taskLower,
+          filterLower,
+          matches,
+          willFilter: !matches
+        });
+      }
+      
+      if (!matches) return false;
+    }
     
     return true
   })
@@ -1687,13 +1862,11 @@ export default function MaintenanceSchedule() {
               <TabsTrigger value="weekly">Weekly View</TabsTrigger>
             </TabsList>
 
-            <TabsContent value="assets" className="space-y-6" forceMount>
-              <div style={{ display: viewMode === 'assets' ? 'block' : 'none' }}>
-                <ManageAssets />
-              </div>
+            <TabsContent value="assets" className="space-y-6" forceMount hidden={viewMode !== 'assets'}>
+              <ManageAssets />
             </TabsContent>
 
-            <TabsContent value="list" className="space-y-6">
+            <TabsContent value="list" className="space-y-6" forceMount hidden={viewMode !== 'list'}>
               <Card>
                 <CardHeader>
                   <div className="flex items-center justify-between">
@@ -1931,7 +2104,7 @@ export default function MaintenanceSchedule() {
                       </TableHeader>
                       <TableBody>
                         {filteredTasks.map((task) => (
-                          <TableRow key={task.id} className={getRowClassName(task)}>
+                          <TableRow key={`${task.id}-${task.signoffId || 'no-signoff'}`} className={getRowClassName(task)}>
                             <TableCell className="font-medium whitespace-nowrap">{task.asset}</TableCell>
                             <TableCell>{task.task}</TableCell>
                             <TableCell>
@@ -1940,12 +2113,7 @@ export default function MaintenanceSchedule() {
                               </div>
                             </TableCell>
                             <TableCell>
-                              <div className="space-y-1">
-                                <div className="text-sm">{task.scheduledDate || 'Not scheduled'}</div>
-                                {task.scheduledTime && (
-                                  <div className="text-xs text-muted-foreground">{task.scheduledTime}</div>
-                                )}
-                              </div>
+                              <div className="text-sm">{task.scheduledDate || 'Not scheduled'}</div>
                             </TableCell>
                             <TableCell>
                               <Badge variant={getPriorityColor(task.priority)}>{task.priority}</Badge>
@@ -1970,26 +2138,31 @@ export default function MaintenanceSchedule() {
                                     <p>View task details</p>
                                   </TooltipContent>
                                 </Tooltip>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <Button variant="ghost" size="sm" onClick={() => handleEditTask(task)}>
-                                      <Edit className="h-4 w-4" />
-                                    </Button>
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    <p>Edit task</p>
-                                  </TooltipContent>
-                                </Tooltip>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <Button variant="ghost" size="sm" onClick={() => handleDeleteTask(task)}>
-                                      <Trash2 className="h-4 w-4" />
-                                    </Button>
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    <p>Delete task</p>
-                                  </TooltipContent>
-                                </Tooltip>
+                                {/* Hide Edit and Delete buttons for completed tasks */}
+                                {task.status !== 'Completed' && (
+                                  <>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button variant="ghost" size="sm" onClick={() => handleEditTask(task)}>
+                                          <Edit className="h-4 w-4" />
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>
+                                        <p>Edit task</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button variant="ghost" size="sm" onClick={() => handleDeleteTask(task)}>
+                                          <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>
+                                        <p>Delete task</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </>
+                                )}
                                 <Tooltip>
                                   <TooltipTrigger asChild>
                                     <Button variant="ghost" size="sm" onClick={() => handleExportTask(task)}>
@@ -2000,16 +2173,19 @@ export default function MaintenanceSchedule() {
                                     <p>Export task</p>
                                   </TooltipContent>
                                 </Tooltip>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <Button variant="ghost" size="sm" onClick={() => handleSignOffTask(task)}>
-                                      <CheckCircle className="h-4 w-4" />
-                                    </Button>
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    <p>Sign off task</p>
-                                  </TooltipContent>
-                                </Tooltip>
+                                {/* Hide SignOff button for completed tasks */}
+                                {task.status !== 'Completed' && (
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button variant="ghost" size="sm" onClick={() => handleSignOffTask(task)}>
+                                        <CheckCircle className="h-4 w-4" />
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      <p>Sign off task</p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                )}
                               </div>
                             </TableCell>
                           </TableRow>
@@ -2022,7 +2198,7 @@ export default function MaintenanceSchedule() {
               </Card>
             </TabsContent>
 
-            <TabsContent value="calendar" className="space-y-6">
+            <TabsContent value="calendar" className="space-y-6" forceMount hidden={viewMode !== 'calendar'}>
               {isDragging && (
                 <div className="bg-blue-100 border border-blue-300 rounded-lg p-3 mb-4">
                   <div className="flex items-center text-blue-700">
@@ -2103,7 +2279,7 @@ export default function MaintenanceSchedule() {
                             <div className="space-y-1">
                               {tasksForDay.slice(0, 3).map((task) => (
                                 <div
-                                  key={task.id}
+                                  key={`${task.id}-${task.signoffId || 'no-signoff'}`}
                                   draggable={true}
                                   onDragStart={(e) => handleDragStart(e, task)}
                                   onDragEnd={handleDragEnd}
@@ -2144,7 +2320,7 @@ export default function MaintenanceSchedule() {
                         .filter((task) => (task.scheduledDate || task.dueDate) === selectedDate)
                         .map((task) => (
                           <div 
-                            key={task.id} 
+                            key={`${task.id}-${task.signoffId || 'no-signoff'}`} 
                             className="border rounded-lg p-4 cursor-move select-none hover:shadow-md transition-shadow"
                             draggable={true}
                             onDragStart={(e) => handleDragStart(e, task)}
@@ -2181,26 +2357,31 @@ export default function MaintenanceSchedule() {
                                     <p>View task details</p>
                                   </TooltipContent>
                                 </Tooltip>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <Button variant="ghost" size="sm" onClick={() => handleEditTask(task)}>
-                                      <Edit className="h-4 w-4" />
-                                    </Button>
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    <p>Edit task</p>
-                                  </TooltipContent>
-                                </Tooltip>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <Button variant="ghost" size="sm" onClick={() => handleDeleteTask(task)}>
-                                      <Trash2 className="h-4 w-4" />
-                                    </Button>
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    <p>Delete task</p>
-                                  </TooltipContent>
-                                </Tooltip>
+                                {/* Hide Edit and Delete buttons for completed tasks */}
+                                {task.status !== 'Completed' && (
+                                  <>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button variant="ghost" size="sm" onClick={() => handleEditTask(task)}>
+                                          <Edit className="h-4 w-4" />
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>
+                                        <p>Edit task</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button variant="ghost" size="sm" onClick={() => handleDeleteTask(task)}>
+                                          <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>
+                                        <p>Delete task</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </>
+                                )}
                                 <Tooltip>
                                   <TooltipTrigger asChild>
                                     <Button variant="ghost" size="sm" onClick={() => handleExportTask(task)}>
@@ -2226,7 +2407,7 @@ export default function MaintenanceSchedule() {
               )}
             </TabsContent>
 
-            <TabsContent value="weekly" className="space-y-6">
+            <TabsContent value="weekly" className="space-y-6" forceMount hidden={viewMode !== 'weekly'}>
               <Card>
                 <CardHeader>
                   <CardTitle>Weekly Overview</CardTitle>
@@ -2285,8 +2466,8 @@ export default function MaintenanceSchedule() {
           {/* View Task Dialog */}
           {showViewDialog && viewingTask && (
             <Dialog open={showViewDialog} onOpenChange={setShowViewDialog}>
-              <DialogContent className="max-w-3xl">
-                <DialogHeader>
+              <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
+                <DialogHeader className="flex-shrink-0">
                   <DialogTitle className="flex items-center justify-between">
                     <span>Task Details: {viewingTask.task}</span>
                     <Badge variant={getStatusColor(viewingTask.status)}>{viewingTask.status}</Badge>
@@ -2296,7 +2477,8 @@ export default function MaintenanceSchedule() {
                   </DialogDescription>
                 </DialogHeader>
 
-                <div className="space-y-6">
+                <div className="flex-1 overflow-hidden">
+                  <div className="h-full overflow-y-auto space-y-6 px-1" style={{ maxHeight: 'calc(90vh - 180px)' }}>
                   {/* Task Overview */}
                   <div className="grid grid-cols-3 gap-4 p-4 bg-blue-50 rounded-lg border border-blue-100">
                     <div className="text-center">
@@ -2472,9 +2654,10 @@ export default function MaintenanceSchedule() {
                       </div>
                     </div>
                   </div>
+                  </div>
                 </div>
 
-                <div className="flex justify-end space-x-2 mt-6">
+                <div className="flex justify-end space-x-2 mt-6 flex-shrink-0">
                   <Button variant="outline" onClick={() => handleExportTask(viewingTask)}>
                     <Download className="h-4 w-4 mr-2" />
                     Export Task
@@ -2577,7 +2760,7 @@ export default function MaintenanceSchedule() {
                 </DialogHeader>
 
                 <div className="flex-1 overflow-hidden">
-                  <div className="h-full overflow-y-auto space-y-6 pr-2" style={{ maxHeight: 'calc(90vh - 220px)' }}>
+                  <div className="h-full overflow-y-auto space-y-6 px-1" style={{ maxHeight: 'calc(90vh - 220px)' }}>
                   {/* Task Name */}
                   <div className="space-y-2">
                     <Label className="text-sm font-medium">Task Name</Label>
@@ -2585,7 +2768,7 @@ export default function MaintenanceSchedule() {
                       value={editedTaskName} 
                       onChange={(e) => setEditedTaskName(e.target.value)}
                       placeholder="Task name"
-                      className="max-w-full"
+                      className="w-full"
                     />
                   </div>
 
@@ -3083,27 +3266,39 @@ export default function MaintenanceSchedule() {
                   <div>
                     <div className="flex items-center justify-between mb-4">
                       <Label className="text-lg font-semibold">Consumables</Label>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          const newConsumable = {
-                            id: Date.now(),
-                            name: '',
-                            needed: false,
-                            brand: '',
-                            version: '',
-                            cost: ''
-                          }
-                          setSignOffData(prev => ({
-                            ...prev,
-                            consumables: [...prev.consumables, newConsumable]
-                          }))
-                        }}
-                      >
-                        Add Consumable
-                      </Button>
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={async () => {
+                            await copyPreviousConsumables(signingOffTask)
+                          }}
+                        >
+                          Copy from Previous Signoff
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const newConsumable = {
+                              id: Date.now(),
+                              name: '',
+                              needed: false,
+                              brand: '',
+                              version: '',
+                              cost: ''
+                            }
+                            setSignOffData(prev => ({
+                              ...prev,
+                              consumables: [...prev.consumables, newConsumable]
+                            }))
+                          }}
+                        >
+                          Add Consumable
+                        </Button>
+                      </div>
                     </div>
 
                     <div className="space-y-3">

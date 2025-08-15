@@ -532,6 +532,241 @@ task_signoff (
 - Fixed syntax errors with missing semicolons causing babel parser issues
 - Optimized task status update timing to avoid immediate re-renders
 
+#### Task View Infrastructure Simplification (CRITICAL - DO NOT MODIFY):
+
+**🚨 IMPORTANT: These infrastructure changes are CRITICAL to application stability. DO NOT modify or "improve" this logic unless explicitly requested by the user.**
+
+**Query Structure (MUST USE THIS EXACT PATTERN):**
+```javascript
+// Start from task_signoff as primary table with nested joins
+const { data, error } = await supabase
+  .from('task_signoff')
+  .select(`
+    id,
+    due_date,
+    scheduled_date,
+    scheduled_time,
+    comp_date,
+    status,
+    pm_tasks!inner (
+      id,
+      task_name,
+      maintenance_interval,
+      est_minutes,
+      tools_needed,
+      no_techs_needed,
+      reason,
+      safety_precautions,
+      engineering_rationale,
+      common_failures_prevented,
+      usage_insights,
+      instructions,
+      consumables,
+      scheduled_dates,
+      pm_plans!inner (
+        id,
+        status,
+        child_asset_id,
+        site_id,
+        created_by,
+        child_assets!inner (
+          id,
+          name
+        )
+      )
+    )
+  `)
+  .neq('status', 'deleted')
+  .eq('pm_tasks.pm_plans.status', 'Current')
+```
+
+**Simplified Task Display Logic:**
+- **Single Source of Truth**: Task view queries start from `task_signoff` table as primary
+- **Join Pattern**: task_signoff → pm_tasks → pm_plans → child_assets
+- **No Fallback Logic**: Completely removed backward compatibility code that created extra records
+- **Controlled Process**: All valid tasks must have corresponding task_signoff records
+
+**Data Transformation (DO NOT CHANGE):**
+```javascript
+for (const signoff of data) {
+  const task = signoff.pm_tasks;
+  const plan = task.pm_plans;
+  const asset = plan.child_assets;
+  // Each record is a signoff with nested task/plan/asset data
+}
+```
+
+**Filter Logic (DO NOT CHANGE):**
+- **Primary Filter**: `.neq('status', 'deleted')` on task_signoff
+- **PM Plan Filter**: `.eq('pm_tasks.pm_plans.status', 'Current')`
+- **Completed Task Toggle**: Uses `!showCompletedTasks && task.status === 'Completed'`
+- **Status Determination**: Tasks marked 'Completed' ONLY when `signoff.comp_date` exists
+
+**Critical Implementation Details:**
+- **Record Count Accuracy**: Task view displays exactly the same number of records as task_signoff table (excluding deleted)
+- **Status Logic**: 
+  - `signoff.comp_date` exists → status = 'Completed'
+  - `signoff.comp_date` is null → status = 'Scheduled' or 'Overdue' based on due date
+- **Field Mapping**: Only use fields that actually exist in database tables
+
+**Files with Critical Logic (HANDLE WITH EXTREME CARE):**
+- `/apps/welcome/frontend/src/components/dashboard/maintenance-schedule.tsx` lines 159-275
+  - fetchTasks() function with specific query structure
+  - Data transformation from nested structure
+  - Completed task toggle functionality
+
+**What Was Removed (DO NOT RESTORE):**
+- Fallback else block for tasks without signoff records
+- Complex nested loops for signoff filtering
+- Fields that don't exist: notes from pm_tasks; tech_id, total_expense from query
+- NOTE: criticality DOES exist in pm_tasks table and is now properly included in queries
+
+**Validation Requirements:**
+- Task view record count MUST match task_signoff table count (excluding deleted records)
+- Query MUST start from task_signoff table, not pm_tasks
+- Completed task toggle MUST continue to function properly
+- All task status logic MUST be based solely on task_signoff.comp_date field
+
+#### Criticality Fields (Two Different Purposes):
+
+**🚨 IMPORTANT: There are TWO different criticality fields serving different purposes:**
+
+**1. Asset Criticality (`child_assets.criticality`):**
+- **Purpose**: Criticality of the physical asset/part itself
+- **Updated Via**: Asset View dashboard when editing child assets
+- **Use Cases**: Asset prioritization, replacement planning, resource allocation
+- **Values**: High, Medium, Low
+- **Location**: `child_assets` table
+
+**2. Task Criticality (`pm_tasks.criticality`):**
+- **Purpose**: Criticality of the specific maintenance task
+- **Updated Via**: Task View dashboard when editing maintenance tasks
+- **Use Cases**: Task prioritization, scheduling urgency, maintenance planning
+- **Values**: High, Medium, Low
+- **Location**: `pm_tasks` table
+
+**Implementation in Task View:**
+- Query includes `pm_tasks.criticality` in select statement
+- Data transformation maps `task.criticality` to `priority` field
+- Edit dialog loads task criticality and allows updates
+- Updates are saved to `pm_tasks.criticality` field
+
+**Example Scenarios:**
+- **High Asset Criticality + Low Task Criticality**: Critical equipment with routine inspection
+- **Medium Asset Criticality + High Task Criticality**: Standard equipment with critical safety check
+- **High Asset Criticality + High Task Criticality**: Critical equipment with critical maintenance task
+
+### Task View Dialog Constraints (CRITICAL - DO NOT MODIFY):
+
+**🚨 IMPORTANT: These UI constraints are CRITICAL for usability. DO NOT modify without explicit user request.**
+
+#### View Task Dialog Height Constraint:
+
+**Problem Solved:** View task detail popup was taller than browser viewport, causing content to be inaccessible and no scrolling available.
+
+**Solution Implementation (`maintenance-schedule.tsx`):**
+```javascript
+// View Task Dialog with proper height constraints
+<DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
+  <DialogHeader className="flex-shrink-0">
+    {/* Fixed header */}
+  </DialogHeader>
+  
+  <div className="flex-1 overflow-hidden">
+    <div className="h-full overflow-y-auto space-y-6 px-1" style={{ maxHeight: 'calc(90vh - 180px)' }}>
+      {/* Scrollable content area */}
+    </div>
+  </div>
+  
+  <div className="flex justify-end space-x-2 mt-6 flex-shrink-0">
+    {/* Fixed footer buttons */}
+  </div>
+</DialogContent>
+```
+
+**Technical Details:**
+- **Dialog Height**: Constrained to 90% of viewport height (`max-h-[90vh]`)
+- **Layout Structure**: Flexbox column layout with header, scrollable content, and footer
+- **Header**: Fixed with `flex-shrink-0` - never shrinks or scrolls
+- **Content Area**: Scrollable with `overflow-y-auto` and calculated max height
+- **Footer**: Fixed with `flex-shrink-0` - always visible
+- **Scrolling**: Vertical scrollbar appears when content exceeds available space
+
+**User Experience:**
+- All task details remain accessible through scrolling
+- Header and action buttons always visible
+- Fits within any browser viewport size
+- Smooth scrolling for long task details
+
+#### Completed Task Action Button Restrictions:
+
+**Problem Solved:** Users could accidentally edit, delete, or sign off tasks that were already completed, potentially corrupting data integrity.
+
+**Solution Implementation:**
+```javascript
+// Conditional rendering for Edit and Delete buttons
+{task.status !== 'Completed' && (
+  <>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button variant="ghost" size="sm" onClick={() => handleEditTask(task)}>
+          <Edit className="h-4 w-4" />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>
+        <p>Edit task</p>
+      </TooltipContent>
+    </Tooltip>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button variant="ghost" size="sm" onClick={() => handleDeleteTask(task)}>
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>
+        <p>Delete task</p>
+      </TooltipContent>
+    </Tooltip>
+  </>
+)}
+
+// Conditional rendering for SignOff button
+{task.status !== 'Completed' && (
+  <Tooltip>
+    <TooltipTrigger asChild>
+      <Button variant="ghost" size="sm" onClick={() => handleSignOffTask(task)}>
+        <CheckCircle className="h-4 w-4" />
+      </Button>
+    </TooltipTrigger>
+    <TooltipContent>
+      <p>Sign off task</p>
+    </TooltipContent>
+  </Tooltip>
+)}
+```
+
+**Button Visibility Rules:**
+- **Hidden for Completed Tasks**: Edit Task, Delete Task, Sign Off Task
+- **Always Visible**: View Task Details, Export Task
+- **Status Check**: Uses `task.status !== 'Completed'` condition
+- **Applied Globally**: All task tables and views use same conditional logic
+
+**Data Integrity Benefits:**
+- Prevents accidental modification of completed work
+- Maintains audit trail accuracy
+- Reduces user errors and data corruption
+- Clear visual indication of task completion status
+
+**Files Modified:**
+- `/src/components/dashboard/maintenance-schedule.tsx` - Dialog height constraints and button conditional rendering
+
+**Validation Requirements:**
+- View task dialog MUST fit within browser viewport with scrolling
+- Header and footer MUST remain fixed and visible during scrolling
+- Edit/Delete/SignOff buttons MUST be hidden for completed tasks
+- View and Export buttons MUST remain visible for all task statuses
+- All changes MUST maintain existing functionality for non-completed tasks
+
 ### Terminology
 
 - **Site Admin / Super Admin**: These terms are used interchangeably in the codebase. A "super admin" is actually a site admin with administrative privileges for managing sites, users, and assets.
@@ -562,6 +797,181 @@ Backend requires:
 - `/src/pages/PMPlanner.jsx` - PM planning with asset dropdown integration
 - `/src/components/forms/FileUpload.jsx` - File upload component for manuals
 - PM plan display components: `Info`, `InfoBlock` (shared between PMPlanner and AssetView)
+
+### Tab State Persistence (CRITICAL - DO NOT REMOVE):
+
+**🚨 IMPORTANT: This tab persistence functionality is CRITICAL to user experience. DO NOT modify or remove unless explicitly requested.**
+
+**Problem Solved:** Dashboard tabs were losing state when switching between Asset View, Task View, Calendar View, and Weekly View. Users would lose their selected parent asset and child asset selections when navigating between tabs.
+
+**Solution Implementation:**
+
+**1. Component Persistence in Tabs (`maintenance-schedule.tsx`):**
+```javascript
+// CRITICAL: forceMount and hidden props prevent component unmounting
+<TabsContent value="assets" className="space-y-6" forceMount hidden={viewMode !== 'assets'}>
+  <ManageAssets />
+</TabsContent>
+<TabsContent value="list" className="space-y-6" forceMount hidden={viewMode !== 'list'}>
+<TabsContent value="calendar" className="space-y-6" forceMount hidden={viewMode !== 'calendar'}>
+<TabsContent value="weekly" className="space-y-6" forceMount hidden={viewMode !== 'weekly'}>
+```
+
+**2. State Persistence in ManageAssets (`ManageAssets.jsx`):**
+```javascript
+// Persist selected parent asset across tab switches
+const [selectedParentAsset, setSelectedParentAssetInternal] = useState(() => {
+  const saved = loadState('selectedParentAsset', null);
+  return saved;
+});
+
+const setSelectedParentAsset = (asset) => {
+  setSelectedParentAssetInternal(asset);
+  saveState('selectedParentAsset', asset);
+};
+
+// Persist selected child asset across tab switches  
+const [selectedChildAssetForPlan, setSelectedChildAssetForPlanInternal] = useState(() => {
+  const saved = loadState('selectedChildAssetForPlan', null);
+  return saved;
+});
+
+const setSelectedChildAssetForPlan = (asset) => {
+  setSelectedChildAssetForPlanInternal(asset);
+  saveState('selectedChildAssetForPlan', asset);
+};
+```
+
+**3. Automatic State Restoration:**
+- `loadParentAssets()` function automatically restores selected parent asset after loading
+- `loadChildAssets()` function automatically restores selected child asset and loads associated PM plans
+- Uses existing `utils/statePersistence.js` utility with 30-minute expiry in sessionStorage
+
+**Technical Details:**
+- **forceMount**: Keeps all tab content mounted in DOM but hidden when inactive
+- **hidden**: Controls visibility without unmounting components
+- **sessionStorage**: Persists state within browser session (cleared when tab closes)
+- **Automatic Restoration**: Seamlessly restores selections after data loads without user intervention
+
+**User Experience:**
+- Select parent asset → switch tabs → return to Asset View → selection preserved
+- Select child asset → switch tabs → return to Asset View → both parent and child selections preserved
+- PM plans automatically reload for restored child asset selections
+- Zero user interaction required for state restoration
+
+**Files Modified:**
+- `/src/components/dashboard/maintenance-schedule.tsx` - Tab persistence with forceMount
+- `/src/pages/ManageAssets.jsx` - State persistence and restoration logic
+- Uses existing `/src/utils/statePersistence.js` utility
+
+**Validation Requirements:**
+- Asset selections MUST persist across all tab switches
+- PM plan context MUST be restored when returning to Asset View
+- Performance MUST remain optimal (no unnecessary re-renders or API calls)
+- State MUST expire after 30 minutes to prevent stale data
+
+### Date Handling (CRITICAL - DO NOT MODIFY):
+
+**🚨 IMPORTANT: This date handling functionality is CRITICAL to data integrity. DO NOT modify unless explicitly requested.**
+
+**Problem Solved:** HTML date inputs were causing timezone-related date shifts. Users would enter "9/1/2025" but it would save as "8/31/2025" due to timezone conversion issues between browser local time and database storage.
+
+**Root Cause:** When browsers handle HTML date inputs, they interpret dates in local timezone. JavaScript's `new Date()` constructor with "YYYY-MM-DD" strings interprets them as UTC midnight, causing timezone shifts when converted back to local time for display or editing.
+
+**Solution Implementation (`ManageAssets.jsx`):**
+
+**1. Dedicated Date Formatting Functions:**
+```javascript
+// For display purposes only (shows user-friendly dates)
+const formatDate = (dateString) => {
+  if (!dateString) return '';
+  // Handle date as string to avoid timezone issues
+  if (typeof dateString === 'string' && dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
+    const [year, month, day] = dateString.split('-');
+    return new Date(year, month - 1, day).toLocaleDateString();
+  }
+  return new Date(dateString).toLocaleDateString();
+};
+
+// For HTML date inputs (always YYYY-MM-DD format)
+const formatDateForInput = (dateString) => {
+  if (!dateString) return '';
+  
+  // If already in YYYY-MM-DD format, return as-is
+  if (typeof dateString === 'string' && dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
+    return dateString;
+  }
+  
+  // Handle ISO date strings from database (e.g., "2025-09-01T00:00:00.000Z")
+  if (typeof dateString === 'string' && dateString.includes('T')) {
+    return dateString.split('T')[0]; // Extract date part before 'T'
+  }
+  
+  // Force local timezone interpretation for other formats
+  const date = new Date(dateString + 'T00:00:00');
+  if (isNaN(date.getTime())) return '';
+  
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  
+  return `${year}-${month}-${day}`;
+};
+```
+
+**2. Consistent Date Input Handling:**
+```javascript
+// When populating edit modal with existing asset data
+const openEditModal = (asset, isParent = true) => {
+  const modalData = {
+    // ... other fields
+    purchase_date: formatDateForInput(asset.purchase_date),
+    install_date: formatDateForInput(asset.install_date),
+    // For child assets:
+    plan_start_date: formatDateForInput(asset.plan_start_date)
+  };
+};
+```
+
+**3. Database Operation Date Handling:**
+```javascript
+// When creating or updating assets
+const assetData = {
+  // ... other fields
+  purchase_date: newAsset.purchase_date ? newAsset.purchase_date : null,
+  install_date: newAsset.install_date ? newAsset.install_date : null,
+  plan_start_date: newAsset.plan_start_date ? newAsset.plan_start_date : null
+};
+```
+
+**Technical Details:**
+- **Input Fields**: Always receive YYYY-MM-DD formatted strings via `formatDateForInput()`
+- **Database Storage**: Dates sent as pure YYYY-MM-DD strings or null (never empty strings)
+- **Display**: User-friendly format via `formatDate()` for table cells and detail views
+- **Timezone Handling**: Prevents shifts by avoiding UTC interpretation of date strings
+
+**Applied To All Date Operations:**
+- Parent asset creation (`handleCreateParentAsset`)
+- Child asset creation (`handleCreateChildAsset`)
+- Asset editing (`handleEditModalSave`)
+- Date display in tables and detail views
+- Edit modal population (`openEditModal`)
+
+**User Experience:**
+- Enter "9/1/2025" → saves as "2025-09-01" → displays as "9/1/2025"
+- No timezone-related date shifts
+- Consistent date handling across all asset management operations
+- Proper null handling for optional date fields
+
+**Files Modified:**
+- `/src/pages/ManageAssets.jsx` - Complete date handling overhaul with dedicated functions
+
+**Validation Requirements:**
+- Dates entered MUST save exactly as entered (no timezone shifts)
+- HTML date inputs MUST display correct dates when editing existing assets
+- Empty date fields MUST be stored as null, never empty strings
+- All CRUD operations MUST use consistent date formatting
+- Date display MUST be user-friendly in tables and detail views
 
 ### Testing & Quality
 

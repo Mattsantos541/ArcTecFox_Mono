@@ -33,7 +33,8 @@
       "Bash(~/.config/codespaces/setup-git.sh)",
       "Bash(kill:*)",
       "Bash(pkill:*)",
-      "Bash(fuser:*)"
+      "Bash(fuser:*)",
+      "Bash(uvicorn:*)"
     ],
     "deny": [],
     "defaultMode": "acceptEdits"
