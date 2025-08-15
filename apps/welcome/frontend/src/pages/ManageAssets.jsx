@@ -12,6 +12,7 @@ import {
 import FileUpload from '../components/forms/FileUpload';
 import { createStorageService } from '../services/storageService';
 import { saveState, loadState } from '../utils/statePersistence';
+import AssetInsightsDashboard from '../components/assets/AssetInsightsDashboard';
 
 // Loading Modal Component (copied from PMPlanner)
 function LoadingModal({ isOpen }) {
@@ -67,6 +68,7 @@ const ManageAssets = () => {
   const { user } = useAuth();
   const [parentAssets, setParentAssets] = useState([]);
   const [childAssets, setChildAssets] = useState([]);
+  const [loadingChildAssets, setLoadingChildAssets] = useState(false);
   
   // Persist selected parent asset across tab switches
   const [selectedParentAsset, setSelectedParentAssetInternal] = useState(() => {
@@ -99,6 +101,7 @@ const ManageAssets = () => {
     purchase_date: '',
     install_date: '',
     notes: '',
+    cost_to_replace: '',
     site_id: ''
   });
   const [newChildAsset, setNewChildAsset] = useState({
@@ -113,7 +116,8 @@ const ManageAssets = () => {
     operating_hours: '',
     addtl_context: '',
     plan_start_date: '',
-    criticality: ''
+    criticality: '',
+    cost_to_replace: ''
   });
   const [parentManualFile, setParentManualFile] = useState(null);
   const [childManualFile, setChildManualFile] = useState(null);
@@ -356,8 +360,11 @@ const ManageAssets = () => {
 
   const handleParentAssetSelect = async (asset) => {
     setSelectedParentAsset(asset);
+    setSelectedChildAssetForPlan(null); // Clear child selection to show parent insights
+    setLoadingChildAssets(true); // Add loading state
     await loadChildAssets(asset.id);
     await loadManuals(asset.id);
+    setLoadingChildAssets(false); // Clear loading state
   };
 
   const handleParentFileSelect = (file, error) => {
@@ -465,6 +472,7 @@ const ManageAssets = () => {
         ...newParentAsset,
         purchase_date: newParentAsset.purchase_date ? newParentAsset.purchase_date : null,
         install_date: newParentAsset.install_date ? newParentAsset.install_date : null,
+        cost_to_replace: newParentAsset.cost_to_replace ? parseFloat(newParentAsset.cost_to_replace) || null : null,
         status: 'active',
         created_by: user.id
       };
@@ -499,6 +507,7 @@ const ManageAssets = () => {
         purchase_date: '',
         install_date: '',
         notes: '',
+        cost_to_replace: '',
         site_id: userSites.length === 1 ? userSites[0].id : ''
       });
       setParentManualFile(null);
@@ -539,6 +548,7 @@ const ManageAssets = () => {
         addtl_context: newChildAsset.addtl_context || null,
         plan_start_date: newChildAsset.plan_start_date ? newChildAsset.plan_start_date : null,
         criticality: newChildAsset.criticality || null,
+        cost_to_replace: newChildAsset.cost_to_replace ? parseFloat(newChildAsset.cost_to_replace) || null : null,
         parent_asset_id: selectedParentAsset.id,
         status: 'active',
         created_by: user.id
@@ -572,7 +582,8 @@ const ManageAssets = () => {
         operating_hours: '',
         addtl_context: '',
         plan_start_date: '',
-        criticality: ''
+        criticality: '',
+        cost_to_replace: ''
       });
       setChildManualFile(null);
       setChildFileUploadError(null);
@@ -769,7 +780,8 @@ const ManageAssets = () => {
       category: asset.category || '',
       purchase_date: formatDateForInput(asset.purchase_date),
       install_date: formatDateForInput(asset.install_date),
-      notes: asset.notes || ''
+      notes: asset.notes || '',
+      cost_to_replace: asset.cost_to_replace || ''
     };
     
     // Include make, model, serial_number for both parent and child assets
@@ -829,6 +841,9 @@ const ManageAssets = () => {
       // Ensure dates are properly formatted or null (never empty strings)
       dataToUpdate.purchase_date = dataToUpdate.purchase_date ? dataToUpdate.purchase_date : null;
       dataToUpdate.install_date = dataToUpdate.install_date ? dataToUpdate.install_date : null;
+      
+      // Handle cost_to_replace field - ensure it's a number or null
+      dataToUpdate.cost_to_replace = dataToUpdate.cost_to_replace ? parseFloat(dataToUpdate.cost_to_replace) || null : null;
       
       if (!editModalIsParent) {
         // Map the frontend field names to database field names for child assets
@@ -1330,6 +1345,7 @@ const ManageAssets = () => {
           operating_hours: null,
           addtl_context: null,
           criticality: suggestion.criticality_level || null, // Store criticality in dedicated field
+          cost_to_replace: null, // User will fill this in later
           plan_start_date: null,
           parent_asset_id: createdParentAsset.id,
           status: 'active',
@@ -1667,6 +1683,19 @@ const ManageAssets = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Cost to Replace ($)
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  value={newParentAsset.cost_to_replace}
+                  onChange={(e) => setNewParentAsset(prev => ({ ...prev, cost_to_replace: e.target.value }))}
+                  placeholder="0.00"
+                  className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
                   Notes
                 </label>
                 <textarea
@@ -1712,6 +1741,7 @@ const ManageAssets = () => {
                       purchase_date: '',
                       install_date: '',
                       notes: '',
+                      cost_to_replace: '',
                       site_id: userSites.length === 1 ? userSites[0].id : ''
                     });
                     setParentManualFile(null);
@@ -2081,6 +2111,19 @@ const ManageAssets = () => {
                                       <option value="Low">Low</option>
                                     </select>
                                   </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                      Cost to Replace ($)
+                                    </label>
+                                    <input
+                                      type="number"
+                                      step="any"
+                                      value={newChildAsset.cost_to_replace}
+                                      onChange={(e) => setNewChildAsset(prev => ({ ...prev, cost_to_replace: e.target.value }))}
+                                      placeholder="0.00"
+                                      className="block w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                    />
+                                  </div>
                                 </div>
                                 
                                 {/* Full width textarea field */}
@@ -2146,7 +2189,9 @@ const ManageAssets = () => {
                                         notes: '',
                                         operating_hours: '',
                                         addtl_context: '',
-                                        plan_start_date: ''
+                                        plan_start_date: '',
+                                        criticality: '',
+                                        cost_to_replace: ''
                                       });
                                       setChildManualFile(null);
                                       setChildFileUploadError(null);
@@ -2171,14 +2216,44 @@ const ManageAssets = () => {
         </div>
       </div>
 
+      {/* Asset Insights Dashboard for Parent Asset */}
+      {selectedParentAsset && !selectedChildAssetForPlan && (
+        <div className="mt-8">
+          <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+            <div className="px-6 py-4 border-b border-blue-200 bg-gradient-to-r from-blue-600 to-indigo-600">
+              <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                <div className="w-2 h-2 bg-white rounded-full"></div>
+                Asset Insights: {selectedParentAsset.name}
+              </h3>
+              <p className="text-blue-100 text-sm mt-1">Comprehensive maintenance analytics and cost tracking</p>
+            </div>
+            <div className="p-6">
+              {loadingChildAssets ? (
+                <div className="flex justify-center items-center h-64">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                  <span className="ml-2 text-gray-600">Loading asset data...</span>
+                </div>
+              ) : (
+                <AssetInsightsDashboard 
+                  parentAsset={selectedParentAsset} 
+                  childAssets={childAssets}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Child Asset Details Display Section */}
       {selectedChildAssetForPlan && (
         <div className="mt-8">
-          <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
-            <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
-              <h3 className="text-lg font-semibold text-gray-800">
+          <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+            <div className="px-6 py-4 border-b border-green-200 bg-gradient-to-r from-green-500 to-emerald-500">
+              <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                <div className="w-2 h-2 bg-white rounded-full"></div>
                 Child Asset Details: {selectedChildAssetForPlan.name}
               </h3>
+              <p className="text-green-100 text-sm mt-1">Component-specific information and maintenance plans</p>
             </div>
             
             <div className="p-6">
@@ -2510,6 +2585,19 @@ const ManageAssets = () => {
                     type="date"
                     value={editModalData.install_date}
                     onChange={(e) => setEditModalData(prev => ({ ...prev, install_date: e.target.value }))}
+                    className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Cost to Replace ($)
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={editModalData.cost_to_replace}
+                    onChange={(e) => setEditModalData(prev => ({ ...prev, cost_to_replace: e.target.value }))}
+                    placeholder="0.00"
                     className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                   />
                 </div>
