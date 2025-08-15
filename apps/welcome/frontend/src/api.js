@@ -239,28 +239,49 @@ export const savePMPlanInput = async (planData) => {
 
 // Helper function to parse maintenance interval (e.g., "3 months" -> 3, "annually" -> 12)
 export const parseMaintenanceInterval = (intervalStr) => {
-  if (!intervalStr) return 0;
+  console.log(`🔍 parseMaintenanceInterval: input="${intervalStr}"`);
+  
+  if (!intervalStr) {
+    console.log(`🔍 No interval provided, returning 0`);
+    return 0;
+  }
   
   const interval = intervalStr.toLowerCase().trim();
+  console.log(`🔍 Cleaned interval: "${interval}"`);
   
   // Check for text-based intervals first
   if (interval.includes('annual') || interval.includes('yearly')) {
+    console.log(`🔍 Matched annual/yearly -> 12 months`);
     return 12; // Annually = 12 months
   }
   if (interval.includes('biannual') || interval.includes('semi-annual') || interval.includes('twice yearly')) {
+    console.log(`🔍 Matched biannual -> 6 months`);
     return 6; // Biannually = 6 months
   }
   if (interval.includes('quarter')) {
+    console.log(`🔍 Matched quarterly -> 3 months`);
     return 3; // Quarterly = 3 months
   }
   if (interval.includes('month')) {
     // Handle "monthly" or "# months"
     if (interval === 'monthly' || interval === 'month') {
+      console.log(`🔍 Matched monthly -> 1 month`);
       return 1; // Monthly = 1 month
     }
-    // Extract number from "# months" format
-    const cleaned = interval.replace('months', '').replace('month', '').trim();
-    return parseInt(cleaned) || 1;
+    
+    // Extract number from various formats: "# months", "every # months", "3 months", etc.
+    let cleaned = interval
+      .replace(/every\s+/gi, '') // Remove "every" prefix
+      .replace(/months?/gi, '') // Remove "month" or "months"
+      .replace(/or.*$/gi, '') // Remove everything after "or" (like "or 5000 miles")
+      .trim();
+    
+    // Extract the first number found
+    const numberMatch = cleaned.match(/\d+/);
+    const result = numberMatch ? parseInt(numberMatch[0]) : 1;
+    
+    console.log(`🔍 Extracted number from "${interval}" -> cleaned="${cleaned}" -> match="${numberMatch ? numberMatch[0] : 'none'}" -> ${result} months`);
+    return result;
   }
   if (interval.includes('week')) {
     // Handle weekly, biweekly, etc.
@@ -275,11 +296,12 @@ export const parseMaintenanceInterval = (intervalStr) => {
   // Try to parse as a plain number (assuming months)
   const parsed = parseInt(interval);
   if (!isNaN(parsed)) {
+    console.log(`🔍 Parsed as number: ${parsed} months`);
     return parsed;
   }
   
   // Default to 0 if unable to parse
-  console.warn(`Unable to parse maintenance interval: "${intervalStr}", defaulting to 0`);
+  console.warn(`⚠️ Unable to parse maintenance interval: "${intervalStr}", defaulting to 0`);
   return 0;
 };
 
@@ -296,19 +318,27 @@ export const adjustForWeekend = (date) => {
 
 // Calculate due date based on start date and interval
 export const calculateDueDate = (startDate, intervalMonths) => {
+  console.log(`🔍 calculateDueDate: startDate=${startDate}, intervalMonths=${intervalMonths}`);
   const date = new Date(startDate);
+  console.log(`🔍 Parsed start date:`, date);
   
   // Handle fractional months (for weekly/biweekly)
   if (intervalMonths < 1) {
     // Convert fractional months to days (approximate: 1 month = 30 days)
     const days = Math.round(intervalMonths * 30);
+    console.log(`🔍 Adding ${days} days for fractional month`);
     date.setDate(date.getDate() + days);
   } else {
     // Handle whole months
+    console.log(`🔍 Adding ${Math.floor(intervalMonths)} months`);
     date.setMonth(date.getMonth() + Math.floor(intervalMonths));
   }
   
-  return adjustForWeekend(date).toISOString().split('T')[0];
+  const beforeWeekendAdjust = date.toISOString().split('T')[0];
+  const finalDate = adjustForWeekend(date).toISOString().split('T')[0];
+  console.log(`🔍 Before weekend adjust: ${beforeWeekendAdjust}, After: ${finalDate}`);
+  
+  return finalDate;
 };
 
 // Recalculate task_signoff due dates when plan_start_date changes
