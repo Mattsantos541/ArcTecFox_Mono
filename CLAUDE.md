@@ -138,6 +138,15 @@ Asset management available in dashboard "Asset View" tab and `/admin/assets`:
 - Weekend dates automatically moved to previous Friday
 - Stored in `task_signoff.due_date`, not `pm_tasks.scheduled_dates`
 
+**CRITICAL: Maintenance Interval Parsing (apps/welcome/frontend/src/api.js:parseMaintenanceInterval)**
+The `parseMaintenanceInterval` function is essential for accurate due date calculations. It must handle diverse AI-generated interval formats:
+- **Text formats**: "Monthly" → 1, "Quarterly" → 3, "Annually" → 12
+- **Complex formats**: "Every 3 months" → 3, "6 months or 5000 miles" → 6
+- **Parsing logic**: Removes prefixes ("every"), suffixes ("or..."), extracts first number via regex
+- **Failure impact**: Incorrect parsing causes all tasks to get same due date instead of proper intervals
+- **Dependencies**: Used by `createInitialTaskSignoffs` and `recalculateTaskSignoffDates`
+- **Location**: This logic exists in both frontend (api.js) and backend (task_due_dates.py) - keep synchronized
+
 **Task Status:**
 - Pending: `task_signoff.comp_date IS NULL`
 - Completed: `task_signoff.comp_date IS NOT NULL`
