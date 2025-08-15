@@ -64,7 +64,7 @@ function SuggestionsLoadingModal({ isOpen }) {
   );
 }
 
-const ManageAssets = () => {
+const ManageAssets = ({ onAssetUpdate, onPlanCreate }) => {
   const { user } = useAuth();
   const [parentAssets, setParentAssets] = useState([]);
   const [childAssets, setChildAssets] = useState([]);
@@ -615,6 +615,11 @@ const ManageAssets = () => {
         setEditingParentData({});
       }
       setError(null);
+      
+      // Trigger task view refresh if callback provided
+      if (onAssetUpdate) {
+        onAssetUpdate();
+      }
     } catch (err) {
       console.error('Error updating parent asset:', err);
       setError('Failed to update parent asset');
@@ -660,6 +665,11 @@ const ManageAssets = () => {
         setEditingChildData({});
       }
       setError(null);
+      
+      // Trigger task view refresh if callback provided
+      if (onAssetUpdate) {
+        onAssetUpdate();
+      }
     } catch (err) {
       console.error('Error updating child asset:', err);
       setError('Failed to update child asset');
@@ -1507,6 +1517,11 @@ const ManageAssets = () => {
       
       // Refresh PM plan statuses for all child assets
       await loadChildAssetPlanStatuses(childAssets);
+      
+      // Trigger task view and calendar refresh if callback provided
+      if (onPlanCreate) {
+        onPlanCreate();
+      }
       
       // Show success message
       setError(null);
