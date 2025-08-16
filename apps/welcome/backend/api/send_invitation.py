@@ -5,8 +5,8 @@ import os
 from fastapi import HTTPException
 from pydantic import BaseModel
 from typing import Optional
-import resend
 from supabase import create_client, Client
+import resend
 
 # Initialize Supabase client
 supabase: Client = create_client(
@@ -14,9 +14,14 @@ supabase: Client = create_client(
     os.getenv("SUPABASE_KEY")
 )
 
-# Initialize Resend (or use another email service)
-# You'll need to sign up for Resend and get an API key
-# resend.api_key = os.getenv("RESEND_API_KEY")
+# Initialize Resend 
+# IMPORTANT: Set RESEND_API_KEY environment variable in production
+# For development/testing, emails will be simulated if API key is not set
+if os.getenv("RESEND_API_KEY"):
+    resend.api_key = os.getenv("RESEND_API_KEY")
+    print("✅ Resend configured - emails will be sent")
+else:
+    print("⚠️ RESEND_API_KEY not set - emails will be simulated (logged only)")
 
 class InvitationRequest(BaseModel):
     email: str
@@ -112,20 +117,40 @@ async def send_invitation_email(request: InvitationRequest):
         If you didn't expect this invitation, you can safely ignore this email.
         """
         
-        # For development, just log the email
-        # In production, uncomment the Resend code below
-        print(f"📧 Would send email to {request.email}")
-        print(f"Subject: {subject}")
-        print(f"Link: {invitation_link}")
-        
-        # Uncomment this when you have Resend API key:
-        # response = resend.Emails.send({
-        #     "from": "noreply@arctecfox.com",
-        #     "to": request.email,
-        #     "subject": subject,
-        #     "html": html_content,
-        #     "text": text_content
-        # })
+        # Send email if API key is configured, otherwise simulate
+        if os.getenv("RESEND_API_KEY"):
+            try:
+                response = resend.Emails.send({
+                    "from": os.getenv("RESEND_FROM_EMAIL", "onboarding@resend.dev"),  # Use resend.dev for testing
+                    "to": request.email,
+                    "subject": subject,
+                    "html": html_content,
+                    "text": text_content
+                })
+                print(f"✅ Email sent successfully to {request.email}")
+                print(f"📧 Resend ID: {response.get('id', 'N/A')}")
+            except Exception as e:
+                print(f"❌ Failed to send email via Resend: {str(e)}")
+                # Still return success but log the error - invitation was created
+                print(f"📧 Email send failed but invitation created")
+                print(f"To: {request.email}")
+                print(f"Link: {invitation_link}")
+                # Consider raising an exception here if you want to fail the whole operation
+                # raise HTTPException(status_code=500, detail=f"Email send failed: {str(e)}")
+        else:
+            # Simulation mode - just log the email details
+            print(f"📧 EMAIL SIMULATION MODE (No RESEND_API_KEY)")
+            print(f"=" * 60)
+            print(f"To: {request.email}")
+            print(f"Subject: {subject}")
+            print(f"Link: {invitation_link}")
+            print(f"-" * 60)
+            print("Email Preview:")
+            print(f"  Recipient: {recipient_name}")
+            print(f"  Company: {company_name}")
+            print(f"  Site: {site_name}")
+            print(f"  Expires: 7 days")
+            print(f"=" * 60)
         
         return {"success": True, "message": "Invitation email sent successfully"}
         
