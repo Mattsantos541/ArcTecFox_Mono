@@ -36,6 +36,7 @@ from pdf_export import (
 )
 from api.suggest_child_assets import router as child_assets_router
 from api.send_invitation import InvitationRequest, send_invitation_email
+from api.send_test_invitation import TestInvitationRequest, send_test_invitation_email
 
 # Load environment variables
 load_dotenv()
@@ -398,6 +399,12 @@ async def export_pdf(request: PDFExportRequest):
 async def send_invitation_endpoint(request: InvitationRequest):
     """Send invitation email to user"""
     return await send_invitation_email(request)
+
+# Send test invitation endpoint (no database operations)
+@app.post("/api/send-test-invitation")
+async def send_test_invitation_endpoint(request: TestInvitationRequest):
+    """Send test invitation email without any database operations"""
+    return await send_test_invitation_email(request)
 
 # Debug Gemini connection
 @app.get("/api/debug-gemini")
