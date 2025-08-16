@@ -57,7 +57,7 @@ async def send_invitation_email(request: InvitationRequest):
         if os.getenv("RESEND_API_KEY"):
             try:
                 response = resend.Emails.send({
-                    "from": os.getenv("RESEND_FROM_EMAIL", "onboarding@resend.dev"),  # Use resend.dev for testing
+                    "from": os.getenv("RESEND_FROM_EMAIL", "user_admin@arctecfox.ai"),
                     "to": request.email,
                     "subject": subject,
                     "html": html_content,
