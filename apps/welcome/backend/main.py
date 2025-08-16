@@ -35,6 +35,7 @@ from pdf_export import (
     export_detailed_pm_plans_to_pdf
 )
 from api.suggest_child_assets import router as child_assets_router
+from api.send_invitation import InvitationRequest, send_invitation_email
 
 # Load environment variables
 load_dotenv()
@@ -392,6 +393,11 @@ async def export_pdf(request: PDFExportRequest):
         logger.error("❌ Error generating PDF:\n%s", traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Internal error during PDF generation: {str(e)}")
 
+# Send invitation endpoint
+@app.post("/api/send-invitation")
+async def send_invitation_endpoint(request: InvitationRequest):
+    """Send invitation email to user"""
+    return await send_invitation_email(request)
 
 # Debug Gemini connection
 @app.get("/api/debug-gemini")
