@@ -49,22 +49,43 @@ async def send_test_invitation_email(request: TestInvitationRequest):
         # Send email if API key is configured, otherwise simulate
         if resend_api_key:
             print(f"🧪 TEST EMAIL - Attempting to send via Resend...")
+            
+            # Debug the email data being sent
+            email_data = {
+                "from": os.getenv("RESEND_FROM_EMAIL", "user_admin@arctecfox.ai"),
+                "to": "willisreed17@gmail.com",
+                "subject": subject,
+                "html": html_content,
+                "text": text_content
+            }
+            
+            print(f"📧 Email data being sent:")
+            print(f"  From: {email_data['from']}")
+            print(f"  To: {email_data['to']}")
+            print(f"  Subject: {email_data['subject']}")
+            print(f"  HTML length: {len(email_data['html'])}")
+            print(f"  Text length: {len(email_data['text'])}")
+            
             try:
-                response = resend.Emails.send({
-                    "from": os.getenv("RESEND_FROM_EMAIL", "user_admin@arctecfox.ai"),
-                    "to": "willisreed17@gmail.com",  # Always send to your email for testing
-                    "subject": subject,
-                    "html": html_content,
-                    "text": text_content
-                })
+                response = resend.Emails.send(email_data)
                 print(f"✅ TEST email sent successfully to willisreed17@gmail.com")
                 print(f"📧 Resend ID: {response.get('id', 'N/A')}")
                 print(f"📧 Resend response: {response}")
             except Exception as e:
                 print(f"❌ Failed to send TEST email via Resend: {str(e)}")
                 print(f"📧 Error type: {type(e).__name__}")
+                
+                # Try to get more details from the Resend error
+                if hasattr(e, 'code'):
+                    print(f"📧 Resend error code: {e.code}")
+                if hasattr(e, 'message'):
+                    print(f"📧 Resend error message: {e.message}")
+                if hasattr(e, 'error_type'):
+                    print(f"📧 Resend error type: {e.error_type}")
+                    
                 import traceback
                 print(f"📧 Full traceback: {traceback.format_exc()}")
+                
                 # Don't raise - continue to simulation mode
         else:
             print(f"🧪 TEST EMAIL - No API key, using simulation mode")
