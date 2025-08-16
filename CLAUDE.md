@@ -69,6 +69,9 @@ signoff_consumables (id, so_id, consumable, cost, used, ...)
 -- File Storage
 loaded_manuals (id, parent_asset_id, child_asset_id, file_path, ...)
 loaded_signoff_docs (id, so_Id, file_path, ...)
+
+-- User Management
+invitations (id, email, site_id, role_id, invited_by, token, expires_at, accepted_at, ...)
 ```
 
 **Key Relationships:**
@@ -194,6 +197,41 @@ const { data } = await supabase
 - **RLS Policies** control data access through site membership
 - **File Storage** in user-specific folders: `user-manuals/{user-id}/filename`
 - **Site-based Access** through `site_users` table
+- **Email Invitations** for adding new users to sites
+
+### User Invitation System
+
+**Overview:** Email-based invitation system for granting site access to new and existing users.
+
+**Database:**
+- `invitations` table stores invitation records with unique tokens
+- Tracks email, site_id, role_id, invited_by, expiration, and acceptance status
+- RLS policies ensure only site admins can create/view invitations
+
+**Workflow:**
+1. Admin sends invitation from User Management page (`/admin/users`)
+2. System creates invitation record with 7-day expiration
+3. Email sent with unique link: `/accept-invitation?token=xxx`
+4. Recipient clicks link → signs in/up with Google → auto-added to site
+5. Invitation marked as accepted, user gains site access
+
+**Key Files:**
+- `/src/api.js`: `sendInvitation()` and `acceptInvitation()` functions
+- `/src/pages/AcceptInvitation.jsx`: Handles invitation acceptance flow
+- `/backend/api/send_invitation.py`: Email sending logic (requires email service setup)
+- `/src/database/invitations_table.sql`: Database schema and RLS policies
+
+**Important Notes:**
+- Users must exist in `auth.users` (via Google sign-in) before being added to `users` table
+- All invitation API calls use the shared Supabase client from `api.js`
+- Invitations expire after 7 days and are single-use
+
+**Email Service Setup (Resend):**
+1. Sign up at [resend.com](https://resend.com) (free tier available)
+2. Get your API key from the dashboard
+3. Add `RESEND_API_KEY` to Render environment variables
+4. Optional: Add custom `RESEND_FROM_EMAIL` (requires domain verification)
+5. Without API key: System runs in simulation mode (logs emails to console)
 
 ## Environment Variables
 
@@ -201,12 +239,18 @@ const { data } = await supabase
 # Frontend
 VITE_SUPABASE_URL
 VITE_SUPABASE_ANON_KEY
+VITE_BACKEND_URL          # Optional, defaults to localhost:8000 in dev
 
 # Backend  
 SUPABASE_URL
 SUPABASE_KEY
 GEMINI_API_KEY
 CORS_ORIGIN
+FRONTEND_URL              # For invitation links (e.g., https://yourapp.com)
+
+# Email Service (Resend)
+RESEND_API_KEY            # Required for sending actual emails (get from resend.com)
+RESEND_FROM_EMAIL         # Optional, defaults to onboarding@resend.dev
 ```
 
 ## Common Issues & Fixes
