@@ -5,14 +5,8 @@ import os
 from fastapi import HTTPException
 from pydantic import BaseModel
 from typing import Optional
-from supabase import create_client, Client
 import resend
-
-# Initialize Supabase client
-supabase: Client = create_client(
-    os.getenv("SUPABASE_URL"),
-    os.getenv("SUPABASE_KEY")
-)
+from database import get_supabase_client
 
 # Initialize Resend 
 # IMPORTANT: Set RESEND_API_KEY environment variable in production
@@ -32,6 +26,9 @@ class InvitationRequest(BaseModel):
 async def send_invitation_email(request: InvitationRequest):
     """Send invitation email to user"""
     try:
+        # Get Supabase client using existing method
+        supabase = get_supabase_client()
+        
         # Get site and company details
         site_response = supabase.table("sites").select("*, companies(*)").eq("id", request.site_id).single().execute()
         if not site_response.data:
