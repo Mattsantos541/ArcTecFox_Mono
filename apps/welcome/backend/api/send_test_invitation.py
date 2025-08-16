@@ -51,7 +51,7 @@ async def send_test_invitation_email(request: TestInvitationRequest):
             print(f"🧪 TEST EMAIL - Attempting to send via Resend...")
             try:
                 response = resend.Emails.send({
-                    "from": os.getenv("RESEND_FROM_EMAIL", "onboarding@resend.dev"),
+                    "from": os.getenv("RESEND_FROM_EMAIL", "user_admin@arctecfox.ai"),
                     "to": "willisreed17@gmail.com",  # Always send to your email for testing
                     "subject": subject,
                     "html": html_content,
