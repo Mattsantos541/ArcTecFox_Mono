@@ -449,7 +449,7 @@ async def send_invitation_endpoint(
     logger.info(f"User {user.email} sending invitation to {request.email}")
     # Note: send_invitation_email uses service client internally to read site/company data
     # This is acceptable as it needs to access data across sites for email generation
-    return await send_invitation_email(request)
+    return await send_invitation_email(request, invited_by_user_id=user.id)
 
 # Send test invitation endpoint - requires authentication  
 @app.post("/api/send-test-invitation")

@@ -25,7 +25,7 @@ class InvitationRequest(BaseModel):
     invitation_token: str
     site_id: str
 
-async def send_invitation_email(request: InvitationRequest):
+async def send_invitation_email(request: InvitationRequest, invited_by_user_id: str = None):
     """Send invitation email to user using Supabase native email (interim) or Resend (when configured)"""
     try:
         # Initialize Supabase client using same pattern as task_due_dates.py
@@ -73,13 +73,17 @@ async def send_invitation_email(request: InvitationRequest):
         
         # Create invitation record using service client (bypasses RLS)
         print(f"📝 Creating invitation record for {request.email}")
+        
+        if not invited_by_user_id:
+            raise HTTPException(status_code=400, detail="invited_by_user_id is required")
+        
         invitation_data = {
             "email": request.email,
             "site_id": request.site_id,
             "role_id": None,  # Default role will be assigned later
             "token": request.invitation_token,
             "expires_at": (datetime.now() + timedelta(days=7)).isoformat(),
-            "invited_by": None  # Will be set if we can get user context
+            "invited_by": invited_by_user_id  # Set from authenticated user
         }
         
         invitation_response = supabase.table("invitations").insert([invitation_data]).execute()
