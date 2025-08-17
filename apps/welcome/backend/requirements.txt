@@ -11,3 +11,4 @@ pillow
 reportlab
 slowapi
 resend
+email-validator
