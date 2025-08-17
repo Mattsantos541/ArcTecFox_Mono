@@ -10,11 +10,20 @@ from pathlib import Path
 
 import google.generativeai as genai
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel, Field, validator
 from supabase import create_client, Client
+# Import our new auth module
+from auth import (
+    verify_supabase_token, 
+    AuthenticatedUser, 
+    get_user_supabase_client,
+    verify_site_access,
+    require_admin_role
+)
+from database import get_user_supabase_client as db_get_user_client, get_service_supabase_client
 # Rate limiting imports (optional - graceful fallback if not available)
 try:
     from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -199,12 +208,22 @@ async def debug_cors(request: Request):
         "user_agent": request.headers.get("user-agent", "No user-agent")
     }
 
-# Main PM generation route with optional rate limiting
+# Main PM generation route with authentication and rate limiting
 @app.post("/api/generate-ai-plan", response_model=AIPlanResponse)
-async def generate_ai_plan(request: Request, plan_request: GenerateAIPlanRequest):
+async def generate_ai_plan(
+    request: Request, 
+    plan_request: GenerateAIPlanRequest,
+    user: AuthenticatedUser = Depends(verify_supabase_token)
+):
     try:
         plan_data = plan_request.planData
-        logger.info(f"🚀 Received AI plan request: {plan_data.name}")
+        logger.info(f"🚀 User {user.email} requesting AI plan for: {plan_data.name}")
+        
+        # Optional: If the plan request includes a site_id, verify access
+        # This would be added when you want to tie PM plans to specific sites
+        # if hasattr(plan_data, 'site_id') and plan_data.site_id:
+        #     from auth import verify_site_access
+        #     await verify_site_access(plan_data.site_id, user)
         
         if not plan_data.name or not plan_data.category:
             raise HTTPException(status_code=400, detail="Missing required fields: name and category")
@@ -339,11 +358,14 @@ For each PM task:
         logger.error("❌ Error generating AI plan:\n%s", traceback.format_exc())
         raise HTTPException(status_code=500, detail="Internal error during plan generation")
 
-# PDF Export endpoint
+# PDF Export endpoint with authentication
 @app.post("/api/export-pdf")
-async def export_pdf(request: PDFExportRequest):
+async def export_pdf(
+    request: PDFExportRequest,
+    user: AuthenticatedUser = Depends(verify_supabase_token)
+):
     try:
-        logger.info(f"🖨️ PDF export request received: type={request.export_type}, data_count={len(request.data)}")
+        logger.info(f"🖨️ User {user.email} requesting PDF export: type={request.export_type}, data_count={len(request.data)}")
         
         if not request.data:
             raise HTTPException(status_code=400, detail="No data provided for export")
@@ -394,17 +416,49 @@ async def export_pdf(request: PDFExportRequest):
         logger.error("❌ Error generating PDF:\n%s", traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Internal error during PDF generation: {str(e)}")
 
-# Send invitation endpoint
+# Send invitation endpoint - requires authentication
 @app.post("/api/send-invitation")
-async def send_invitation_endpoint(request: InvitationRequest):
-    """Send invitation email to user"""
+async def send_invitation_endpoint(
+    request: InvitationRequest,
+    user: AuthenticatedUser = Depends(verify_supabase_token)
+):
+    """Send invitation email to user - requires authenticated user"""
+    logger.info(f"User {user.email} sending invitation to {request.email}")
+    # Note: send_invitation_email uses service client internally to read site/company data
+    # This is acceptable as it needs to access data across sites for email generation
     return await send_invitation_email(request)
 
-# Send test invitation endpoint (no database operations)
+# Send test invitation endpoint - requires authentication  
 @app.post("/api/send-test-invitation")
-async def send_test_invitation_endpoint(request: TestInvitationRequest):
-    """Send test invitation email without any database operations"""
+async def send_test_invitation_endpoint(
+    request: TestInvitationRequest,
+    user: AuthenticatedUser = Depends(verify_supabase_token)
+):
+    """Send test invitation email without any database operations - requires authenticated user"""
+    logger.info(f"User {user.email} sending test invitation")
     return await send_test_invitation_email(request)
+
+# Example: Admin-only endpoint for system status
+@app.get("/api/admin/system-status")
+async def get_system_status(
+    user: AuthenticatedUser = Depends(require_admin_role)
+):
+    """
+    Get system status - requires admin role.
+    This is an example of protecting admin-only endpoints.
+    """
+    logger.info(f"Admin {user.email} checking system status")
+    
+    return {
+        "status": "healthy",
+        "timestamp": datetime.now().isoformat(),
+        "admin_user": user.email,
+        "services": {
+            "gemini": bool(os.getenv("GEMINI_API_KEY")),
+            "supabase": bool(os.getenv("SUPABASE_URL")),
+            "resend": bool(os.getenv("RESEND_API_KEY"))
+        }
+    }
 
 # Debug Gemini connection
 @app.get("/api/debug-gemini")

@@ -1,10 +1,14 @@
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Depends
 from pydantic import BaseModel, Field
 import google.generativeai as genai
 from typing import Optional
 import logging
 import json
 import os
+import sys
+# Add parent directory to path to import auth module
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from auth import verify_supabase_token, AuthenticatedUser
 # Optional rate limiting
 try:
     from slowapi import Limiter
@@ -41,12 +45,17 @@ class ChildSuggestInput(BaseModel):
 # Child Asset Suggestions Endpoint
 # =============================
 @router.post("/suggest-child-assets")
-async def suggest_child_assets(request: Request, input_data: ChildSuggestInput):
+async def suggest_child_assets(
+    request: Request, 
+    input_data: ChildSuggestInput,
+    user: AuthenticatedUser = Depends(verify_supabase_token)
+):
     """
     Generate AI-powered child asset suggestions based on parent asset details.
     Uses the same Google AI infrastructure as PM plan generation.
+    Requires authentication.
     """
-    logger.info(f"🧩 Suggesting child assets for parent: {input_data.parent_asset_name}")
+    logger.info(f"🧩 User {user.email} requesting child assets for parent: {input_data.parent_asset_name}")
     
     # Build parent asset details string
     parent_details = f"Name: {input_data.parent_asset_name}"

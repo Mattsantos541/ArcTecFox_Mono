@@ -50,11 +50,17 @@ async def send_test_invitation_email(request: TestInvitationRequest):
         if resend_api_key:
             print(f"🧪 TEST EMAIL - Attempting to send via Resend...")
             
-            # Debug the email data being sent
+            # Try with Resend's default test address first to isolate domain issues
+            test_from = "onboarding@resend.dev"  # Always works for testing
+            custom_from = os.getenv("RESEND_FROM_EMAIL", "user_admin@arctecfox.ai")
+            
+            print(f"📧 Testing with default Resend address first: {test_from}")
+            
+            # Debug the email data being sent (using test address first)
             email_data = {
-                "from": os.getenv("RESEND_FROM_EMAIL", "user_admin@arctecfox.ai"),
-                "to": "willisreed17@gmail.com",
-                "subject": subject,
+                "from": test_from,
+                "to": "willisreed17@gmail.com", 
+                "subject": f"[TEST] {subject}",
                 "html": html_content,
                 "text": text_content
             }
@@ -68,9 +74,25 @@ async def send_test_invitation_email(request: TestInvitationRequest):
             
             try:
                 response = resend.Emails.send(email_data)
-                print(f"✅ TEST email sent successfully to willisreed17@gmail.com")
+                print(f"✅ TEST email sent successfully with {test_from}")
                 print(f"📧 Resend ID: {response.get('id', 'N/A')}")
                 print(f"📧 Resend response: {response}")
+                
+                # If default works, try custom domain
+                if custom_from != test_from:
+                    print(f"📧 Now testing custom domain: {custom_from}")
+                    custom_email_data = email_data.copy()
+                    custom_email_data["from"] = custom_from
+                    custom_email_data["subject"] = f"[CUSTOM] {subject}"
+                    
+                    try:
+                        custom_response = resend.Emails.send(custom_email_data)
+                        print(f"✅ Custom domain email also sent successfully!")
+                        print(f"📧 Custom Resend ID: {custom_response.get('id', 'N/A')}")
+                    except Exception as custom_e:
+                        print(f"❌ Custom domain failed: {custom_e}")
+                        print(f"📧 Custom domain issue - need to verify arctecfox.ai domain in Resend")
+                        
             except Exception as e:
                 print(f"❌ Failed to send TEST email via Resend: {str(e)}")
                 print(f"📧 Error type: {type(e).__name__}")
