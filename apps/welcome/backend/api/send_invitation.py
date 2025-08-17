@@ -7,7 +7,7 @@ from fastapi import HTTPException
 from pydantic import BaseModel
 from typing import Optional
 import resend
-from database import get_service_supabase_client
+from supabase import create_client, Client
 from .email_templates import create_invitation_email_content
 
 # Initialize Resend 
@@ -28,9 +28,16 @@ class InvitationRequest(BaseModel):
 async def send_invitation_email(request: InvitationRequest):
     """Send invitation email to user using Supabase native email (interim) or Resend (when configured)"""
     try:
-        # Get Supabase service client for all operations (reads + invitation creation)
-        # Service client bypasses RLS and is needed for cross-site operations
-        supabase = get_service_supabase_client()
+        # Initialize Supabase client using same pattern as task_due_dates.py
+        # SUPABASE_KEY is the service role key in production (bypasses RLS)
+        supabase_url = os.getenv("SUPABASE_URL")
+        supabase_key = os.getenv("SUPABASE_KEY")  # This IS the service role key
+        
+        if not supabase_url or not supabase_key:
+            raise HTTPException(status_code=500, detail="Missing Supabase service credentials (SUPABASE_KEY)")
+        
+        supabase: Client = create_client(supabase_url, supabase_key)
+        print(f"✅ Using service role key for invitation operations")
         
         # Get site and company details
         site_response = supabase.table("sites").select("*, companies(*)").eq("id", request.site_id).single().execute()
