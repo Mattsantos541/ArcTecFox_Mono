@@ -64,7 +64,7 @@ function SuggestionsLoadingModal({ isOpen }) {
   );
 }
 
-const ManageAssets = ({ onAssetUpdate, onPlanCreate }) => {
+const ManageAssets = ({ onAssetUpdate, onPlanCreate, selectedSite, userSites: propUserSites }) => {
   const { user } = useAuth();
   const [parentAssets, setParentAssets] = useState([]);
   const [childAssets, setChildAssets] = useState([]);
@@ -189,6 +189,13 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate }) => {
     }
   }, [user]);
 
+  // Reload assets when selectedSite changes
+  useEffect(() => {
+    if (userSites.length > 0) {
+      loadParentAssets(userSites);
+    }
+  }, [selectedSite]);
+
   const initializeComponent = async () => {
     console.log('🚀 [Initialization] Starting component initialization...');
     await checkUserPermissions();
@@ -212,6 +219,17 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate }) => {
 
   const checkUserPermissions = async () => {
     try {
+      // Use passed-in userSites if available (from parent component)
+      if (propUserSites && propUserSites.length > 0) {
+        setUserSites(propUserSites);
+        if (propUserSites.length === 1) {
+          setNewParentAsset(prev => ({ ...prev, site_id: propUserSites[0].id }));
+        }
+        await loadParentAssets(propUserSites);
+        return;
+      }
+
+      // Fallback to loading sites if not passed from parent
       const isAdmin = await isUserSiteAdmin(user.id);
       const adminSites = await getUserAdminSites(user.id);
       
@@ -245,7 +263,13 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate }) => {
     try {
       setLoading(true);
       
-      const siteIds = sitesList.map(site => site.id);
+      // Filter sites based on selectedSite
+      let filteredSiteIds;
+      if (selectedSite && selectedSite !== 'all') {
+        filteredSiteIds = [selectedSite];
+      } else {
+        filteredSiteIds = sitesList.map(site => site.id);
+      }
       
       const { data, error } = await supabase
         .from('parent_assets')
@@ -260,7 +284,7 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate }) => {
             )
           )
         `)
-        .in('site_id', siteIds)
+        .in('site_id', filteredSiteIds)
         .neq('status', 'deleted')
         .order('name');
 
@@ -398,8 +422,19 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate }) => {
         setUploadingChildFile(true);
       }
       
+      // Get the siteId for the asset
+      let siteId = null;
+      if (isParent) {
+        // For parent assets, get siteId directly from the asset
+        const parentAsset = parentAssets.find(a => a.id === assetId);
+        siteId = parentAsset?.site_id;
+      } else {
+        // For child assets, get siteId from the selected parent asset
+        siteId = selectedParentAsset?.site_id;
+      }
+      
       const storageService = await createStorageService();
-      const result = await storageService.uploadUserManual(file, assetName, user.id);
+      const result = await storageService.uploadUserManual(file, assetName, user.id, siteId);
       
       if (result.success) {
         // Save file metadata to loaded_manuals table

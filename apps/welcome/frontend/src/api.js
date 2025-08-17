@@ -513,17 +513,24 @@ export const savePMPlanResults = async (pmPlanId, aiGeneratedPlan, criticality =
   }
 };
 
-// ✅ Secure AI call to backend
+// ✅ Secure AI call to backend with authentication
 export const generateAIPlan = async (planData) => {
   try {
     console.log('🤖 Generating AI plan via secure backend:', planData);
     console.log('🔍 Backend URL:', BACKEND_URL);
     console.log('🔍 Full URL:', `${BACKEND_URL}/api/generate-ai-plan`);
 
+    // Get current session for auth token
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !session) {
+      throw new Error('Authentication required to generate AI plans');
+    }
+
     const response = await fetch(`${BACKEND_URL}/api/generate-ai-plan`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
       },
       body: JSON.stringify({ planData }),
     });
@@ -1042,51 +1049,72 @@ export const fetchSiteUsers = async (siteId) => {
   try {
     console.log('👥 Fetching users for site:', siteId);
     
-    const { data, error } = await supabase
+    // Step 1: Get basic site_users data first
+    const { data: siteUsersData, error: siteUsersError } = await supabase
       .from('site_users')
-      .select(`
-        id,
-        role_id,
-        can_edit,
-        roles (
-          id,
-          name
-        ),
-        users (
-          id,
-          email,
-          full_name,
-          created_at
-        ),
-        sites (
-          id,
-          name,
-          company_id,
-          companies (
-            id,
-            name
-          )
-        )
-      `)
+      .select('id, user_id, role_id, can_edit, created_at')
       .eq('site_id', siteId);
     
-    if (error) {
-      console.error("❌ Supabase error:", error);
-      throw error;
+    if (siteUsersError) {
+      console.error("❌ Site users query error:", {
+        message: siteUsersError.message,
+        details: siteUsersError.details,
+        hint: siteUsersError.hint,
+        code: siteUsersError.code,
+        fullError: siteUsersError
+      });
+      throw siteUsersError;
     }
     
-    // Transform data to include role names from site_users table
-    const usersWithRoles = data.map(item => ({
-      ...item.users,
-      roles: item.roles ? [item.roles.name] : [],
-      roleId: item.role_id,
-      can_edit: item.can_edit,
-      site: item.sites,
-      siteUsersId: item.id,
-      id: item.id // Use site_users id as the main id
-    }));
+    if (!siteUsersData || siteUsersData.length === 0) {
+      console.log('📭 No users found for site:', siteId);
+      return [];
+    }
     
-    console.log('✅ Site users fetched:', usersWithRoles);
+    console.log('✅ Raw site_users data:', siteUsersData);
+    
+    // Step 2: Get user details for each user_id
+    const userIds = siteUsersData.map(su => su.user_id);
+    const { data: usersData, error: usersError } = await supabase
+      .from('users')
+      .select('id, email, full_name, created_at')
+      .in('id', userIds);
+    
+    if (usersError) {
+      console.error("❌ Users query error:", usersError);
+      // Don't throw here, continue with partial data
+    }
+    
+    // Step 3: Get role details for each role_id
+    const roleIds = siteUsersData.map(su => su.role_id).filter(Boolean);
+    const { data: rolesData, error: rolesError } = await supabase
+      .from('roles')
+      .select('id, name')
+      .in('id', roleIds);
+    
+    if (rolesError) {
+      console.error("❌ Roles query error:", rolesError);
+      // Don't throw here, continue with partial data
+    }
+    
+    // Step 4: Combine all data
+    const usersWithRoles = siteUsersData.map(siteUser => {
+      const user = usersData?.find(u => u.id === siteUser.user_id);
+      const role = rolesData?.find(r => r.id === siteUser.role_id);
+      
+      return {
+        id: siteUser.id, // site_users id (for editing site-specific properties)
+        user_id: siteUser.user_id, // actual user id
+        email: user?.email || 'Unknown',
+        full_name: user?.full_name || '',
+        created_at: user?.created_at || siteUser.created_at,
+        roles: role ? [role.name] : [],
+        roleId: siteUser.role_id,
+        can_edit: siteUser.can_edit || false
+      };
+    });
+    
+    console.log('✅ Site users with details:', usersWithRoles);
     return usersWithRoles;
   } catch (error) {
     console.error("❌ Error fetching site users:", error);
@@ -1388,91 +1416,319 @@ export const fetchUserSites = async (userId) => {
   }
 };
 
-// Create new user and add to site
-export const createUserForSite = async (email, siteId, fullName = '', roleId = null) => {
+// Send invitation to user for site access
+export const sendInvitation = async (email, siteId, fullName = '', roleId = null) => {
   try {
-    console.log('➕ Creating new user for site:', { email, siteId, fullName, roleId });
+    console.log('📧 Sending invitation:', { email, siteId, fullName, roleId });
     
-    // First, check if user with this email already exists
+    // Get current user to set as invited_by
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+    
+    // Check if user already exists and is linked to site
     const { data: existingUser, error: checkError } = await supabase
       .from('users')
-      .select('id, email')
+      .select()
       .eq('email', email)
       .single();
     
     if (checkError && checkError.code !== 'PGRST116') {
-      // PGRST116 means no rows found, which is what we want
       throw checkError;
     }
     
-    let userId;
-    let userData;
-    
     if (existingUser) {
-      // User already exists, use existing user
-      console.log('👤 User already exists:', existingUser);
-      userId = existingUser.id;
-      userData = [existingUser];
-      
-      // Check if user is already linked to this site
-      const { data: existingLink, error: linkCheckError } = await supabase
+      // Check if already linked to this site
+      const { data: existingLink } = await supabase
         .from('site_users')
         .select('id')
-        .eq('user_id', userId)
+        .eq('user_id', existingUser.id)
         .eq('site_id', siteId)
         .single();
       
-      if (linkCheckError && linkCheckError.code !== 'PGRST116') {
-        throw linkCheckError;
-      }
-      
       if (existingLink) {
-        throw new Error('User is already linked to this site');
+        throw new Error('User is already a member of this site');
       }
-    } else {
-      // Create new user
-      userId = crypto.randomUUID();
-      
-      const { data: newUserData, error: userError } = await supabase
-        .from('users')
-        .insert([{
-          id: userId,
-          email: email,
-          full_name: fullName,
-          created_at: new Date().toISOString(),
-          profile_completed: false
-        }])
-        .select();
-      
-      if (userError) throw userError;
-      userData = newUserData;
-      console.log('✅ New user created:', userData[0]);
     }
     
-    // Create the site-user relationship with role if provided
-    const siteUserData = {
-      user_id: userId,
-      site_id: siteId
-    };
-    
-    if (roleId) {
-      siteUserData.role_id = roleId;
-    }
-    
-    const { data: siteUserResult, error: siteUserError } = await supabase
-      .from('site_users')
-      .insert([siteUserData])
+    // Create invitation record
+    const { data: invitation, error: inviteError } = await supabase
+      .from('invitations')
+      .insert([{
+        email: email,
+        site_id: siteId,
+        role_id: roleId,
+        invited_by: user.id
+      }])
       .select();
     
-    if (siteUserError) throw siteUserError;
+    if (inviteError) {
+      if (inviteError.code === '23505') { // Unique constraint violation
+        throw new Error('An invitation has already been sent to this email for this site');
+      }
+      throw inviteError;
+    }
     
-    console.log('✅ User linked to site:', siteUserResult[0]);
-    return userData[0];
+    // Get auth token for backend call
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !session) {
+      throw new Error('Authentication required to send invitations');
+    }
+
+    // Call backend to send the email
+    const response = await fetch(`${BACKEND_URL}/api/send-invitation`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({
+        email: email,
+        full_name: fullName,
+        invitation_token: invitation[0].token,
+        site_id: siteId
+      })
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to send invitation email');
+    }
+    
+    console.log('✅ Invitation sent successfully:', invitation[0]);
+    return invitation[0];
   } catch (error) {
-    console.error("❌ Error creating user for site:", error);
+    console.error("❌ Error sending invitation:", error);
     throw error;
   }
 };
+
+// Accept invitation and link user to site
+export const acceptInvitation = async (token) => {
+  try {
+    console.log('🎫 Accepting invitation with token:', token);
+    
+    // Get current user
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Must be logged in to accept invitation');
+    
+    // Get invitation details
+    const { data: invitation, error: inviteError } = await supabase
+      .from('invitations')
+      .select('*, sites(name, companies(name))')
+      .eq('token', token)
+      .single();
+    
+    if (inviteError || !invitation) {
+      throw new Error('Invalid or expired invitation');
+    }
+    
+    // Check if invitation is expired
+    if (new Date(invitation.expires_at) < new Date()) {
+      throw new Error('This invitation has expired');
+    }
+    
+    // Check if already accepted
+    if (invitation.accepted_at) {
+      throw new Error('This invitation has already been accepted');
+    }
+    
+    // Check if email matches
+    if (invitation.email !== user.email) {
+      throw new Error('This invitation was sent to a different email address');
+    }
+    
+    // Create site_users entry
+    const { error: linkError } = await supabase
+      .from('site_users')
+      .insert([{
+        user_id: user.id,
+        site_id: invitation.site_id,
+        role_id: invitation.role_id
+      }]);
+    
+    if (linkError && linkError.code !== '23505') { // Ignore if already exists
+      throw linkError;
+    }
+    
+    // Mark invitation as accepted
+    const { error: updateError } = await supabase
+      .from('invitations')
+      .update({ accepted_at: new Date().toISOString() })
+      .eq('token', token);
+    
+    if (updateError) throw updateError;
+    
+    console.log('✅ Invitation accepted successfully');
+    return invitation;
+  } catch (error) {
+    console.error("❌ Error accepting invitation:", error);
+    throw error;
+  }
+};
+
+// Legacy function - now redirects to sendInvitation
+export const createUserForSite = async (email, siteId, fullName = '', roleId = null) => {
+  return sendInvitation(email, siteId, fullName, roleId);
+};
+
+// ===== DUAL-TRACK USER MANAGEMENT =====
+
+// Add existing user to site (Track 2 - for users who already have accounts)
+export const addExistingUserToSite = async (email, siteId, roleId = null, canEdit = false) => {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      throw new Error('Authentication required');
+    }
+
+    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+    
+    const response = await fetch(`${backendUrl}/api/add-existing-user`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({
+        email,
+        site_id: siteId,
+        role_id: roleId,
+        can_edit: canEdit
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ detail: 'Unknown error occurred' }));
+      throw new Error(errorData.detail || `HTTP ${response.status}: Failed to add user`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error adding existing user to site:', error);
+    throw error;
+  }
+};
+
+// Search for existing users within the same company that can be added to a site
+export const searchCompanyUsers = async (siteId, searchTerm = '') => {
+  try {
+    console.log('🔍 Searching company users for site:', siteId, 'term:', searchTerm);
+    
+    // Step 1: Get site and company info separately
+    const { data: siteData, error: siteError } = await supabase
+      .from('sites')
+      .select('company_id')
+      .eq('id', siteId)
+      .single();
+
+    if (siteError) {
+      console.error("❌ Site query error:", {
+        message: siteError.message,
+        details: siteError.details,
+        hint: siteError.hint,
+        code: siteError.code
+      });
+      throw siteError;
+    }
+    
+    if (!siteData) throw new Error('Site not found');
+
+    const companyId = siteData.company_id;
+    console.log('✅ Found company ID:', companyId);
+
+    // Step 2: Get company name separately
+    const { data: companyData, error: companyError } = await supabase
+      .from('companies')
+      .select('name')
+      .eq('id', companyId)
+      .single();
+
+    const companyName = companyData?.name || 'Unknown Company';
+
+    // Step 3: Get all users already in this site (to exclude them)
+    const { data: existingSiteUsers, error: existingError } = await supabase
+      .from('site_users')
+      .select('user_id')
+      .eq('site_id', siteId);
+
+    if (existingError) {
+      console.error("❌ Existing site users query error:", existingError);
+      throw existingError;
+    }
+
+    const existingUserIds = new Set(
+      (existingSiteUsers || []).map(su => su.user_id)
+    );
+    console.log('✅ Found existing user IDs to exclude:', existingUserIds);
+
+    // Step 4: Get all site_users for this company
+    const { data: companySiteUsers, error: companySiteUsersError } = await supabase
+      .from('site_users')
+      .select('user_id, sites!inner(company_id)')
+      .eq('sites.company_id', companyId);
+
+    if (companySiteUsersError) {
+      console.error("❌ Company site users query error:", companySiteUsersError);
+      throw companySiteUsersError;
+    }
+
+    // Get unique user IDs from company (excluding current site users)
+    const companyUserIds = [...new Set(
+      (companySiteUsers || [])
+        .map(item => item.user_id)
+        .filter(userId => !existingUserIds.has(userId))
+    )];
+    
+    console.log('✅ Found company user IDs:', companyUserIds);
+
+    if (companyUserIds.length === 0) {
+      return {
+        users: [],
+        companyName
+      };
+    }
+
+    // Step 5: Get user details for company users
+    const { data: usersData, error: usersError } = await supabase
+      .from('users')
+      .select('id, email, full_name')
+      .in('id', companyUserIds);
+
+    if (usersError) {
+      console.error("❌ Users details query error:", usersError);
+      throw usersError;
+    }
+
+    let filteredUsers = usersData || [];
+
+    // Step 6: Apply search filter if provided
+    if (searchTerm && searchTerm.length >= 2) {
+      const term = searchTerm.toLowerCase();
+      filteredUsers = filteredUsers.filter(user => 
+        user.email.toLowerCase().includes(term) ||
+        (user.full_name && user.full_name.toLowerCase().includes(term))
+      );
+    }
+
+    console.log('✅ Filtered users found:', filteredUsers.length);
+
+    return {
+      users: filteredUsers.slice(0, 20), // Limit to 20 results
+      companyName
+    };
+
+  } catch (error) {
+    console.error('❌ Error searching company users:', {
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+      code: error.code,
+      fullError: error
+    });
+    throw error;
+  }
+};
+
+// ===== END DUAL-TRACK USER MANAGEMENT =====
 
 // ===== PLAN LIMIT VALIDATION =====
 
@@ -1639,15 +1895,22 @@ export const createUserByEmail = async (email, siteId, fullName = '', roleId = n
   return await createUserForSite(email, siteId, fullName, roleId);
 };
 
-// AI-Powered Child Asset Suggestions
+// AI-Powered Child Asset Suggestions with authentication
 export const suggestChildAssets = async (parentAssetData) => {
   try {
     console.log('🧩 Requesting child asset suggestions for parent:', parentAssetData.name);
+
+    // Get current session for auth token
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !session) {
+      throw new Error('Authentication required to suggest child assets');
+    }
 
     const response = await fetch(`${BACKEND_URL}/api/suggest-child-assets`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
       },
       body: JSON.stringify({
         parent_asset_name: parentAssetData.name,
@@ -1661,7 +1924,21 @@ export const suggestChildAssets = async (parentAssetData) => {
     });
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
+      const errorText = await response.text();
+      let errorData = {};
+      try {
+        errorData = JSON.parse(errorText);
+      } catch (e) {
+        console.error('❌ Non-JSON error response:', errorText);
+      }
+      
+      console.error('❌ API Error Details:', {
+        status: response.status,
+        statusText: response.statusText,
+        errorData,
+        rawResponse: errorText
+      });
+      
       throw new Error(errorData.detail || `HTTP ${response.status}: ${response.statusText}`);
     }
 

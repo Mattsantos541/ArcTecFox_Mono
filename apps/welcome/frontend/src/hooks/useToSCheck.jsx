@@ -18,14 +18,22 @@ export const useToSCheck = (user) => {
 
     const checkToSStatus = async () => {
       try {
+        const startTime = performance.now();
         setLoading(true);
         
-        // Check user's ToS confirmation status
-        const { data: userData, error } = await supabase
+        // Check user's ToS confirmation status with timeout for faster UX
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('ToS check timeout')), 3000)
+        );
+        
+        const dataPromise = supabase
           .from('users')
           .select('confirmed_ToS')
           .eq('id', user.id)
           .single();
+        
+        const { data: userData, error } = await Promise.race([dataPromise, timeoutPromise]);
+        const endTime = performance.now();
 
         if (error) {
           console.error('Error checking ToS status:', error);
@@ -42,11 +50,13 @@ export const useToSCheck = (user) => {
 
         setNeedsToSAcceptance(needsAcceptance);
         
-        console.log('ToS Check:', {
-          userConfirmedAt: userData.confirmed_ToS,
-          termsLastUpdated: TERMS_LAST_UPDATED,
-          needsAcceptance
-        });
+        // Only log if ToS acceptance is needed or check is slow
+        if (needsAcceptance || (endTime - startTime) > 1000) {
+          console.log('✅ ToS: Check complete:', {
+            needsAcceptance,
+            duration: Math.round(endTime - startTime) + 'ms'
+          });
+        }
 
       } catch (error) {
         console.error('Error in ToS check:', error);

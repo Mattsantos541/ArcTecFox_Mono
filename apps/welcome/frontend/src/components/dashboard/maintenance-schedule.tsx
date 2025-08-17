@@ -80,6 +80,16 @@ export default function MaintenanceSchedule() {
   const [siteUsers, setSiteUsers] = useState([])
   const [loadingSignOff, setLoadingSignOff] = useState(false)
 
+  // Site filter state
+  const [userSites, setUserSites] = useState([])
+  const [selectedSite, setSelectedSiteInternal] = useState(() => loadState('selectedSite', 'all'))
+  
+  // Wrapper to persist selected site
+  const setSelectedSite = (site) => {
+    setSelectedSiteInternal(site)
+    saveState('selectedSite', site)
+  }
+
   // Add state for edited task values
   const [editedStatus, setEditedStatus] = useState("")
   const [editedDate, setEditedDate] = useState("")
@@ -158,7 +168,7 @@ export default function MaintenanceSchedule() {
       
       // Query starting from task_signoff as primary table (single source of truth)
       // Filter out deleted signoffs and get all related data through joins
-      const { data, error } = await supabase
+      let query = supabase
         .from('task_signoff')
         .select(`
           id,
@@ -199,6 +209,13 @@ export default function MaintenanceSchedule() {
         `)
         .neq('status', 'deleted')
         .eq('pm_tasks.pm_plans.status', 'Current')
+
+      // Add site filtering if a specific site is selected
+      if (selectedSite && selectedSite !== 'all') {
+        query = query.eq('pm_tasks.pm_plans.site_id', selectedSite)
+      }
+
+      const { data, error } = await query
 
       if (error) {
         console.error('Supabase error:', error);
@@ -457,8 +474,33 @@ export default function MaintenanceSchedule() {
   useEffect(() => {
     if (user) {
       fetchTasks()
+      loadUserSites()
     }
   }, [user])
+
+  // Reload tasks when selectedSite changes
+  useEffect(() => {
+    if (user && userSites.length > 0) {
+      fetchTasks()
+    }
+  }, [selectedSite])
+
+  // Load user sites for filtering
+  const loadUserSites = async () => {
+    try {
+      const adminSites = await getUserAdminSites(user.id)
+      
+      const sitesList = adminSites.map(item => ({
+        id: item.sites.id,
+        name: `${item.sites?.companies?.name || 'Unknown Company'} - ${item.sites?.name || 'Unknown Site'}`,
+        company_id: item.sites?.companies?.id
+      }))
+      
+      setUserSites(sitesList)
+    } catch (err) {
+      console.error('Error loading user sites:', err)
+    }
+  }
 
 
   // Add navigation handler
@@ -1088,46 +1130,108 @@ export default function MaintenanceSchedule() {
 
   const loadSiteUsers = async (task) => {
     try {
-      // Follow the relationship chain: task → plan → child_asset → parent_asset → site
-      // First get the site_id through the relationship chain
-      const { data: siteData, error: siteError } = await supabase
+      console.log('🔍 Loading site users for task:', task.id)
+      
+      // Step 1: Get the PM plan ID from the task (simplest query)
+      const { data: taskData, error: taskError } = await supabase
         .from('pm_tasks')
-        .select(`
-          pm_plans!inner(
-            child_assets!inner(
-              parent_assets!inner(
-                site_id
-              )
-            )
-          )
-        `)
+        .select('pm_plan_id')
         .eq('id', task.id)
         .single()
 
-      if (siteError) throw siteError
+      if (taskError) {
+        console.error('❌ Task query error:', taskError)
+        throw taskError
+      }
 
-      const siteId = siteData?.pm_plans?.child_assets?.parent_assets?.site_id
+      // Step 2: Get the child_asset_id from the PM plan
+      const { data: planData, error: planError } = await supabase
+        .from('pm_plans')
+        .select('child_asset_id')
+        .eq('id', taskData.pm_plan_id)
+        .single()
+
+      if (planError) {
+        console.error('❌ PM plan query error:', planError)
+        throw planError
+      }
+
+      // Step 3: Get the parent_asset_id from the child asset
+      const { data: childAssetData, error: childAssetError } = await supabase
+        .from('child_assets')
+        .select('parent_asset_id')
+        .eq('id', planData.child_asset_id)
+        .single()
+
+      if (childAssetError) {
+        console.error('❌ Child asset query error:', childAssetError)
+        throw childAssetError
+      }
+
+      // Step 4: Get the site_id from the parent asset
+      const { data: parentAssetData, error: parentAssetError } = await supabase
+        .from('parent_assets')
+        .select('site_id')
+        .eq('id', childAssetData.parent_asset_id)
+        .single()
+
+      if (parentAssetError) {
+        console.error('❌ Parent asset query error:', parentAssetError)
+        throw parentAssetError
+      }
+
+      const siteId = parentAssetData.site_id
       
       if (!siteId) {
         throw new Error('Could not determine site for this task')
       }
 
-      // Now get users for this site through the site_users junction table
-      const { data: users, error: usersError } = await supabase
+      console.log('✅ Found site ID:', siteId)
+
+      // Step 5: Get site_users for this site
+      const { data: siteUsersData, error: siteUsersError } = await supabase
         .from('site_users')
-        .select(`
-          users!inner(
-            id,
-            email,
-            full_name
-          )
-        `)
+        .select('user_id')
         .eq('site_id', siteId)
-        
-      if (usersError) throw usersError
-      setSiteUsers(users || [])
+
+      if (siteUsersError) {
+        console.error('❌ Site users query error:', siteUsersError)
+        throw siteUsersError
+      }
+
+      if (!siteUsersData || siteUsersData.length === 0) {
+        console.log('📭 No users found for site:', siteId)
+        setSiteUsers([])
+        return
+      }
+
+      // Step 6: Get user details
+      const userIds = siteUsersData.map(su => su.user_id)
+      const { data: usersData, error: usersError } = await supabase
+        .from('users')
+        .select('id, email, full_name')
+        .in('id', userIds)
+
+      if (usersError) {
+        console.error('❌ Users query error:', usersError)
+        throw usersError
+      }
+
+      // Transform data to match expected format
+      const formattedUsers = (usersData || []).map(user => ({
+        users: user // Wrap in users object to match existing component expectations
+      }))
+
+      console.log('✅ Site users loaded:', formattedUsers)
+      setSiteUsers(formattedUsers)
     } catch (error) {
-      console.error('Error loading site users:', error)
+      console.error('❌ Error loading site users:', {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+        fullError: error
+      })
       toast({
         title: "Error",
         description: "Failed to load technicians for this site",
@@ -1845,6 +1949,32 @@ export default function MaintenanceSchedule() {
             </button> */}
           </div>
 
+          {/* Site Filter */}
+          <div className="flex items-center gap-4 mb-4">
+            <Label htmlFor="site-filter" className="text-sm font-medium text-gray-700">
+              Site:
+            </Label>
+            {userSites.length === 1 ? (
+              <div className="px-3 py-2 bg-gray-100 border border-gray-300 rounded-md text-gray-600 text-sm">
+                {userSites[0].name}
+              </div>
+            ) : (
+              <Select value={selectedSite} onValueChange={setSelectedSite}>
+                <SelectTrigger className="w-80">
+                  <SelectValue placeholder="Select site..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Sites</SelectItem>
+                  {userSites.map((site) => (
+                    <SelectItem key={site.id} value={site.id}>
+                      {site.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+
           <Tabs value={viewMode} onValueChange={setViewMode} className="space-y-6">
             <TabsList className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200">
               <TabsTrigger value="assets" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">Asset View</TabsTrigger>
@@ -1854,7 +1984,12 @@ export default function MaintenanceSchedule() {
             </TabsList>
 
             <TabsContent value="assets" className="space-y-6" forceMount hidden={viewMode !== 'assets'}>
-              <ManageAssets onAssetUpdate={fetchTasks} onPlanCreate={fetchTasks} />
+              <ManageAssets 
+                onAssetUpdate={fetchTasks} 
+                onPlanCreate={fetchTasks} 
+                selectedSite={selectedSite}
+                userSites={userSites}
+              />
             </TabsContent>
 
             <TabsContent value="list" className="space-y-6" forceMount hidden={viewMode !== 'list'}>
@@ -3126,10 +3261,17 @@ export default function MaintenanceSchedule() {
                           const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-');
                           const filename = `maintenance-task-${exportingTask.asset?.replace(/[^a-zA-Z0-9]/g, '_') || 'task'}-${timestamp}.pdf`;
                           
+                          // Get auth token for backend call
+                          const { data: { session } } = await supabase.auth.getSession();
+                          if (!session) {
+                            throw new Error('Authentication required');
+                          }
+
                           const response = await fetch('https://arctecfox-mono.onrender.com/api/export-pdf', {
                             method: 'POST',
                             headers: {
                               'Content-Type': 'application/json',
+                              'Authorization': `Bearer ${session.access_token}`,
                             },
                             body: JSON.stringify({
                               data: [exportingTask],

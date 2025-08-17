@@ -2,8 +2,10 @@ import { Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from '../hooks/useAuth';
 import { useToSCheck } from '../hooks/useToSCheck';
 import { AuthLoading } from '../components/loading/LoadingStates';
+import AppLoader from '../components/loading/AppLoader';
 import { isUserSiteAdmin, getUserAdminSites } from '../api';
 import ToSAcceptanceModal from '../components/ToSAcceptanceModal';
+import { Toaster } from '../components/ui/toaster';
 import { useState, useEffect, useRef, useCallback } from 'react';
 
 // GoogleLoginButton Component
@@ -118,25 +120,62 @@ function AdminMenu({ adminSites = [] }) {
 }
 
 // Shared AuthHeader component
-function AuthHeader() {
+function AuthHeader({ onAdminLoadingChange }) {
   const { user, logout, loading } = useAuth();
   const navigate = useNavigate();
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminSites, setAdminSites] = useState([]);
   const [adminCheckLoading, setAdminCheckLoading] = useState(false);
   const lastCheckedUserId = useRef(null);
+  const adminStatusCache = useRef(new Map());
+  
+  // Notify parent component of loading state changes - prevent duplicate calls
+  const lastReportedState = useRef(adminCheckLoading);
+  useEffect(() => {
+    if (onAdminLoadingChange && lastReportedState.current !== adminCheckLoading) {
+      onAdminLoadingChange(adminCheckLoading);
+      lastReportedState.current = adminCheckLoading;
+    }
+  }, [adminCheckLoading, onAdminLoadingChange]);
 
   const checkAdminStatus = useCallback(async () => {
+    console.log('🔍 checkAdminStatus called:', {
+      userId: user?.id,
+      lastCheckedUserId: lastCheckedUserId.current,
+      shouldCheck: user?.id && user.id !== lastCheckedUserId.current
+    });
+    
     if (user?.id && user.id !== lastCheckedUserId.current) {
+      // Check cache first for faster loading
+      const cached = adminStatusCache.current.get(user.id);
+      if (cached && Date.now() - cached.timestamp < 300000) { // 5 min cache
+        console.log('⚡ MainLayout: Using cached admin status for:', user.id);
+        setIsAdmin(cached.isAdmin);
+        setAdminSites(cached.adminSites);
+        lastCheckedUserId.current = user.id;
+        setAdminCheckLoading(false); // Important: Set loading to false for cached results
+        return;
+      }
+      
+      console.log('🔐 MainLayout: Starting admin status check for:', user.id);
       setAdminCheckLoading(true);
       lastCheckedUserId.current = user.id;
       
       try {
+        // Run admin checks in parallel for better performance
         const [adminStatus, userAdminSites] = await Promise.all([
           isUserSiteAdmin(user.id),
           getUserAdminSites(user.id)
         ]);
         
+        // Cache the results
+        adminStatusCache.current.set(user.id, {
+          isAdmin: adminStatus,
+          adminSites: userAdminSites,
+          timestamp: Date.now()
+        });
+        
+        console.log('✅ MainLayout: Admin check complete:', { isAdmin: adminStatus, sitesCount: userAdminSites.length });
         setIsAdmin(adminStatus);
         setAdminSites(userAdminSites);
       } catch (error) {
@@ -146,23 +185,28 @@ function AuthHeader() {
         // Reset the ref so we can retry later
         lastCheckedUserId.current = null;
       } finally {
+        console.log('✅ MainLayout: Admin check loading = false');
         setAdminCheckLoading(false);
+        // Force a small delay to ensure state is properly updated
+        setTimeout(() => setAdminCheckLoading(false), 100);
       }
     } else if (!user?.id) {
       // Reset state when user logs out
       setIsAdmin(false);
       setAdminSites([]);
       lastCheckedUserId.current = null;
+      adminStatusCache.current.clear();
     }
   }, [user?.id]);
 
+  // Only check admin status when user changes and is actually present
   useEffect(() => {
-    checkAdminStatus();
-  }, [checkAdminStatus]);
+    if (user?.id) {
+      checkAdminStatus();
+    }
+  }, [user?.id]); // Depend directly on user?.id instead of checkAdminStatus
 
-  if (loading) {
-    return <AuthLoading />;
-  }
+  // This is now handled by unified loading state above
 
   if (user) {
     return (
@@ -247,8 +291,28 @@ function AuthHeader() {
 }
 
 export default function MainLayout() {
-  const { user, logout } = useAuth();
+  const { user, logout, loading: authLoading } = useAuth();
   const { needsToSAcceptance, loading: tosLoading, markToSAsAccepted } = useToSCheck(user);
+  const [adminCheckLoading, setAdminCheckLoading] = useState(false);
+  
+  // Reduced logging - only log when state actually changes
+  const prevState = useRef();
+  const currentState = { hasUser: !!user, authLoading, tosLoading, needsToSAcceptance, adminCheckLoading };
+  
+  if (!prevState.current || JSON.stringify(prevState.current) !== JSON.stringify(currentState)) {
+    console.log('🏠 MainLayout: State changed:', currentState);
+    prevState.current = currentState;
+  }
+  
+  // Add callback to track admin loading changes - only log actual changes
+  const handleAdminLoadingChange = useCallback((isLoading) => {
+    setAdminCheckLoading(prev => {
+      if (prev !== isLoading) {
+        console.log('📢 MainLayout: Admin loading changed:', { from: prev, to: isLoading });
+      }
+      return isLoading;
+    });
+  }, []);
 
   const handleToSAccept = () => {
     markToSAsAccepted();
@@ -259,19 +323,52 @@ export default function MainLayout() {
     await logout();
   };
 
-  // Show loading while checking ToS status
-  if (user && tosLoading) {
+  // Show unified loading state for better UX - only block on auth and ToS, let admin load in background
+  const isInitialLoading = authLoading || (user && tosLoading);
+  
+  // Add timeout fallback in case loading gets stuck
+  useEffect(() => {
+    if (isInitialLoading) {
+      const timeout = setTimeout(() => {
+        console.log('⚠️ MainLayout: Loading timeout - force completing loading states');
+        setAdminCheckLoading(false);
+      }, 10000); // 10 second timeout
+      
+      return () => clearTimeout(timeout);
+    }
+  }, [isInitialLoading]);
+  
+  // Only show loading state when actually loading critical components
+  if (isInitialLoading) {
+    // Log only once when entering loading state
+    const loadingKey = `${authLoading}-${tosLoading}`;
+    const lastLoadingKey = useRef('');
+    
+    if (lastLoadingKey.current !== loadingKey) {
+      console.log('🔄 MainLayout: Critical loading state', { authLoading, tosLoading });
+      lastLoadingKey.current = loadingKey;
+    }
+    
     return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-        <AuthLoading />
-      </div>
+      <AppLoader 
+        authLoading={authLoading}
+        tosLoading={tosLoading}
+        adminCheckLoading={false} // Don't block on admin loading
+      />
     );
+  }
+  
+  // Log only once when loading completes
+  const wasLoading = useRef(true);
+  if (wasLoading.current) {
+    console.log('🎉 MainLayout: Ready - showing main interface');
+    wasLoading.current = false;
   }
 
   return (
     <div className="min-h-screen bg-gray-100 text-gray-900 font-sans flex flex-col">
       {/* Auth header stays at top of every page */}
-      <AuthHeader />
+      <AuthHeader onAdminLoadingChange={handleAdminLoadingChange} />
       
       {/* Logo and welcome section */}
       <section className="bg-white rounded-lg shadow-md mx-auto max-w-6xl mt-8 p-8 space-y-6 text-center">
@@ -329,6 +426,9 @@ export default function MainLayout() {
           onReject={handleToSReject}
         />
       )}
+      
+      {/* Toast notifications */}
+      <Toaster />
     </div>
   );
 }
