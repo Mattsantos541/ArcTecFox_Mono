@@ -46,6 +46,7 @@ from pdf_export import (
 from api.suggest_child_assets import router as child_assets_router
 from api.send_invitation import InvitationRequest, send_invitation_email
 from api.send_test_invitation import TestInvitationRequest, send_test_invitation_email
+from api.add_existing_user import AddExistingUserRequest, AddExistingUserResponse, add_existing_user_to_site
 
 # Load environment variables
 load_dotenv()
@@ -459,6 +460,15 @@ async def send_test_invitation_endpoint(
     """Send test invitation email without any database operations - requires authenticated user"""
     logger.info(f"User {user.email} sending test invitation")
     return await send_test_invitation_email(request)
+
+@app.post("/api/add-existing-user", response_model=AddExistingUserResponse)
+async def add_existing_user_endpoint(
+    request: AddExistingUserRequest,
+    admin_user: AuthenticatedUser = Depends(verify_supabase_token)
+):
+    """Add an existing authenticated user directly to a site - Track 2 of dual-track user management"""
+    logger.info(f"Admin {admin_user.email} requesting to add existing user {request.email} to site {request.site_id}")
+    return await add_existing_user_to_site(request, admin_user)
 
 # Example: Admin-only endpoint for system status
 @app.get("/api/admin/system-status")
