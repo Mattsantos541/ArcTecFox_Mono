@@ -11,22 +11,39 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const { handleAsyncError } = useErrorHandler();
+  
+  // Preload auth state for faster initial load
+  const [initialCheckComplete, setInitialCheckComplete] = useState(false);
 
   // Check for existing auth session and listen for changes
   useEffect(() => {
     let mounted = true;
     
-    // Get initial session
+    // Get initial session with faster resolution
     const getInitialSession = async () => {
+      const startTime = performance.now();
+      
       try {
         const { data: { session } } = await supabase.auth.getSession();
+        const endTime = performance.now();
+        
+        // Only log if there's a user or if it takes too long
+        if (session?.user || (endTime - startTime) > 1000) {
+          console.log('🔄 Auth: Session check', { 
+            hasUser: !!session?.user, 
+            email: session?.user?.email,
+            duration: Math.round(endTime - startTime) + 'ms'
+          });
+        }
+        
         if (mounted) {
           setUser(session?.user ?? null);
+          setLoading(false);
         }
       } catch (error) {
-        console.error('Error getting initial session:', error);
-      } finally {
+        console.error('❌ Auth: Session error:', error);
         if (mounted) {
+          setUser(null);
           setLoading(false);
         }
       }
@@ -40,7 +57,10 @@ export const AuthProvider = ({ children }) => {
       async (event, session) => {
         // Only handle significant auth events
         if (event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'USER_UPDATED' || event === 'TOKEN_REFRESHED') {
-          console.log('Auth state changed:', event, session?.user?.email);
+          // Only log meaningful auth changes
+          if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
+            console.log('🔄 Auth: State changed:', event, { email: session?.user?.email });
+          }
           
           if (mounted) {
             setUser(session?.user ?? null);

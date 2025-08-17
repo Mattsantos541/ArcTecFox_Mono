@@ -8,6 +8,7 @@ import CompanyManagement from "./pages/CompanyManagement";
 import ManageAssets from "./pages/ManageAssets";
 import TermsOfService from "./pages/TermsOfService";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
+import AcceptInvitation from "./pages/AcceptInvitation";
 import { AuthProvider } from "./hooks/useAuth";
 import ErrorBoundary from "./components/ErrorBoundary";
 import MainLayout from "./layouts/MainLayout"; // you'll need to create this if missing
@@ -27,6 +28,7 @@ function App() {
               <Route path="/admin/super-admins" element={<SuperAdminManagement />} />
               <Route path="/terms-of-service" element={<TermsOfService />} />
               <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+              <Route path="/accept-invitation" element={<AcceptInvitation />} />
             </Route>
           </Routes>
         </AuthProvider>

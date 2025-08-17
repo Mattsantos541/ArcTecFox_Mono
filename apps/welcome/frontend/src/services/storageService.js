@@ -15,35 +15,55 @@ export class StorageService {
       const { data: buckets, error: listError } = await this.supabase.storage.listBuckets();
       
       if (listError) {
-        console.error('Error listing buckets:', listError);
-        // Don't throw error - bucket might exist but we can't list it
-        console.log('Assuming bucket exists and continuing...');
+        // This is common - users often can't list buckets due to permissions
+        // But they can still use buckets that exist
+        // console.log('Cannot list buckets (normal for non-admin users). Assuming bucket exists...');
         return { success: true };
       }
 
       const bucketExists = buckets?.some(bucket => bucket.name === this.bucketName);
 
       if (!bucketExists) {
-        console.log(`Bucket '${this.bucketName}' not found. Please create it manually in Supabase dashboard.`);
-        console.log('Instructions:');
-        console.log('1. Go to Supabase Dashboard → Storage');
-        console.log('2. Create bucket named "user-manuals"');
-        console.log('3. Set as Private bucket');
-        console.log('4. Set file size limit to 30MB');
-        console.log('5. Add storage policies for user access');
+        console.log(`Bucket '${this.bucketName}' not found. Attempting to create...`);
         
-        return { 
-          success: false, 
-          error: 'Bucket does not exist. Please create it manually in Supabase dashboard.' 
-        };
+        // Try to create the bucket automatically
+        const { data: newBucket, error: createError } = await this.supabase.storage.createBucket(this.bucketName, {
+          public: false, // Private bucket - files accessible only to authenticated users
+          fileSizeLimit: 50 * 1024 * 1024, // 50MB limit
+          allowedMimeTypes: ['application/pdf', 'image/*', 'text/*', 'application/vnd.openxmlformats-officedocument.*']
+        });
+        
+        if (createError) {
+          // Check if bucket already exists (common error)
+          if (createError.message.includes('already exists')) {
+            // console.log('Bucket already exists, continuing...');
+            return { success: true };
+          }
+          
+          // Check if it's a permissions error
+          if (createError.message.includes('row-level security policy') || 
+              createError.message.includes('permission') ||
+              createError.status === 400) {
+            // This is expected for non-admin users
+            // The bucket should already exist, created by an admin
+            // console.log('Cannot create bucket (normal for non-admin users). Assuming it exists...');
+            return { success: true };
+          }
+          
+          // Unexpected error
+          console.error('Unexpected storage error:', createError);
+          // Still continue - don't block the user
+          return { success: true };
+        }
+        
+        console.log(`✅ Bucket '${this.bucketName}' created successfully!`);
       }
 
-      console.log('Storage bucket exists and is ready to use');
       return { success: true };
     } catch (error) {
-      console.error('Error initializing storage bucket:', error);
-      // Don't fail completely - assume bucket exists
-      console.log('Assuming bucket exists and continuing...');
+      // Don't log errors that are expected
+      // console.error('Error initializing storage bucket:', error);
+      // Assume bucket exists and continue
       return { success: true };
     }
   }
@@ -52,10 +72,11 @@ export class StorageService {
    * Upload a user manual file
    * @param {File} file - The file to upload
    * @param {string} assetName - Name of the asset for folder organization
-   * @param {string} userId - User ID for access control
+   * @param {string} userId - User ID for access control (kept for backwards compatibility)
+   * @param {string} siteId - Site ID for site-based storage organization
    * @returns {Promise<Object>} Upload result with file path and URL
    */
-  async uploadUserManual(file, assetName, userId) {
+  async uploadUserManual(file, assetName, userId, siteId = null) {
     try {
       if (!file) {
         throw new Error('No file provided');
@@ -86,7 +107,10 @@ export class StorageService {
       const timestamp = Date.now();
       const sanitizedAssetName = assetName.replace(/[^a-zA-Z0-9-_]/g, '_');
       const fileName = `${sanitizedAssetName}_${timestamp}.${fileExtension}`;
-      const filePath = `${userId}/${fileName}`;
+      
+      // Use site-based path if siteId is provided, otherwise fall back to user-based path
+      // This ensures backward compatibility while enabling site-based sharing
+      const filePath = siteId ? `sites/${siteId}/${fileName}` : `${userId}/${fileName}`;
 
       // Upload file
       const { data, error } = await this.supabase.storage
@@ -215,12 +239,8 @@ export const createStorageService = async () => {
   
   const storageService = new StorageService(supabase);
   
-  // Check bucket status but don't fail if it doesn't exist
-  const initResult = await storageService.initializeBucket();
-  if (!initResult.success) {
-    console.warn('Storage bucket check failed:', initResult.error);
-    console.warn('Continuing anyway - bucket may need to be created manually');
-  }
+  // Initialize bucket (silently handles permission issues)
+  await storageService.initializeBucket();
   
   return storageService;
 };

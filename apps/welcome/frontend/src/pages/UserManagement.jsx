@@ -11,6 +11,8 @@ import {
   createUserForSite,
   isUserSiteAdmin,
   getUserAdminSites,
+  addExistingUserToSite,
+  searchCompanyUsers,
   supabase
 } from '../api';
 
@@ -31,6 +33,14 @@ const UserManagement = () => {
   const [showEmailSuggestions, setShowEmailSuggestions] = useState(false);
   const [allSystemUsers, setAllSystemUsers] = useState([]);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  
+  // Dual-track user management states
+  const [addUserMode, setAddUserMode] = useState('existing'); // 'invitation' or 'existing' - default to existing since invitation is under construction
+  const [searchTerm, setSearchTerm] = useState('');
+  const [companyUsers, setCompanyUsers] = useState([]);
+  const [searchResults, setSearchResults] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [selectedExistingUser, setSelectedExistingUser] = useState(null);
 
   // Helper function to convert role names to display labels
   const getRoleDisplayName = (roleName) => {
@@ -167,6 +177,59 @@ const UserManagement = () => {
     }
   };
 
+  // Search for existing users within the company
+  const handleSearchExistingUsers = async (term) => {
+    setSearchTerm(term);
+    
+    if (term.length >= 2 && selectedSite) {
+      setIsSearching(true);
+      try {
+        const results = await searchCompanyUsers(selectedSite, term);
+        setSearchResults(results.users);
+        setError(null);
+      } catch (err) {
+        console.error('Error searching users:', err);
+        setError(`Failed to search users: ${err.message}`);
+        setSearchResults([]);
+      } finally {
+        setIsSearching(false);
+      }
+    } else {
+      setSearchResults([]);
+      setIsSearching(false);
+    }
+  };
+
+  // Handle adding an existing user
+  const handleAddExistingUser = async (selectedUser) => {
+    if (!selectedUser || !selectedSite) {
+      setError('User and site are required');
+      return;
+    }
+
+    try {
+      setError(null);
+      await addExistingUserToSite(selectedUser.email, selectedSite);
+      
+      // Reload site users and reset form
+      loadSiteUsers();
+      setAddUserMode('invitation');
+      setSearchTerm('');
+      setSearchResults([]);
+      setSelectedExistingUser(null);
+      setShowAddUser(false);
+    } catch (err) {
+      if (err.message.includes('already a member')) {
+        setError('This user is already a member of the selected site');
+      } else if (err.message.includes('different company')) {
+        setError('This user belongs to a different company and cannot be added');
+      } else {
+        setError(`Failed to add user: ${err.message}`);
+      }
+      console.error(err);
+    }
+  };
+
   const handleEmailSuggestionSelect = (suggestion) => {
     setNewUserEmail(suggestion.email);
     setNewUserName(suggestion.full_name || '');
@@ -271,6 +334,11 @@ const UserManagement = () => {
       return;
     }
 
+    // TEMPORARY: Email system under construction
+    setError('🚧 Email invitations are currently under construction. Please use the "Add Existing User" option or contact your administrator to add new users manually.');
+    return;
+
+    /* DISABLED TEMPORARILY - Will be re-enabled when email is configured
     try {
       await createUserForSite(newUserEmail, selectedSite, newUserName);
       loadSiteUsers();
@@ -281,13 +349,16 @@ const UserManagement = () => {
       setShowEmailSuggestions(false);
       setError(null);
     } catch (err) {
-      if (err.message === 'User is already linked to this site') {
+      if (err.message === 'User is already a member of this site') {
         setError('This user is already a member of the selected site');
+      } else if (err.message === 'An invitation has already been sent to this email for this site') {
+        setError('An invitation has already been sent to this email address');
       } else {
-        setError(`Failed to create user: ${err.message}`);
+        setError(`Failed to send invitation: ${err.message}`);
       }
       console.error(err);
     }
+    */
   };
 
   const getSelectedSiteInfo = () => {
@@ -372,9 +443,198 @@ const UserManagement = () => {
         {/* Add User Form */}
         {showAddUser && (
           <div className="mb-6 p-4 bg-blue-50 rounded-lg border">
-            <h3 className="text-lg font-medium text-gray-800 mb-4">
-              Add User to {getSelectedSiteInfo()}
-            </h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-medium text-gray-800">
+                Add User to {getSelectedSiteInfo()}
+              </h3>
+              
+              {/* Track Selection Toggle */}
+              <div className="flex bg-white rounded-lg border border-gray-200 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAddUserMode('existing');
+                    setNewUserEmail('');
+                    setNewUserName('');
+                    setEmailSuggestions([]);
+                    setShowEmailSuggestions(false);
+                    setError(null);
+                  }}
+                  className={`px-4 py-2 text-sm font-medium transition-colors ${
+                    addUserMode === 'existing'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  Add Existing User
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAddUserMode('invitation');
+                    setSearchTerm('');
+                    setSearchResults([]);
+                    setSelectedExistingUser(null);
+                    setError(null);
+                  }}
+                  className={`px-4 py-2 text-sm font-medium transition-colors ${
+                    addUserMode === 'invitation'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  Send Invitation
+                </button>
+              </div>
+            </div>
+            {/* Mode-specific instructions */}
+            {addUserMode === 'invitation' ? (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3 mb-4">
+                <p className="text-sm text-yellow-800">
+                  <strong>🚧 Email Invitations - Under Construction</strong><br/>
+                  The invitation email system is currently being configured. For now, please add new users manually or contact your administrator.
+                  This feature will be available soon.
+                </p>
+              </div>
+            ) : (
+              <div className="bg-green-50 border border-green-200 rounded-md p-3 mb-4">
+                <p className="text-sm text-green-800">
+                  <strong>Existing User Track:</strong> Search and add users who already have accounts within your company. 
+                  No email required - they get immediate access to this site.
+                </p>
+              </div>
+            )}
+            
+            {/* Conditional form content based on mode */}
+            {addUserMode === 'existing' ? (
+              /* TRACK 2: EXISTING USER SEARCH */
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Search Existing Users in Company
+                  </label>
+                  <input
+                    type="text"
+                    value={searchTerm}
+                    onChange={(e) => handleSearchExistingUsers(e.target.value)}
+                    className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500"
+                    placeholder="Type name or email to search..."
+                  />
+                  {isSearching && (
+                    <p className="text-sm text-gray-500 mt-1">Searching...</p>
+                  )}
+                </div>
+                
+                {/* Search Results */}
+                {searchResults.length > 0 && (
+                  <div className="border border-gray-200 rounded-md max-h-60 overflow-y-auto">
+                    {searchResults.map((user) => (
+                      <div
+                        key={user.id}
+                        className="p-3 hover:bg-gray-50 border-b border-gray-100 last:border-b-0 cursor-pointer"
+                        onClick={() => handleAddExistingUser(user)}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="font-medium text-gray-900">{user.full_name || user.email}</div>
+                            <div className="text-sm text-gray-500">{user.email}</div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleAddExistingUser(user);
+                            }}
+                            className="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700 transition-colors"
+                          >
+                            Add User
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                
+                {searchTerm.length >= 2 && searchResults.length === 0 && !isSearching && (
+                  <p className="text-sm text-gray-500">No matching users found in your company.</p>
+                )}
+                
+                <div className="flex space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAddUser(false);
+                      setAddUserMode('invitation');
+                      setSearchTerm('');
+                      setSearchResults([]);
+                      setSelectedExistingUser(null);
+                      setError(null);
+                    }}
+                    className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* TRACK 1: INVITATION FORM (EXISTING) */
+              <div className="space-y-4">
+                {/* Test button for development - DISABLED while email system is under construction */}
+                <div className="bg-gray-50 border border-gray-200 rounded-md p-3">
+                  <button
+                    type="button"
+                    disabled
+                    onClick={async () => {
+                      try {
+                        setError(null);
+                        console.log('🧪 Frontend: Starting test email request...');
+                        
+                        const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+                        console.log('🧪 Frontend: Using backend URL:', backendUrl);
+                        
+                        // Get auth token for backend call
+                        const { data: { session } } = await supabase.auth.getSession();
+                        if (!session) {
+                          throw new Error('Authentication required');
+                        }
+
+                        const response = await fetch(`${backendUrl}/api/send-test-invitation`, {
+                          method: 'POST',
+                          headers: { 
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${session.access_token}`,
+                          },
+                          body: JSON.stringify({
+                            email: 'willisreed17@gmail.com',
+                            full_name: 'Willis Reed (Test)',
+                            site_name: 'Test Site',
+                            company_name: 'Test Company',
+                            invitation_token: 'test-token-12345'
+                          })
+                        });
+                        
+                        console.log('🧪 Frontend: Response status:', response.status);
+                        console.log('🧪 Frontend: Response ok:', response.ok);
+                        
+                        if (response.ok) {
+                          const result = await response.json();
+                          console.log('🧪 Frontend: Success response:', result);
+                          setError(`✅ Test email processed! Details: ${JSON.stringify(result.details, null, 2)}`);
+                        } else {
+                          const errorText = await response.text();
+                          console.error('🧪 Frontend: Error response:', errorText);
+                          throw new Error(`HTTP ${response.status}: ${errorText}`);
+                        }
+                      } catch (err) {
+                        console.error('🧪 Frontend: Exception:', err);
+                        setError(`Test email failed: ${err.message}. Check console and backend logs for details.`);
+                      }
+                    }}
+                    className="px-3 py-1 bg-gray-400 text-white text-xs rounded cursor-not-allowed"
+                  >
+                    🚧 Test Email (Under Construction)
+                  </button>
+                </div>
             <form onSubmit={handleCreateUser} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="email-autocomplete-container">
@@ -387,6 +647,7 @@ const UserManagement = () => {
                     onChange={(e) => handleEmailChange(e.target.value)}
                     onFocus={() => newUserEmail.length >= 3 && setShowEmailSuggestions(emailSuggestions.length > 0)}
                     className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="Enter email to invite..."
                     required
                   />
                   {showEmailSuggestions && emailSuggestions.length > 0 && (
@@ -415,15 +676,17 @@ const UserManagement = () => {
                     value={newUserName}
                     onChange={(e) => setNewUserName(e.target.value)}
                     className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="Enter recipient's name for the email"
                   />
                 </div>
               </div>
               <div className="flex space-x-2">
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
+                  disabled
+                  className="px-4 py-2 bg-gray-400 text-white rounded-lg cursor-not-allowed text-sm"
                 >
-                  Add User
+                  🚧 Send Invitation (Under Construction)
                 </button>
                 <button
                   type="button"
@@ -441,6 +704,8 @@ const UserManagement = () => {
                 </button>
               </div>
             </form>
+            </div>
+            )}
           </div>
         )}
 

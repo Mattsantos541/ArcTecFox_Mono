@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
+import { useToast } from '../hooks/use-toast';
 import { 
   supabase, 
   isUserSiteAdmin, 
@@ -9,9 +10,18 @@ import {
   updateSite,
   deleteSite
 } from '../api';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../components/ui/dialog';
 
 const CompanyManagement = () => {
   const { user } = useAuth();
+  const { toast } = useToast();
   const [companies, setCompanies] = useState([]);
   const [sites, setSites] = useState([]);
   const [selectedCompany, setSelectedCompany] = useState(null);
@@ -33,6 +43,7 @@ const CompanyManagement = () => {
   const [newSiteDescription, setNewSiteDescription] = useState('');
   const [newSitePlanLimit, setNewSitePlanLimit] = useState('');
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [deleteConfirmDialog, setDeleteConfirmDialog] = useState({ open: false, type: '', id: '', name: '' });
 
   useEffect(() => {
     initializeComponent();
@@ -214,22 +225,56 @@ const CompanyManagement = () => {
     }
   };
 
-  const handleDeleteCompany = async (companyId, companyName) => {
-    if (window.confirm(`Are you sure you want to delete "${companyName}"? This action cannot be undone and will affect all associated users.`)) {
-      try {
+  const openDeleteConfirm = (type, id, name) => {
+    setDeleteConfirmDialog({ open: true, type, id, name });
+  };
+
+  const closeDeleteConfirm = () => {
+    setDeleteConfirmDialog({ open: false, type: '', id: '', name: '' });
+  };
+
+  const handleConfirmDelete = async () => {
+    const { type, id, name } = deleteConfirmDialog;
+    closeDeleteConfirm();
+
+    try {
+      if (type === 'company') {
         const { error } = await supabase
           .from('companies')
           .delete()
-          .eq('id', companyId);
+          .eq('id', id);
 
         if (error) throw error;
 
         await loadCompanies();
         setError(null);
-      } catch (err) {
-        console.error('Error deleting company:', err);
-        setError('Failed to delete company. Make sure no users are associated with this company.');
+        toast({
+          title: "Company Deleted",
+          description: `Company "${name}" has been successfully deleted.`,
+          variant: "default",
+        });
+      } else if (type === 'site') {
+        await deleteSite(id);
+        await loadSites(selectedCompany.id);
+        setError(null);
+        toast({
+          title: "Site Deleted",
+          description: `Site "${name}" has been successfully deleted.`,
+          variant: "default",
+        });
       }
+    } catch (err) {
+      console.error(`Error deleting ${type}:`, err);
+      const errorMessage = type === 'company' 
+        ? 'Failed to delete company. Make sure no users are associated with this company.'
+        : 'Failed to delete site. Make sure no users are associated with this site.';
+      
+      toast({
+        title: "Delete Failed",
+        description: errorMessage,
+        variant: "destructive",
+      });
+      setError(errorMessage);
     }
   };
 
@@ -731,7 +776,7 @@ const CompanyManagement = () => {
                           Click any field to edit
                         </span>
                         <button
-                          onClick={() => handleDeleteCompany(company.id, company.name)}
+                          onClick={() => openDeleteConfirm('company', company.id, company.name)}
                           className="text-red-600 hover:text-red-900"
                         >
                           Delete
@@ -1036,18 +1081,7 @@ const CompanyManagement = () => {
                                 Click any field to edit
                               </span>
                               <button
-                                onClick={async () => {
-                                  if (window.confirm(`Are you sure you want to delete site "${site.name}"? This action cannot be undone and will affect all associated users.`)) {
-                                    try {
-                                      await deleteSite(site.id);
-                                      await loadSites(selectedCompany.id);
-                                      setError(null);
-                                    } catch (err) {
-                                      console.error('Error deleting site:', err);
-                                      setError('Failed to delete site. Make sure no users are associated with this site.');
-                                    }
-                                  }
-                                }}
+                                onClick={() => openDeleteConfirm('site', site.id, site.name)}
                                 className="text-red-600 hover:text-red-900"
                               >
                                 Delete
@@ -1069,6 +1103,33 @@ const CompanyManagement = () => {
             )}
           </div>
         )}
+
+        {/* Delete Confirmation Dialog */}
+        <Dialog open={deleteConfirmDialog.open} onOpenChange={closeDeleteConfirm}>
+          <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+              <DialogTitle>Confirm Deletion</DialogTitle>
+              <DialogDescription>
+                Are you sure you want to delete {deleteConfirmDialog.type} "{deleteConfirmDialog.name}"? 
+                This action cannot be undone and will affect all associated users.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <button
+                onClick={closeDeleteConfirm}
+                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmDelete}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm"
+              >
+                Delete
+              </button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );
