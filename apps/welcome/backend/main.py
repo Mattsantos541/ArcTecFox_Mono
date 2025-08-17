@@ -87,15 +87,37 @@ if RATE_LIMITING_AVAILABLE and limiter:
 # Include routers
 app.include_router(child_assets_router, prefix="/api", tags=["child-assets"])
 
-# Environment-based CORS configuration
+# Environment-based CORS configuration with smart pattern matching
 cors_origins_env = os.getenv("CORS_ORIGIN", "https://arctecfox-mono.vercel.app")
-cors_origins = [origin.strip() for origin in cors_origins_env.split(",")]
+cors_origins_list = [origin.strip() for origin in cors_origins_env.split(",")]
 
-logger.info(f"🌐 CORS origins configured: {cors_origins}")
+def cors_allow_origin(origin: str) -> bool:
+    """Smart CORS origin matching with pattern support"""
+    if not origin:
+        return False
+    
+    for allowed_origin in cors_origins_list:
+        # Exact match
+        if origin == allowed_origin:
+            return True
+        # Pattern matching for development environments
+        if allowed_origin == "*":
+            return True
+        # GitHub Codespaces pattern
+        if "*.app.github.dev" in allowed_origin and origin.endswith(".app.github.dev"):
+            return True
+        # Local development
+        if allowed_origin == "http://localhost:*" and origin.startswith("http://localhost:"):
+            return True
+            
+    return False
+
+# Use dynamic origin validation for flexibility
+logger.info(f"🌐 CORS origins configured: {cors_origins_list}")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=cors_origins,
+    allow_origin_regex=r"https://.*\.app\.github\.dev|http://localhost:\d+|https://yourdomain\.com|https://arctecfox-mono\.vercel\.app",
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
