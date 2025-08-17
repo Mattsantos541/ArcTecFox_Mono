@@ -9,6 +9,7 @@ import {
   removeUserFromSite,
   updateUserRoleInSite,
   createUserForSite,
+  sendInvitation,
   isUserSiteAdmin,
   getUserAdminSites,
   addExistingUserToSite,
@@ -24,6 +25,7 @@ const UserManagement = () => {
   const [allRoles, setAllRoles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(null);
   const [editingUser, setEditingUser] = useState(null);
   const [showAddRole, setShowAddRole] = useState(null);
   const [showAddUser, setShowAddUser] = useState(false);
@@ -334,21 +336,28 @@ const UserManagement = () => {
       return;
     }
 
-    // TEMPORARY: Email system under construction
-    setError('🚧 Email invitations are currently under construction. Please use the "Add Existing User" option or contact your administrator to add new users manually.');
-    return;
-
-    /* DISABLED TEMPORARILY - Will be re-enabled when email is configured
     try {
-      await createUserForSite(newUserEmail, selectedSite, newUserName);
-      loadSiteUsers();
-      setShowAddUser(false);
+      // Clear any previous messages
+      setError(null);
+      setSuccess(null);
+      
+      // Use existing backend invitation system (now with Supabase native email support)
+      await sendInvitation(newUserEmail, selectedSite, newUserName);
+      
+      // Show success message
+      setSuccess(`✅ Invitation sent successfully to ${newUserEmail}! They will receive an email with instructions to join your team.`);
+      
+      // Reset form
       setNewUserEmail('');
       setNewUserName('');
       setEmailSuggestions([]);
       setShowEmailSuggestions(false);
-      setError(null);
+      
+      // Note: Don't reload site users immediately as the user hasn't accepted yet
+      // They will appear in the user list after accepting the invitation
+      
     } catch (err) {
+      setSuccess(null); // Clear any success message
       if (err.message === 'User is already a member of this site') {
         setError('This user is already a member of the selected site');
       } else if (err.message === 'An invitation has already been sent to this email for this site') {
@@ -356,9 +365,8 @@ const UserManagement = () => {
       } else {
         setError(`Failed to send invitation: ${err.message}`);
       }
-      console.error(err);
+      console.error('Invitation error:', err);
     }
-    */
   };
 
   const getSelectedSiteInfo = () => {
@@ -407,6 +415,12 @@ const UserManagement = () => {
         {error && !error.includes('permission') && (
           <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
             {error}
+          </div>
+        )}
+
+        {success && (
+          <div className="bg-blue-100 border border-blue-400 text-blue-700 px-4 py-3 rounded mb-4">
+            {success}
           </div>
         )}
 
@@ -489,11 +503,11 @@ const UserManagement = () => {
             </div>
             {/* Mode-specific instructions */}
             {addUserMode === 'invitation' ? (
-              <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3 mb-4">
-                <p className="text-sm text-yellow-800">
-                  <strong>🚧 Email Invitations - Under Construction</strong><br/>
-                  The invitation email system is currently being configured. For now, please add new users manually or contact your administrator.
-                  This feature will be available soon.
+              <div className="bg-blue-50 border border-blue-200 rounded-md p-3 mb-4">
+                <p className="text-sm text-blue-800">
+                  <strong>📧 Email Invitations</strong><br/>
+                  Send a professional invitation email to new users. They'll receive a secure link to join your team and access this site.
+                  Perfect for onboarding new team members who don't have accounts yet.
                 </p>
               </div>
             ) : (
@@ -579,62 +593,6 @@ const UserManagement = () => {
             ) : (
               /* TRACK 1: INVITATION FORM (EXISTING) */
               <div className="space-y-4">
-                {/* Test button for development - DISABLED while email system is under construction */}
-                <div className="bg-gray-50 border border-gray-200 rounded-md p-3">
-                  <button
-                    type="button"
-                    disabled
-                    onClick={async () => {
-                      try {
-                        setError(null);
-                        console.log('🧪 Frontend: Starting test email request...');
-                        
-                        const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
-                        console.log('🧪 Frontend: Using backend URL:', backendUrl);
-                        
-                        // Get auth token for backend call
-                        const { data: { session } } = await supabase.auth.getSession();
-                        if (!session) {
-                          throw new Error('Authentication required');
-                        }
-
-                        const response = await fetch(`${backendUrl}/api/send-test-invitation`, {
-                          method: 'POST',
-                          headers: { 
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${session.access_token}`,
-                          },
-                          body: JSON.stringify({
-                            email: 'willisreed17@gmail.com',
-                            full_name: 'Willis Reed (Test)',
-                            site_name: 'Test Site',
-                            company_name: 'Test Company',
-                            invitation_token: 'test-token-12345'
-                          })
-                        });
-                        
-                        console.log('🧪 Frontend: Response status:', response.status);
-                        console.log('🧪 Frontend: Response ok:', response.ok);
-                        
-                        if (response.ok) {
-                          const result = await response.json();
-                          console.log('🧪 Frontend: Success response:', result);
-                          setError(`✅ Test email processed! Details: ${JSON.stringify(result.details, null, 2)}`);
-                        } else {
-                          const errorText = await response.text();
-                          console.error('🧪 Frontend: Error response:', errorText);
-                          throw new Error(`HTTP ${response.status}: ${errorText}`);
-                        }
-                      } catch (err) {
-                        console.error('🧪 Frontend: Exception:', err);
-                        setError(`Test email failed: ${err.message}. Check console and backend logs for details.`);
-                      }
-                    }}
-                    className="px-3 py-1 bg-gray-400 text-white text-xs rounded cursor-not-allowed"
-                  >
-                    🚧 Test Email (Under Construction)
-                  </button>
-                </div>
             <form onSubmit={handleCreateUser} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="email-autocomplete-container">
@@ -683,10 +641,9 @@ const UserManagement = () => {
               <div className="flex space-x-2">
                 <button
                   type="submit"
-                  disabled
-                  className="px-4 py-2 bg-gray-400 text-white rounded-lg cursor-not-allowed text-sm"
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
                 >
-                  🚧 Send Invitation (Under Construction)
+                  📧 Send Invitation
                 </button>
                 <button
                   type="button"

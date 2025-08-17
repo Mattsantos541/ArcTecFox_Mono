@@ -1416,57 +1416,56 @@ export const fetchUserSites = async (userId) => {
   }
 };
 
-// Send invitation to user for site access
+// Send invitation using Supabase native email auth (interim solution)
+export const sendInvitationSupabase = async (email, siteId, fullName = '', roleId = null) => {
+  try {
+    console.log('📧 Sending Supabase invitation to:', email, 'for site:', siteId);
+
+    // Get site and company info for the invitation metadata
+    const { data: siteData, error: siteError } = await supabase
+      .from('sites')
+      .select('name, companies(name)')
+      .eq('id', siteId)
+      .single();
+
+    if (siteError) throw siteError;
+
+    // Get current user info for "invited by" context
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Must be authenticated to send invitations');
+
+    // Send invitation via Supabase Auth Admin API
+    const { data, error } = await supabase.auth.admin.inviteUserByEmail(email, {
+      data: {
+        site_id: siteId,
+        site_name: siteData.name,
+        company_name: siteData.companies.name,
+        role_id: roleId,
+        full_name: fullName,
+        invited_by: user.email,
+        invited_by_name: user.user_metadata?.full_name || user.email
+      },
+      redirectTo: `${window.location.origin}/accept-invitation`
+    });
+
+    if (error) {
+      console.error('❌ Supabase invitation error:', error);
+      throw error;
+    }
+
+    console.log('✅ Supabase invitation sent successfully:', data);
+    return data;
+
+  } catch (error) {
+    console.error('❌ Error sending Supabase invitation:', error);
+    throw error;
+  }
+};
+
+// Send invitation via backend (handles database + email)
 export const sendInvitation = async (email, siteId, fullName = '', roleId = null) => {
   try {
-    console.log('📧 Sending invitation:', { email, siteId, fullName, roleId });
-    
-    // Get current user to set as invited_by
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error('Not authenticated');
-    
-    // Check if user already exists and is linked to site
-    const { data: existingUser, error: checkError } = await supabase
-      .from('users')
-      .select()
-      .eq('email', email)
-      .single();
-    
-    if (checkError && checkError.code !== 'PGRST116') {
-      throw checkError;
-    }
-    
-    if (existingUser) {
-      // Check if already linked to this site
-      const { data: existingLink } = await supabase
-        .from('site_users')
-        .select('id')
-        .eq('user_id', existingUser.id)
-        .eq('site_id', siteId)
-        .single();
-      
-      if (existingLink) {
-        throw new Error('User is already a member of this site');
-      }
-    }
-    
-    // Create invitation record
-    const { data: invitation, error: inviteError } = await supabase
-      .from('invitations')
-      .insert([{
-        email: email,
-        site_id: siteId,
-        role_id: roleId,
-        invited_by: user.id
-      }])
-      .select();
-    
-    if (inviteError) {
-      if (inviteError.code === '23505') { // Unique constraint violation
-        throw new Error('An invitation has already been sent to this email for this site');
-      }
-      throw inviteError;
-    }
+    console.log('📧 Sending invitation via backend:', { email, siteId, fullName, roleId });
     
     // Get auth token for backend call
     const { data: { session }, error: sessionError } = await supabase.auth.getSession();
@@ -1474,7 +1473,10 @@ export const sendInvitation = async (email, siteId, fullName = '', roleId = null
       throw new Error('Authentication required to send invitations');
     }
 
-    // Call backend to send the email
+    // Generate a unique invitation token
+    const invitationToken = Math.random().toString(36).substring(2) + Date.now().toString(36);
+
+    // Call backend endpoint to handle invitation creation + email sending
     const response = await fetch(`${BACKEND_URL}/api/send-invitation`, {
       method: 'POST',
       headers: {
@@ -1484,17 +1486,19 @@ export const sendInvitation = async (email, siteId, fullName = '', roleId = null
       body: JSON.stringify({
         email: email,
         full_name: fullName,
-        invitation_token: invitation[0].token,
+        invitation_token: invitationToken,
         site_id: siteId
       })
     });
     
     if (!response.ok) {
-      throw new Error('Failed to send invitation email');
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || 'Failed to send invitation');
     }
     
-    console.log('✅ Invitation sent successfully:', invitation[0]);
-    return invitation[0];
+    const result = await response.json();
+    console.log('✅ Invitation sent successfully via backend');
+    return result;
   } catch (error) {
     console.error("❌ Error sending invitation:", error);
     throw error;

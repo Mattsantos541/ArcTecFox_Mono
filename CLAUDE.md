@@ -457,49 +457,263 @@ ORDER BY yt.table_name;
 
 **RLS CONCLUSION**: Your database security is exemplary. The new authentication backend will work seamlessly with existing RLS policies since all policies correctly use `auth.uid()` patterns.
 
-### User Invitation System
+### **⚠️ CRITICAL: Row Level Security (RLS) Policy Management - EXTREME CAUTION REQUIRED**
 
-**Overview:** Email-based invitation system for granting site access to new and existing users.
+#### **🚨 DISASTER RECOVERY LESSON LEARNED (August 2024)**
+
+**INCIDENT SUMMARY**: During super admin policy implementation, incorrect RLS policies caused system-wide 500 errors that required emergency rollback procedures and multiple recovery attempts.
+
+#### **EXTREMELY HIGH-RISK RLS OPERATIONS**
+
+**⚠️ NEVER ATTEMPT WITHOUT EXTREME CAUTION:**
+
+1. **Circular Policy References**:
+   ```sql
+   -- ❌ DANGEROUS: Creates infinite loops and 500 errors
+   CREATE POLICY "Users can view site_users for their sites" ON site_users
+     USING (
+       site_id IN (
+         SELECT site_id FROM site_users su2  -- ← CIRCULAR REFERENCE!
+         WHERE su2.user_id = auth.uid()
+       )
+     );
+   ```
+
+2. **Complex JOIN Policies**:
+   ```sql
+   -- ❌ RISKY: Complex nested JOINs can cause policy evaluation failures
+   CREATE POLICY "Complex nested access" ON task_signoff
+     USING (
+       task_id IN (
+         SELECT pt.id FROM pm_tasks pt
+         JOIN pm_plans pp ON pt.pm_plan_id = pp.id
+         JOIN child_assets ca ON pp.child_asset_id = ca.id
+         JOIN parent_assets pa ON ca.parent_asset_id = pa.id
+         WHERE pa.site_id IN (...)  -- Multiple levels of JOINs
+       )
+     );
+   ```
+
+3. **Policies Referencing Non-Existent Tables/Functions**:
+   ```sql
+   -- ❌ SYSTEM-BREAKING: References non-existent table
+   CREATE POLICY "Super admin access" ON sites
+     USING (
+       EXISTS (
+         SELECT 1 FROM user_roles ur  -- ← TABLE DOESN'T EXIST!
+         WHERE ur.user_id = auth.uid()
+       )
+     );
+   ```
+
+4. **Duplicate SELECT Policies**:
+   ```sql
+   -- ❌ CONFLICT: Multiple SELECT policies on same table cause 500 errors
+   -- Policy 1:
+   CREATE POLICY "Users can view X" ON table FOR SELECT USING (...);
+   -- Policy 2: 
+   CREATE POLICY "Users can view Y" ON table FOR SELECT USING (...);
+   -- Result: PostgreSQL can't determine which policy to apply
+   ```
+
+#### **SAFE RLS POLICY PATTERNS**
+
+**✅ SIMPLE, RELIABLE PATTERNS:**
+
+1. **Direct User Ownership**:
+   ```sql
+   CREATE POLICY "Users own their data" ON table
+     FOR SELECT USING (user_id = auth.uid());
+   ```
+
+2. **Simple EXISTS Checks**:
+   ```sql
+   CREATE POLICY "Site-based access" ON table
+     FOR SELECT USING (
+       EXISTS (
+         SELECT 1 FROM site_users 
+         WHERE site_id = table.site_id 
+         AND user_id = auth.uid()
+       )
+     );
+   ```
+
+3. **Role-Based with Single JOIN**:
+   ```sql
+   CREATE POLICY "Admin access" ON table
+     FOR SELECT USING (
+       EXISTS (
+         SELECT 1 FROM site_users su
+         JOIN roles r ON su.role_id = r.id
+         WHERE su.user_id = auth.uid() 
+         AND r.name = 'admin'
+       )
+     );
+   ```
+
+#### **MANDATORY SAFETY PROCEDURES**
+
+**🔒 BEFORE ANY RLS POLICY CHANGES:**
+
+1. **Always Query Existing Policies First**:
+   ```sql
+   SELECT tablename, policyname, cmd, qual 
+   FROM pg_policies 
+   WHERE tablename = 'target_table'
+   ORDER BY cmd, policyname;
+   ```
+
+2. **Test Policy Syntax in Development**:
+   - Never test complex policies in production
+   - Use `CREATE POLICY IF NOT EXISTS` when possible
+   - Verify policy logic with simple queries first
+
+3. **Check for Circular References**:
+   - Ensure policies don't reference the same table they protect
+   - Avoid multi-level nested queries when possible
+   - Use simple ownership patterns instead
+
+4. **One Policy Per Operation**:
+   - Only one SELECT policy per table
+   - Only one INSERT policy per table
+   - Drop existing before creating new ones
+
+5. **Emergency Rollback Preparation**:
+   ```sql
+   -- Always prepare rollback scripts BEFORE making changes
+   DROP POLICY IF EXISTS "new_policy_name" ON table_name;
+   -- Restore original policy here
+   ```
+
+#### **DISASTER RECOVERY PROCEDURES**
+
+**If 500 Errors Occur After Policy Changes:**
+
+1. **Immediate Diagnosis**:
+   ```sql
+   -- Find conflicting policies
+   SELECT tablename, COUNT(*) as policy_count, 
+          string_agg(policyname, ', ') as policies
+   FROM pg_policies 
+   WHERE tablename = 'failing_table' AND cmd = 'SELECT'
+   GROUP BY tablename
+   HAVING COUNT(*) > 1;
+   ```
+
+2. **Remove Problematic Policies**:
+   ```sql
+   -- Drop specific problematic policies
+   DROP POLICY IF EXISTS "problematic_policy_name" ON table_name;
+   ```
+
+3. **Restore Simple Working Policies**:
+   ```sql
+   -- Use simplest possible working pattern
+   CREATE POLICY "simple_access" ON table_name
+     FOR SELECT USING (user_id = auth.uid());
+   ```
+
+#### **IMPACT ASSESSMENT OF RLS FAILURES**
+
+**When RLS policies fail, they cause:**
+- **500 Internal Server Errors** on affected API endpoints
+- **Complete application inaccessibility** for all users
+- **Data corruption risk** if policies allow unauthorized access
+- **Hours of emergency debugging** and system recovery
+- **Potential data exposure** if failsafe policies are too permissive
+
+#### **LESSONS LEARNED**
+
+1. **Start Simple**: Use the simplest possible policy that works
+2. **Test Incrementally**: Add complexity only after verifying basic functionality
+3. **Avoid Circular Logic**: Never reference the protected table in its own policy
+4. **Single Policies**: Only one policy per operation type per table
+5. **Emergency First**: Always have rollback procedures ready
+6. **Production Caution**: Test all policy changes in development first
+
+#### **NEVER AGAIN CHECKLIST**
+
+- [ ] Query existing policies before making changes
+- [ ] Use simple, proven policy patterns
+- [ ] Avoid circular references and complex JOINs
+- [ ] Test in development environment first
+- [ ] Prepare rollback scripts before changes
+- [ ] Monitor for 500 errors immediately after deployment
+- [ ] Have emergency contact available during RLS changes
+
+**REMEMBER: RLS policies protect the entire application. One incorrect policy can bring down the entire system. Proceed with EXTREME CAUTION.**
+
+### User Invitation System (Updated August 2024)
+
+**Overview:** Email-based invitation system for granting site access to new and existing users, using Supabase native email or Resend as fallback.
 
 **Database:**
 - `invitations` table stores invitation records with unique tokens
-- Tracks email, site_id, role_id, invited_by, expiration, and acceptance status
-- RLS policies ensure only site admins can create/view invitations
+- Tracks email, site_id, role_id, invited_by (REQUIRED), expiration, and acceptance status
+- Service role key used for invitation creation to bypass RLS restrictions
+
+**Architecture Changes (August 2024):**
+1. **Frontend (`api.js`):**
+   - `sendInvitation()` now calls backend endpoint instead of direct database operations
+   - Generates unique token and passes to backend
+   - Handles authentication token for API calls
+
+2. **Backend (`send_invitation.py`):**
+   - Creates invitation record using service role key (bypasses RLS)
+   - Validates user existence and site membership
+   - Checks for duplicate pending invitations
+   - Passes authenticated user ID as `invited_by` (NOT NULL constraint)
+   - Falls back between Supabase native email and Resend based on configuration
+
+3. **Environment Variables:**
+   - `SUPABASE_KEY`: Service role key (REQUIRED - this IS the service key in production)
+   - `SUPABASE_ANON_KEY`: Public anon key for client operations
+   - `RESEND_API_KEY`: Optional - if not set, uses Supabase native email
+   - **Important:** Remove `RESEND_API_KEY` from Render to use Supabase email
+
+**Email Service Priority:**
+1. **Supabase Native Email** (when `RESEND_API_KEY` not set):
+   - Uses `supabase.auth.admin.invite_user_by_email()`
+   - Rate limited: 3 emails/hour on free tier
+   - Configure templates in Supabase Dashboard → Authentication → Email Templates
+
+2. **Resend** (when `RESEND_API_KEY` is set):
+   - Custom HTML templates via `email_templates.py`
+   - Higher rate limits but requires configuration
 
 **Workflow:**
 1. Admin sends invitation from User Management page (`/admin/users`)
-2. System creates invitation record with 7-day expiration
-3. Email sent with unique link: `/accept-invitation?token=xxx`
-4. Recipient clicks link → signs in/up with Google → auto-added to site
-5. Invitation marked as accepted, user gains site access
+2. Frontend calls backend `/api/send-invitation` with auth token
+3. Backend creates invitation record with `invited_by` = authenticated user ID
+4. System sends email via Supabase or Resend (based on config)
+5. Recipient clicks link → signs in/up with Google → auto-added to site
+6. Invitation marked as accepted, user gains site access
 
 **Key Files:**
-- `/src/api.js`: `sendInvitation()` and `acceptInvitation()` functions
+- `/src/api.js`: `sendInvitation()` - calls backend endpoint
 - `/src/pages/AcceptInvitation.jsx`: Handles invitation acceptance flow
-- `/backend/api/send_invitation.py`: Production email sending logic
-- `/backend/api/send_test_invitation.py`: Test email sending (temporary)
-- `/backend/api/email_templates.py`: Shared email template (single source of truth)
-- `/src/database/invitations_table.sql`: Database schema and RLS policies
-- `/src/database/fix_invitations_complete.sql`: RLS policy fixes
+- `/backend/api/send_invitation.py`: Creates invitation + sends email
+- `/backend/main.py`: Passes authenticated user context to invitation function
+- `/backend/database.py`: Service client configuration (uses `SUPABASE_KEY`)
+- `/backend/api/email_templates.py`: HTML email templates for Resend
+
+**Python Supabase Client Notes:**
+- Cannot chain `.select()` after `.insert()` - use `.execute()` directly
+- No `.is_()` method - use Python filtering for null checks
+- Insert may not return data due to RLS - handle gracefully
+
+**Troubleshooting:**
+- **"Missing Supabase service credentials"**: Ensure `SUPABASE_KEY` is set in Render
+- **"invited_by violates not-null constraint"**: Backend must pass authenticated user ID
+- **"SyncQueryRequestBuilder has no attribute select"**: Remove `.select()` after `.insert()`
+- **Email not sending**: Check if `RESEND_API_KEY` is set (remove it to use Supabase)
+- **502 on users endpoint**: Separate issue with RLS on users table - doesn't affect invitations
 
 **Important Notes:**
-- Users must exist in `auth.users` (via Google sign-in) before being added to `users` table
-- All invitation API calls use the shared Supabase client from `api.js`
+- `SUPABASE_KEY` and `SUPABASE_SERVICE_KEY` are the SAME thing (inconsistent naming in codebase)
+- Service key bypasses RLS - never expose to frontend
 - Invitations expire after 7 days and are single-use
-
-**Email Service Setup (Resend) - CONFIGURED:**
-1. ✅ Signed up at [resend.com](https://resend.com) (free tier: 100 emails/day)
-2. ✅ API key added to Render environment variables (`RESEND_API_KEY`)
-3. ✅ Custom from address configured: `user_admin@arctecfox.ai`
-4. ✅ Domain verification completed for arctecfox.ai
-5. System will send actual emails when API key is present, otherwise logs to console
-
-**Test Email System (TEMPORARY):**
-- Test button on User Management page sends emails without database operations
-- Always sends to `willisreed17@gmail.com` regardless of form input
-- Uses identical email template as production (no test banners/indicators)
-- Purpose: Verify email format before sending to real users
-- Remove test button after email format is finalized
+- Production uses `SUPABASE_KEY` for service operations
 
 ### Multi-User File Storage System (August 2024)
 
