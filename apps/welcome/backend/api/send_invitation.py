@@ -2,6 +2,7 @@
 Send invitation emails to users
 """
 import os
+from datetime import datetime, timedelta
 from fastapi import HTTPException
 from pydantic import BaseModel
 from typing import Optional
@@ -27,8 +28,8 @@ class InvitationRequest(BaseModel):
 async def send_invitation_email(request: InvitationRequest):
     """Send invitation email to user using Supabase native email (interim) or Resend (when configured)"""
     try:
-        # Get Supabase service client for reading site/company data
-        # Service client is needed here to read across sites for email generation
+        # Get Supabase service client for all operations (reads + invitation creation)
+        # Service client bypasses RLS and is needed for cross-site operations
         supabase = get_service_supabase_client()
         
         # Get site and company details
@@ -39,6 +40,45 @@ async def send_invitation_email(request: InvitationRequest):
         site = site_response.data
         company_name = site['companies']['name'] if site.get('companies') else 'the company'
         site_name = site['name']
+        
+        # Check if user already exists and is linked to site
+        print(f"🔍 Checking if user {request.email} already exists...")
+        existing_user_response = supabase.table("users").select("*").eq("email", request.email).execute()
+        
+        if existing_user_response.data:
+            existing_user = existing_user_response.data[0]
+            print(f"👤 Found existing user: {existing_user['id']}")
+            
+            # Check if already linked to this site
+            existing_link_response = supabase.table("site_users").select("id").eq("user_id", existing_user['id']).eq("site_id", request.site_id).execute()
+            
+            if existing_link_response.data:
+                raise HTTPException(status_code=400, detail="User is already a member of this site")
+        
+        # Check for existing pending invitation
+        existing_invitation_response = supabase.table("invitations").select("*").eq("email", request.email).eq("site_id", request.site_id).is_("accepted_at", "null").execute()
+        
+        if existing_invitation_response.data:
+            raise HTTPException(status_code=400, detail="An invitation has already been sent to this email for this site")
+        
+        # Create invitation record using service client (bypasses RLS)
+        print(f"📝 Creating invitation record for {request.email}")
+        invitation_data = {
+            "email": request.email,
+            "site_id": request.site_id,
+            "role_id": None,  # Default role will be assigned later
+            "token": request.invitation_token,
+            "expires_at": (datetime.now() + timedelta(days=7)).isoformat(),
+            "invited_by": None  # Will be set if we can get user context
+        }
+        
+        invitation_response = supabase.table("invitations").insert([invitation_data]).select().execute()
+        
+        if not invitation_response.data:
+            raise HTTPException(status_code=500, detail="Failed to create invitation record")
+        
+        invitation = invitation_response.data[0]
+        print(f"✅ Invitation record created: {invitation['id']}")
         
         # Determine email method based on configuration
         use_supabase_email = not os.getenv("RESEND_API_KEY")  # Use Supabase if Resend not configured
