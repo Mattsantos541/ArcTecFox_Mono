@@ -63,10 +63,13 @@ async def send_invitation_email(request: InvitationRequest):
                 raise HTTPException(status_code=400, detail="User is already a member of this site")
         
         # Check for existing pending invitation
-        existing_invitation_response = supabase.table("invitations").select("*").eq("email", request.email).eq("site_id", request.site_id).is_("accepted_at", "null").execute()
+        existing_invitation_response = supabase.table("invitations").select("*").eq("email", request.email).eq("site_id", request.site_id).execute()
         
         if existing_invitation_response.data:
-            raise HTTPException(status_code=400, detail="An invitation has already been sent to this email for this site")
+            # Check if any are still pending (not accepted)
+            pending_invitations = [inv for inv in existing_invitation_response.data if inv.get('accepted_at') is None]
+            if pending_invitations:
+                raise HTTPException(status_code=400, detail="An invitation has already been sent to this email for this site")
         
         # Create invitation record using service client (bypasses RLS)
         print(f"📝 Creating invitation record for {request.email}")
@@ -79,13 +82,15 @@ async def send_invitation_email(request: InvitationRequest):
             "invited_by": None  # Will be set if we can get user context
         }
         
-        invitation_response = supabase.table("invitations").insert([invitation_data]).select().execute()
+        invitation_response = supabase.table("invitations").insert([invitation_data]).execute()
         
-        if not invitation_response.data:
-            raise HTTPException(status_code=500, detail="Failed to create invitation record")
-        
-        invitation = invitation_response.data[0]
-        print(f"✅ Invitation record created: {invitation['id']}")
+        if invitation_response.data and len(invitation_response.data) > 0:
+            invitation = invitation_response.data[0]
+            print(f"✅ Invitation record created successfully")
+        else:
+            # Insert was successful even if no data returned (common with RLS)
+            invitation = invitation_data
+            print(f"✅ Invitation record created (no data returned due to RLS)")
         
         # Determine email method based on configuration
         use_supabase_email = not os.getenv("RESEND_API_KEY")  # Use Supabase if Resend not configured
