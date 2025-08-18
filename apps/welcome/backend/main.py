@@ -116,9 +116,28 @@ def cors_allow_origin(origin: str) -> bool:
 # Use dynamic origin validation for flexibility
 logger.info(f"🌐 CORS origins configured: {cors_origins_list}")
 
+# Build regex pattern from configured origins plus common patterns
+cors_regex_patterns = [
+    r"https://.*\.app\.github\.dev",  # GitHub Codespaces
+    r"http://localhost:\d+",  # Local development
+    r"https://arctecfox-mono\.vercel\.app",  # Vercel deployment
+    r"https://www\.arctecfox\.ai",  # Production domain
+    r"https://arctecfox\.ai"  # Production domain without www
+]
+
+# Add any additional origins from environment variable
+for origin in cors_origins_list:
+    if origin not in ["*", "http://localhost:*"] and not origin.endswith(".app.github.dev"):
+        # Escape special regex characters in the origin
+        escaped_origin = origin.replace(".", r"\.").replace("-", r"\-")
+        cors_regex_patterns.append(escaped_origin)
+
+cors_regex = "|".join(cors_regex_patterns)
+logger.info(f"🌐 CORS regex pattern: {cors_regex}")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"https://.*\.app\.github\.dev|http://localhost:\d+|https://yourdomain\.com|https://arctecfox-mono\.vercel\.app",
+    allow_origin_regex=cors_regex,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
@@ -224,10 +243,11 @@ async def debug_cors(request: Request):
     origin = request.headers.get("origin", "No origin header")
     
     return {
-        "configured_origins": cors_origins,
+        "configured_origins": cors_origins_list,
         "request_origin": origin,
-        "origin_allowed": origin in cors_origins if origin != "No origin header" else "N/A (direct access)",
+        "origin_allowed": origin in cors_origins_list if origin != "No origin header" else "N/A (direct access)",
         "cors_env_var": os.getenv("CORS_ORIGIN", "Not set"),
+        "cors_regex": cors_regex,
         "user_agent": request.headers.get("user-agent", "No user-agent")
     }
 
