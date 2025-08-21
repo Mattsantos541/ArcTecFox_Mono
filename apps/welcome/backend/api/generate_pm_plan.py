@@ -1,3 +1,4 @@
+# generate_pm_plan.py
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
@@ -14,28 +15,33 @@ logger = logging.getLogger("main")
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 
+# ============
+# Input model
+# ============
 class PMPlanInput(BaseModel):
     name: str
     model: str
     serial: str
     category: str
-    hours: str  # Operating hours
+    hours: str            # Operating hours (e.g., "24/7")
     frequency: str
     criticality: str
     additional_context: str  # Any special notes or focus points for the plan
-    parent_asset: Optional[str] = None  # Parent asset name
-    child_asset: Optional[str] = None   # Child asset name
+    parent_asset: Optional[str] = None   # Parent asset name
+    child_asset: Optional[str] = None    # Child asset name
     site_location: Optional[str] = None  # e.g., "Dallas Plant, Line 3"
     environment: Optional[str] = None    # e.g., "High humidity, corrosive, outdoor, Class I Div 2"
 
 
+# =================
+# Prompt generator
+# =================
 def generate_prompt(data: PMPlanInput) -> str:
     today = datetime.utcnow().date().isoformat()
     return f"""
 You are an expert in preventive maintenance (PM) for industrial assets. Generate a detailed preventive maintenance plan for the following asset.
 
 Parent/Child Hierarchy & Universal Context (applies to all tasks unless overridden):
-
 * Parent Asset: {data.parent_asset if data.parent_asset else "Not provided"}
 * Child Asset: {data.child_asset if data.child_asset else "Not provided"}
 * Site Location: {data.site_location if data.site_location else "Not provided"}
@@ -47,15 +53,12 @@ Parent/Child Hierarchy & Universal Context (applies to all tasks unless overridd
 * Plan Start Date: {today}
 
 **Deduplication & Inheritance Rules (IMPORTANT):**
-
 * Treat Site Location, Environment, Operating Hours, and Criticality as **universal** for this plan and **inherited by the child asset**. Do **not** repeat these in every field; only call out **deviations or overrides** at the task level.
 * Avoid redundant phrasing across tasks. Keep fields concise and only include details unique to the task.
 * If any universal field is unknown, proceed using best practices and state assumptions in the relevant task's "comments".
 
 **Instructions:**
-
 1. Organize tasks into the following standard frequency groups:
-
    * Daily
    * Weekly
    * Monthly
@@ -63,11 +66,10 @@ Parent/Child Hierarchy & Universal Context (applies to all tasks unless overridd
    * Yearly
 
 2. For each task, provide **all** of the following fields. If a field is not applicable, explicitly return a value like "Not applicable". Do not omit fields. If a user has not provided enough input for a given field, reference the manufacturer's manual or reliable standards to determine an appropriate recommendation. If a manual is uploaded or accessible, reference it directly alongside any additional industry knowledge:
-
    * "parent_asset": The parent asset this task belongs to (inherit from universal context).
    * "child_asset": The specific child asset this task applies to (inherit from universal context).
    * "task_name": A clear, specific name for the maintenance task.
-   * "maintenance_interval": The interval between task occurrences, expressed **in months** as a number (e.g., 1, 3, 6, 12). Use fractional values if needed (e.g., 0.25 for approximately weekly, 0.5 for biweekly). This replaces any per-date scheduling output.
+   * "maintenance_interval": The interval between task occurrences, expressed **in months** as a number (e.g., 1, 3, 6, 12). Use fractional values if needed (e.g., 0.25 ≈ weekly, 0.5 ≈ biweekly). This **replaces any per-date scheduling output**.
    * "instructions": An array of clear, step-by-step instructions.
    * "reason": A short explanation of why this task is necessary.
    * "engineering_rationale": A technical explanation that references universal context **only when it changes or is directly relevant**. Explicitly call out when the task addresses something from the additional context: "{data.additional_context}".
@@ -83,20 +85,22 @@ Parent/Child Hierarchy & Universal Context (applies to all tasks unless overridd
    * "inherits_parent_context": true/false indicating whether the task fully inherits the parent/child universal context.
    * "context_overrides": Object with only the fields that deviate from the universal context (e.g., {{"environment": "Clean room"}}). Use an empty object if none.
 
-3. **Do not output any per-task scheduled dates.** Replace any scheduling output with the required numeric `maintenance_interval` in months.
+3. **Do not output any per-task scheduled dates.** Replace any scheduling output with the required numeric "maintenance_interval" in months.
 
 4. You must address all input provided in the "additional_context". If specific tasks are generated as a result, make that connection clear in "engineering_rationale" or "comments".
 
 5. Prioritize information from the manufacturer’s manual. If not available, rely on best practices from industry standards and reputable sources.
 
-**Output Format:**
-Return a single valid JSON object structured like:
+**Output Format:** Return a single valid JSON object structured like:
 {{ "maintenance_plan": [ {{task1}}, {{task2}}, ... ] }}
 
 ⚠️ **IMPORTANT:** Return only the raw JSON object. Do not include markdown formatting, commentary, or extra text.
 """
 
 
+# =====================
+# Validation utilities
+# =====================
 def _is_number(value: Any) -> bool:
     try:
         float(value)
@@ -106,7 +110,8 @@ def _is_number(value: Any) -> bool:
 
 
 def _validate_plan_structure(plan_json: Dict[str, Any]) -> None:
-    """Validate required structure and fields for the AI output.
+    """
+    Validate required structure and fields for the AI output.
     Raises HTTPException(422) with details on failure.
     """
     if not isinstance(plan_json, dict) or "maintenance_plan" not in plan_json:
@@ -154,6 +159,9 @@ def _validate_plan_structure(plan_json: Dict[str, Any]) -> None:
         raise HTTPException(status_code=422, detail={"validation_errors": errors})
 
 
+# ==========
+# Endpoint
+# ==========
 @router.post("/api/generate-ai-plan")
 async def generate_ai_plan(input: PMPlanInput, request: Request):
     logger.info(f"🚀 Received AI plan request: {input.name}")
@@ -178,8 +186,9 @@ async def generate_ai_plan(input: PMPlanInput, request: Request):
         _validate_plan_structure(plan_json)
 
         logger.info("✅ AI plan generated and validated successfully")
-        # Return both the raw string and parsed JSON for convenience
+        # Return both raw and parsed JSON for convenience
         return {"plan": ai_output, "plan_json": plan_json}
+
     except APIConnectionError as e:
         logger.error(f"🔌 OpenAI connection error: {e}")
         raise HTTPException(status_code=502, detail="OpenAI connection failed.")
