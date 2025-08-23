@@ -8,8 +8,27 @@ export const supabase = createClient(
 );
 
 
-// Backend URL for AI calls
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || (import.meta.env.DEV ? 'http://localhost:8000' : 'https://arctecfox-mono.onrender.com');
+// Backend URL for AI calls - with automatic Codespaces detection
+const getBackendUrl = () => {
+  // First check for explicitly set environment variable
+  if (import.meta.env.VITE_BACKEND_URL) {
+    return import.meta.env.VITE_BACKEND_URL;
+  }
+  
+  // Check if we're in GitHub Codespaces
+  const hostname = window.location.hostname;
+  if (hostname.includes('.app.github.dev')) {
+    // Extract the codespace name and construct backend URL
+    const codespacePrefix = hostname.split('-3000.')[0];
+    return `https://${codespacePrefix}-8000.app.github.dev`;
+  }
+  
+  // Default for local development or production
+  return import.meta.env.DEV ? 'http://localhost:8000' : 'https://arctecfox-mono.onrender.com';
+};
+
+const BACKEND_URL = getBackendUrl();
+console.log('🔧 Backend URL configured as:', BACKEND_URL);
 
 // ✅ Keep all your existing Supabase functions
 export const fetchAssets = async () => {
