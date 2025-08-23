@@ -1333,7 +1333,7 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate, selectedSite, userSites: pr
         try {
           const { data: plans, error } = await supabase
             .from('pm_plans')
-            .select('id')
+            .select('id, status')
             .eq('child_asset_id', childAsset.id)
             .eq('status', 'Current')
             .limit(1);
@@ -1342,7 +1342,13 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate, selectedSite, userSites: pr
             console.error('Error checking PM plan status for child asset:', childAsset.id, error);
             statuses[childAsset.id] = false;
           } else {
-            statuses[childAsset.id] = plans && plans.length > 0;
+            const hasPlan = plans && plans.length > 0;
+            statuses[childAsset.id] = hasPlan;
+            if (plans && plans.length > 0) {
+              console.log(`✅ ${childAsset.name}: Has Current PM Plan`, { id: plans[0].id, status: plans[0].status });
+            } else {
+              console.log(`❌ ${childAsset.name}: No Current PM Plan found`);
+            }
           }
         } catch (error) {
           console.error('Error checking PM plan status for child asset:', childAsset.id, error);
@@ -1351,6 +1357,7 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate, selectedSite, userSites: pr
       })
     );
     
+    console.log('Final PM Plan statuses:', statuses);
     setChildAssetPlanStatuses(statuses);
   };
 

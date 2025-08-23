@@ -489,7 +489,7 @@ const AssetInsightsDashboard = ({ parentAsset, childAssets }) => {
                       {...props}
                       value={showAsPercentage 
                         ? 'Replacement Cost (100%)'
-                        : `Replacement Cost ($${getReplacementCost() >= 1000 ? (getReplacementCost() / 1000).toFixed(0) + 'k' : getReplacementCost()})`
+                        : `Replacement Cost ($${getReplacementCost() >= 1000 ? (getReplacementCost() / 1000).toFixed(0) + 'k' : getReplacementCost().toFixed(0)})`
                       }
                     />
                   )}
