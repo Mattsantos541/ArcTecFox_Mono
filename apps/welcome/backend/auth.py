@@ -72,8 +72,15 @@ async def verify_supabase_token(
                     detail="Invalid or expired token",
                     headers={"WWW-Authenticate": "Bearer"}
                 )
+            elif response.status_code == 403:
+                logger.error(f"❌ Forbidden: Check SUPABASE_ANON_KEY permissions. Response: {response.text}")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid or expired token",
+                    headers={"WWW-Authenticate": "Bearer"}
+                )
             else:
-                logger.error(f"❌ Unexpected auth response: {response.status_code}")
+                logger.error(f"❌ Unexpected auth response: {response.status_code}, Body: {response.text}")
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail="Authentication service error"

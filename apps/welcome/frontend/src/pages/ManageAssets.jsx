@@ -600,6 +600,29 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate, selectedSite, userSites: pr
     }
   };
 
+  const handleSuggestChildAssets = async () => {
+    if (!selectedParentAsset) {
+      setError('Please select a parent asset first');
+      return;
+    }
+
+    console.log('🤖 [Manual Suggestion] Triggering child asset suggestions for:', selectedParentAsset.name);
+    
+    // Get the site environment for the selected parent asset
+    const siteEnvironment = userSites.find(s => s.id === selectedParentAsset.site_id)?.environment;
+    
+    // Prepare the parent asset data with environment
+    const parentAssetWithEnvironment = {
+      ...selectedParentAsset,
+      environment: siteEnvironment
+    };
+    
+    console.log('🤖 [Manual Suggestion] Parent asset with environment:', parentAssetWithEnvironment);
+    
+    // Call the existing requestChildAssetSuggestions function
+    await requestChildAssetSuggestions(parentAssetWithEnvironment);
+  };
+
   const handleCreateChildAsset = async (e) => {
     e.preventDefault();
     
@@ -1486,7 +1509,7 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate, selectedSite, userSites: pr
           criticality: suggestion.criticality_level || null, // Store criticality in dedicated field
           cost_to_replace: null, // User will fill this in later
           plan_start_date: null,
-          parent_asset_id: createdParentAsset.id,
+          parent_asset_id: createdParentAsset?.id || selectedParentAsset.id,
           status: 'active',
           created_by: user.id
         };
@@ -1504,9 +1527,12 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate, selectedSite, userSites: pr
         }
       }
 
-      // Reload child assets, select parent asset, and close modal
-      setSelectedParentAsset(createdParentAsset);
-      await loadChildAssets(createdParentAsset.id);
+      // Reload child assets and close modal
+      const parentId = createdParentAsset?.id || selectedParentAsset.id;
+      if (createdParentAsset) {
+        setSelectedParentAsset(createdParentAsset);
+      }
+      await loadChildAssets(parentId);
       setShowSuggestionsModal(false);
       setSuggestedAssets([]);
       setSelectedSuggestions({});
@@ -2113,12 +2139,20 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate, selectedSite, userSites: pr
                       {/* Add Child Asset Button Row - appears after all child assets */}
                       <tr>
                         <td colSpan="8" className="px-6 py-2 bg-gray-50">
-                          <button
-                            onClick={() => setShowAddChildAsset(!showAddChildAsset)}
-                            className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-xs"
-                          >
-                            {showAddChildAsset ? 'Cancel' : 'Add Child Asset'}
-                          </button>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => setShowAddChildAsset(!showAddChildAsset)}
+                              className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-xs"
+                            >
+                              {showAddChildAsset ? 'Cancel' : 'Add Child Asset'}
+                            </button>
+                            <button
+                              onClick={() => handleSuggestChildAssets()}
+                              className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 transition-colors text-xs"
+                            >
+                              Suggest Child Assets
+                            </button>
+                          </div>
                         </td>
                       </tr>
 

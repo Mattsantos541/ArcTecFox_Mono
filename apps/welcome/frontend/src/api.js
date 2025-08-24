@@ -1603,9 +1603,7 @@ export const addExistingUserToSite = async (email, siteId, roleId = null, canEdi
       throw new Error('Authentication required');
     }
 
-    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
-    
-    const response = await fetch(`${backendUrl}/api/add-existing-user`, {
+    const response = await fetch(`${BACKEND_URL}/api/add-existing-user`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

@@ -68,6 +68,15 @@ CORS_ORIGIN
 FRONTEND_URL
 ```
 
+## Database Management
+- **Production Database**: Live data on main Supabase project
+- **Development Database**: Separate Supabase project for testing
+- **Split Database Approach**: 
+  - Development: Uses .env files for local testing in GitHub Codespaces
+  - Production: Uses platform environment variables (Render)
+  - Schema changes tested in dev before applying to production
+  - Migration scripts used to sync schema changes between environments
+
 ## CRITICAL DO NOT MODIFY
 
 ### 1. Task View Query Structure
@@ -132,6 +141,14 @@ CREATE POLICY "good" ON table USING (created_by = auth.uid());
 3. **Check existing RLS policies** before creating new ones
 4. **Use shared email templates** (`email_templates.py`)
 5. **Test RLS changes in development first** - can break entire system
+
+## Safe Development-to-Production Workflow
+1. **Database Changes**: Create versioned migration SQL files, test on dev database first
+2. **Schema Changes**: Apply same migration files to production using Supabase SQL editor
+3. **RLS Policies**: Test with multiple user scenarios in dev before production changes
+4. **Application Code**: Test build process and environment variable detection
+5. **Deployment**: Use existing pipeline (Render for backend, frontend build)
+6. **Rollback Plan**: Always have rollback SQL/code ready before production changes
 
 ## File Storage
 - Site-based paths: `sites/{site_id}/{filename}`

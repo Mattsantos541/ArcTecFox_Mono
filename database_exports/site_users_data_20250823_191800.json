@@ -1,0 +1,4 @@
+[{"id":3,"created_at":"2025-07-22T15:17:16.993926+00:00","site_id":"064dbc10-2c05-4aa6-96cc-c59dbd81769d","user_id":"18f5ac5a-600f-4ed2-882d-1eaad454b366","role_id":"00cbdf8f-fb06-4549-821c-d6513a584a46","can_edit":false,"added_by":null}, 
+ {"id":2,"created_at":"2025-07-22T15:17:01.535482+00:00","site_id":"bb784033-f4f4-4af1-9c83-bf08e356867c","user_id":"e7efc7aa-ba0f-442a-ae72-a41d469a58bf","role_id":"af9b681c-b24d-4fba-b0b3-f5b8e45484f3","can_edit":false,"added_by":null}, 
+ {"id":1,"created_at":"2025-07-22T14:31:35.880635+00:00","site_id":"064dbc10-2c05-4aa6-96cc-c59dbd81769d","user_id":"6fce66fb-ccdc-4bb6-9a7b-c3562a9fa3a8","role_id":"00cbdf8f-fb06-4549-821c-d6513a584a46","can_edit":true,"added_by":null}, 
+ {"id":4,"created_at":"2025-08-17T15:09:37.625123+00:00","site_id":"a89cd921-a261-4186-a279-1233cb6c525e","user_id":"f48c0f39-3076-4edf-a801-b4c5b9557933","role_id":"af9b681c-b24d-4fba-b0b3-f5b8e45484f3","can_edit":false,"added_by":null}]
