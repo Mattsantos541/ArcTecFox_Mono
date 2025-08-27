@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 
-export default function PMPlannerOpen({ onGenerate }) {
+// ...imports...
+export default function PMPlannerOpen({ onGenerate, onChange }) {
   const [formData, setFormData] = useState({
     name: "",
     model: "",
@@ -12,25 +13,23 @@ export default function PMPlannerOpen({ onGenerate }) {
     date_of_plan_start: "",
   });
 
-  const [loading, setLoading] = useState(false);
-
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    setFormData(prev => {
+      const next = { ...prev, [name]: value };
+      if (typeof onChange === "function") onChange(next);   // 👈 notify parent
+      return next;
+    });
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setLoading(true);
-    try {
-      console.log("📨 Submitting PM Planner:", formData);
-      if (onGenerate) onGenerate(formData);
-    } catch (err) {
-      console.error("❌ Failed to generate plan", err);
-    } finally {
-      setLoading(false);
-    }
+    // ...your generate logic...
+    if (typeof onGenerate === "function") onGenerate(formData);
   };
+
+  // ...render the same fields as you already have...
+}
 
   const fieldKeys = [
     "name",

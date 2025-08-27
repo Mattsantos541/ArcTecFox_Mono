@@ -1,5 +1,9 @@
 import { BrowserRouter as Router, Route, Routes } from "react-router-dom";
 
+// Public landing page
+import Home from "./pages/Home";
+
+// Existing pages (authed area)
 import PMPlanner from "./pages/PMPlanner";
 import MaintenanceSchedule from "./components/dashboard/maintenance-schedule";
 import UserManagement from "./pages/UserManagement";
@@ -9,9 +13,13 @@ import ManageAssets from "./pages/ManageAssets";
 import TermsOfService from "./pages/TermsOfService";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import AcceptInvitation from "./pages/AcceptInvitation";
+
 import { AuthProvider } from "./hooks/useAuth";
 import ErrorBoundary from "./components/ErrorBoundary";
-import MainLayout from "./layouts/MainLayout"; // you'll need to create this if missing
+
+// Layouts
+import MainLayout from "./layouts/MainLayout";       // authed shell (unchanged)
+import SimpleLayout from "./layouts/SimpleLayout";   // NEW: public landing shell
 
 function App() {
   return (
@@ -19,13 +27,21 @@ function App() {
       <Router>
         <AuthProvider>
           <Routes>
+            {/** Public landing (no auth header) */}
+            <Route element={<SimpleLayout />}>
+              <Route path="/" element={<Home />} />
+            </Route>
+
+            {/** Authenticated app & general site pages */}
             <Route element={<MainLayout />}>
-              <Route path="/" element={<MaintenanceSchedule />} />
               <Route path="/pmplanner" element={<PMPlanner />} />
+              <Route path="/dashboard" element={<MaintenanceSchedule />} />
+
               <Route path="/admin/users" element={<UserManagement />} />
               <Route path="/admin/companies" element={<CompanyManagement />} />
               <Route path="/admin/assets" element={<ManageAssets />} />
               <Route path="/admin/super-admins" element={<SuperAdminManagement />} />
+
               <Route path="/terms-of-service" element={<TermsOfService />} />
               <Route path="/privacy-policy" element={<PrivacyPolicy />} />
               <Route path="/accept-invitation" element={<AcceptInvitation />} />
