@@ -160,3 +160,68 @@ CREATE POLICY "good" ON table USING (created_by = auth.uid());
 - **New users**: Email invitation flow
 - Backend handles invitation creation with service key
 - Frontend calls `/api/send-invitation` endpoint
+
+## CURRENT IMPLEMENTATION STATUS - Parent Asset PM Enhancement
+
+### What We've Implemented ✅
+1. **Parent Asset Creation Workflow**:
+   - Enhanced parent asset creation process in `ManageAssets.jsx`
+   - Added `ParentPlanLoadingModal` component for user feedback
+   - Integrated `full_parent_create_prompt.py` API call after asset creation
+   - Creates PM plan records with `child_asset_id = NULL` for parent assets
+   - Stores critical spare parts in `parent_assets.critical_spare_parts` JSON field
+
+2. **API Functions Added**:
+   - `generateParentPlan()` - Calls AI to generate parent maintenance plan
+   - `createParentPMPlan()` - Creates PM plan record for parent asset
+   - `createPMTasks()` - Creates multiple PM task records from AI response
+   - `updateParentAssetSpares()` - Updates parent asset with critical spares
+
+3. **Backend Integration**:
+   - Added `full_parent_create_prompt` router to main FastAPI app
+   - `/api/generate-parent-plan` endpoint available and working
+   - Generates at least 2 parent oversight tasks (Weekly Health Check, Monthly Audit)
+
+4. **Database Schema**:
+   - Fixed `pm_plans.plan_start_date` NOT NULL constraint issue
+   - Parent plans stored with `child_asset_id = NULL`
+   - PM tasks created with proper maintenance intervals and details
+
+### Current Issue ❌ - Asset Insights Parent Task Display
+
+**Goal**: Display parent-level maintenance tasks in Asset Insights dashboard when clicking on parent assets
+
+**Problem**: Getting 400 errors when fetching parent PM tasks through Supabase API
+
+**Error Details**:
+```
+Failed to load resource: the server responded with a status of 400 ()
+URL: .../pm_tasks?select=id,task_name,maintenance_interval,criticality...&pm_plan_id=eq.00ca3f74-5812-4898-8876-b45b4a0209c7
+```
+
+**Attempted Solutions**:
+1. ✅ Created `fetchParentPMTasks()` function in `api.js`
+2. ✅ Modified `AssetInsightsDashboard.jsx` to fetch and display parent tasks
+3. ❌ Multiple query approaches tried (nested select, separate queries)
+4. ❌ All result in 400 Bad Request errors
+
+**Current Implementation Files**:
+- `api.js:2054-2109` - `fetchParentPMTasks()` function
+- `AssetInsightsDashboard.jsx:75-103` - Parent PM data fetching useEffect
+- `AssetInsightsDashboard.jsx:415-534` - UI sections for parent tasks and spare parts
+
+**Possible Root Causes**:
+1. **Database Schema Issue**: `pm_tasks` table column names might differ from what we're selecting
+2. **RLS Policy Blocking**: Row Level Security might be preventing access to parent PM tasks
+3. **Foreign Key Relationship**: `pm_plan_id` relationship might not exist or be named differently
+4. **Data Type Mismatch**: UUID format or data type issues with `pm_plan_id`
+
+**Next Steps to Debug**:
+1. Check actual `pm_tasks` table schema in Supabase dashboard
+2. Verify RLS policies allow reading parent PM tasks
+3. Test direct database queries in Supabase SQL editor
+4. Check if any parent PM tasks were actually created during testing
+5. Consider using existing working query patterns from `PMPlanner.jsx` or other components
+
+**Workaround Option**:
+Could temporarily disable the parent task display sections until the API issue is resolved, allowing the main parent asset creation workflow to function without breaking the Asset Insights view.

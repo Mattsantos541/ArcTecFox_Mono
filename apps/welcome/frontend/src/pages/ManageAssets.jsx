@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Upload, Sparkles } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { 
   supabase, 
@@ -7,12 +8,17 @@ import {
   fetchPMPlansByAsset,
   generatePMPlan,
   fetchUserSites,
-  suggestChildAssets
+  suggestChildAssets,
+  generateParentPlan,
+  createParentPMPlan,
+  createPMTasks,
+  updateParentAssetSpares
 } from '../api';
 import FileUpload from '../components/forms/FileUpload';
 import { createStorageService } from '../services/storageService';
 import { saveState, loadState } from '../utils/statePersistence';
 import AssetInsightsDashboard from '../components/assets/AssetInsightsDashboard';
+import BulkImportModal from '../components/assets/BulkImportModal';
 
 // Loading Modal Component (copied from PMPlanner)
 function LoadingModal({ isOpen }) {
@@ -57,6 +63,49 @@ function SuggestionsLoadingModal({ isOpen }) {
             <div className="text-sm text-green-600">
               This may take a few moments...
             </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Parent Plan Generation Loading Modal
+function ParentPlanLoadingModal({ isOpen, status, progress }) {
+  if (!isOpen) return null;
+  
+  const statusMessages = {
+    'analyzing': 'Analyzing equipment specifications...',
+    'generating': 'Consulting maintenance best practices...',
+    'creating': 'Generating optimal maintenance schedule...',
+    'saving': 'Saving maintenance plan...'
+  };
+  
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-8 max-w-md mx-4 text-center">
+        <div className="mb-6">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-indigo-100 rounded-full mb-4">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600" />
+          </div>
+          <h3 className="text-xl font-semibold text-gray-800 mb-2">
+            🤖 Generating Parent Maintenance Plan
+          </h3>
+          <p className="text-gray-600 mb-4">
+            {statusMessages[status] || 'Processing...'}
+          </p>
+          
+          {/* Progress Bar */}
+          <div className="w-full bg-gray-200 rounded-full h-2 mb-4">
+            <div 
+              className="bg-indigo-600 h-2 rounded-full transition-all duration-500" 
+              style={{width: `${progress || 10}%`}} 
+            />
+          </div>
+          
+          <div className="text-sm text-gray-500 space-y-1">
+            <div>Creating oversight tasks...</div>
+            <div>Identifying critical spare parts...</div>
           </div>
         </div>
       </div>
@@ -166,6 +215,15 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate, selectedSite, userSites: pr
   const [selectedSuggestions, setSelectedSuggestions] = useState({});
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [createdParentAsset, setCreatedParentAsset] = useState(null);
+
+  // Bulk Import state
+  const [showBulkImportModal, setShowBulkImportModal] = useState(false);
+
+  // Parent Plan Generation state
+  const [showParentPlanModal, setShowParentPlanModal] = useState(false);
+  const [parentPlanStatus, setParentPlanStatus] = useState('analyzing');
+  const [parentPlanProgress, setParentPlanProgress] = useState(10);
+  const [generatedParentPlan, setGeneratedParentPlan] = useState(null);
 
   // Custom confirmation modal state
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -489,6 +547,94 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate, selectedSite, userSites: pr
     }
   };
 
+  // Generate Parent Plan Workflow
+  const generateParentPlanWorkflow = async (parentAsset) => {
+    try {
+      console.log('🤖 [Parent Plan] Starting parent plan generation for:', parentAsset.name);
+      
+      // Show parent plan modal
+      setShowParentPlanModal(true);
+      setParentPlanStatus('analyzing');
+      setParentPlanProgress(10);
+      
+      // Get site details
+      const site = userSites.find(s => s.id === parentAsset.site_id);
+      
+      // Simulate progress updates
+      const progressTimer = setInterval(() => {
+        setParentPlanProgress(prev => Math.min(prev + 10, 90));
+      }, 1000);
+      
+      setTimeout(() => setParentPlanStatus('generating'), 3000);
+      setTimeout(() => setParentPlanStatus('creating'), 6000);
+      setTimeout(() => setParentPlanStatus('saving'), 9000);
+      
+      try {
+        // Call parent plan generation API
+        const planInput = {
+          parent_asset_name: parentAsset.name,
+          parent_asset_make: parentAsset.make,
+          parent_asset_model: parentAsset.model,
+          parent_asset_category: parentAsset.category,
+          site_location: site?.name || 'Unknown',
+          environment: site?.environment || 'Standard industrial',
+          additional_context: parentAsset.notes,
+          operating_hours: '24/7',
+          pm_frequency: 'Standard',
+          criticality: 'Medium'
+        };
+        
+        console.log('🤖 [Parent Plan] Calling generateParentPlan with:', planInput);
+        const generatedPlan = await generateParentPlan(planInput);
+        console.log('🤖 [Parent Plan] Plan generated:', generatedPlan);
+        setGeneratedParentPlan(generatedPlan);
+        
+        // Create PM Plan record
+        console.log('📋 [Parent Plan] Creating PM plan record...');
+        const pmPlan = await createParentPMPlan(parentAsset.id, parentAsset.site_id);
+        console.log('📋 [Parent Plan] PM plan created:', pmPlan);
+        
+        // Create PM Tasks
+        if (generatedPlan.maintenance_plan && generatedPlan.maintenance_plan.length > 0) {
+          console.log('📝 [Parent Plan] Creating PM tasks...');
+          await createPMTasks(pmPlan.id, generatedPlan.maintenance_plan);
+          console.log('📝 [Parent Plan] PM tasks created');
+        }
+        
+        // Update parent asset with critical spare parts
+        if (generatedPlan.critical_spares && generatedPlan.critical_spares.length > 0) {
+          console.log('🔧 [Parent Plan] Updating parent asset with critical spares...');
+          await updateParentAssetSpares(parentAsset.id, generatedPlan.critical_spares);
+          console.log('🔧 [Parent Plan] Critical spares updated');
+        }
+        
+        // Complete progress
+        clearInterval(progressTimer);
+        setParentPlanProgress(100);
+        
+        // Brief success pause
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+      } catch (error) {
+        console.error('🤖 [Parent Plan ERROR]:', error);
+        clearInterval(progressTimer);
+        // Continue to child suggestions even if parent plan fails
+      }
+      
+      // Hide parent plan modal
+      setShowParentPlanModal(false);
+      
+      // Continue to child asset suggestions
+      console.log('🤖 [Workflow] Transitioning to child asset suggestions...');
+      await requestChildAssetSuggestions(parentAsset);
+      
+    } catch (error) {
+      console.error('🤖 [Workflow ERROR]:', error);
+      setShowParentPlanModal(false);
+      setError('Failed to generate parent plan, but asset was created successfully');
+    }
+  };
+
   const handleCreateParentAsset = async (e) => {
     e.preventDefault();
     
@@ -569,15 +715,7 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate, selectedSite, userSites: pr
       await loadParentAssets();
       console.log('🔍 [Loading] Parent assets list refreshed');
       
-      // Store created asset and trigger AI suggestions
-      const assetWithEnvironment = {...createdAsset, environment: userSites.find(s => s.id === createdAsset.site_id)?.environment};
-      console.log('🔍 [AI Suggestions] Storing created asset with environment:', assetWithEnvironment);
-      setCreatedParentAsset(assetWithEnvironment);
-      
-      console.log('🔍 [AI Suggestions] Calling requestChildAssetSuggestions with asset:', createdAsset);
-      await requestChildAssetSuggestions(createdAsset);
-      console.log('🔍 [AI Suggestions] Request completed');
-      
+      // Reset form immediately after successful creation
       setShowAddParentAsset(false);
       setNewParentAsset({
         name: '',
@@ -594,6 +732,14 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate, selectedSite, userSites: pr
       setParentManualFile(null);
       setParentFileUploadError(null);
       setError(null);
+      
+      // Store created asset for later use
+      const assetWithEnvironment = {...createdAsset, environment: userSites.find(s => s.id === createdAsset.site_id)?.environment};
+      console.log('🔍 [Workflow] Starting parent plan generation workflow for:', assetWithEnvironment);
+      setCreatedParentAsset(assetWithEnvironment);
+      
+      // Start parent plan generation workflow
+      await generateParentPlanWorkflow(createdAsset);
     } catch (err) {
       console.error('Error creating parent asset:', err);
       setError('Failed to create parent asset');
@@ -695,6 +841,49 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate, selectedSite, userSites: pr
     } catch (err) {
       console.error('Error creating child asset:', err);
       setError('Failed to create child asset');
+    }
+  };
+
+  // Bulk Import Handler
+  const handleBulkImport = async (validAssets) => {
+    try {
+      console.log('🔄 Starting bulk import of', validAssets.length, 'assets');
+      
+      const assetsToInsert = validAssets.map(asset => ({
+        ...asset,
+        site_id: userSites.length === 1 ? userSites[0].id : userSites[0].id, // Use first site for bulk import
+        status: 'active',
+        created_by: user.id,
+        created_at: new Date().toISOString()
+      }));
+      
+      const { data, error } = await supabase
+        .from('parent_assets')
+        .insert(assetsToInsert)
+        .select();
+      
+      if (error) {
+        console.error('Bulk import error:', error);
+        throw new Error(`Failed to import assets: ${error.message}`);
+      }
+      
+      console.log('✅ Successfully imported', data.length, 'assets');
+      
+      // Refresh assets list
+      await loadParentAssets();
+      
+      // Show success message
+      setError(null);
+      
+      // Trigger callback if provided
+      if (onAssetUpdate) {
+        onAssetUpdate();
+      }
+      
+      return data;
+    } catch (err) {
+      console.error('Error in bulk import:', err);
+      throw err;
     }
   };
 
@@ -1030,19 +1219,7 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate, selectedSite, userSites: pr
                 console.error('Error soft deleting task_signoff records:', signoffError);
               }
               
-              // Soft delete all PM tasks
-              const { error: taskError } = await supabase
-                .from('pm_tasks')
-                .update({
-                  status: 'Deleted',
-                  updated_by: user.id,
-                  updated_at: new Date().toISOString()
-                })
-                .in('id', taskIds);
-              
-              if (taskError) {
-                console.error('Error soft deleting PM tasks:', taskError);
-              }
+              // Note: PM tasks don't have status column, they are managed through task_signoff status
             }
             
             // Soft delete PM plans
@@ -1156,19 +1333,7 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate, selectedSite, userSites: pr
               console.error('Error soft deleting task_signoff records:', signoffError);
             }
             
-            // Soft delete all PM tasks
-            const { error: taskError } = await supabase
-              .from('pm_tasks')
-              .update({
-                status: 'Deleted',
-                updated_by: user.id,
-                updated_at: new Date().toISOString()
-              })
-              .in('id', taskIds);
-            
-            if (taskError) {
-              console.error('Error soft deleting PM tasks:', taskError);
-            }
+            // Note: PM tasks don't have status column, they are managed through task_signoff status
           }
         }
         
@@ -1730,12 +1895,29 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate, selectedSite, userSites: pr
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-xl font-semibold text-gray-800">Assets</h3>
           {userSites.length > 0 && (
-            <button
-              onClick={() => setShowAddParentAsset(!showAddParentAsset)}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
-            >
-              {showAddParentAsset ? 'Cancel' : 'Add Parent Asset'}
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowBulkImportModal(true)}
+                disabled={loading || userSites.length === 0}
+                className={`px-4 py-2 rounded-lg font-medium flex items-center gap-2 text-sm transition-all duration-200 transform ${
+                  loading || userSites.length === 0
+                    ? 'bg-gray-400 text-gray-600 cursor-not-allowed scale-95'
+                    : 'bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white shadow-lg hover:shadow-xl scale-100 hover:scale-105 active:scale-95'
+                }`}
+              >
+                <div className="flex items-center gap-1">
+                  <Upload className="w-4 h-4" />
+                  <Sparkles className="w-3 h-3" />
+                </div>
+                Bulk Import Assets
+              </button>
+              <button
+                onClick={() => setShowAddParentAsset(!showAddParentAsset)}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+              >
+                {showAddParentAsset ? 'Cancel' : 'Add Parent Asset'}
+              </button>
+            </div>
           )}
         </div>
 
@@ -3207,6 +3389,22 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate, selectedSite, userSites: pr
           </div>
         </div>
       )}
+
+      {/* Bulk Import Modal */}
+      <BulkImportModal
+        isOpen={showBulkImportModal}
+        onClose={() => setShowBulkImportModal(false)}
+        onImport={handleBulkImport}
+        assetCategories={assetCategories}
+        siteId={userSites.length === 1 ? userSites[0].id : null}
+      />
+
+      {/* Loading Modal for Parent Plan Generation */}
+      <ParentPlanLoadingModal 
+        isOpen={showParentPlanModal} 
+        status={parentPlanStatus}
+        progress={parentPlanProgress}
+      />
 
       {/* Loading Modal for AI Suggestions */}
       <SuggestionsLoadingModal isOpen={loadingSuggestions} />

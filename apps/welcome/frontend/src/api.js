@@ -221,7 +221,6 @@ export const savePMPlanInput = async (planData) => {
       created_by: userId, // Use the ID from users table
       plan_start_date: planData.date_of_plan_start || new Date().toISOString().split('T')[0], // Required field
       status: 'Current', // Set status as Current for new plans
-      site_id: planData.siteId || null, // Add site ID for easy querying
       version: 1, // Plan version
     };
     
@@ -230,8 +229,7 @@ export const savePMPlanInput = async (planData) => {
     console.log('🗃️ Saving PM plan with child asset ID:', {
       child_asset_id: planInsertData.child_asset_id,
       plan_start_date: planInsertData.plan_start_date,
-      status: planInsertData.status,
-      site_id: planInsertData.site_id
+      status: planInsertData.status
     });
 
     // Note: Manual data is stored separately in the loaded_manuals table
@@ -335,7 +333,6 @@ export const adjustForWeekend = (date) => {
   return date;
 };
 
-// Calculate due date based on start date and interval
 export const calculateDueDate = (startDate, intervalMonths) => {
   console.log(`🔍 calculateDueDate: startDate=${startDate}, intervalMonths=${intervalMonths}`);
   const date = new Date(startDate);
@@ -343,10 +340,16 @@ export const calculateDueDate = (startDate, intervalMonths) => {
   
   // Handle fractional months (for weekly/biweekly)
   if (intervalMonths < 1) {
-    // Convert fractional months to days (approximate: 1 month = 30 days)
-    const days = Math.round(intervalMonths * 30);
-    console.log(`🔍 Adding ${days} days for fractional month`);
-    date.setDate(date.getDate() + days);
+    // Special case for weekly (0.25 months = 7 days)
+    if (intervalMonths === 0.25) {
+      console.log(`🔍 Adding 7 days for weekly interval`);
+      date.setDate(date.getDate() + 7);
+    } else {
+      // Convert fractional months to days (approximate: 1 month = 30 days)
+      const days = Math.round(intervalMonths * 30);
+      console.log(`🔍 Adding ${days} days for fractional month`);
+      date.setDate(date.getDate() + days);
+    } // ← This closing brace was missing!
   } else {
     // Handle whole months
     console.log(`🔍 Adding ${Math.floor(intervalMonths)} months`);
@@ -1810,11 +1813,18 @@ export const checkSitePlanLimit = async (siteId, newPlansCount = 1) => {
     const planLimit = siteData.plan_limit || 0;
     
     // Count existing Current plans for this site (don't count Replaced plans)
+    // Need to join with child_assets and parent_assets to get site_id
     const { data: plansData, error: plansError } = await supabase
       .from('pm_plans')
-      .select('id')
-      .eq('site_id', siteId)
-      .eq('status', 'Current');
+      .select(`
+        id,
+        child_assets!left(
+          parent_assets!inner(site_id)
+        ),
+        parent_assets!left(site_id)
+      `)
+      .eq('status', 'Current')
+      .or(`child_assets.parent_assets.site_id.eq.${siteId},parent_assets.site_id.eq.${siteId}`);
     
     if (plansError) throw plansError;
     
@@ -1914,6 +1924,186 @@ export const removeUserRoleFromCompany = async (userId, siteId) => {
 // DEPRECATED: Use createUserForSite instead
 export const createUserByEmail = async (email, siteId, fullName = '', roleId = null) => {
   return await createUserForSite(email, siteId, fullName, roleId);
+};
+
+// AI-Powered Parent Plan Generation with authentication
+export const generateParentPlan = async (parentAssetData) => {
+  try {
+    console.log('🤖 Requesting parent maintenance plan for:', parentAssetData.parent_asset_name);
+
+    // Get current session for auth token
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !session) {
+      throw new Error('Authentication required to generate parent plan');
+    }
+
+    const response = await fetch(`${BACKEND_URL}/api/generate-parent-plan`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({
+        parent_asset_name: parentAssetData.parent_asset_name,
+        parent_asset_make: parentAssetData.parent_asset_make,
+        parent_asset_model: parentAssetData.parent_asset_model,
+        parent_asset_category: parentAssetData.parent_asset_category,
+        site_location: parentAssetData.site_location,
+        environment: parentAssetData.environment,
+        additional_context: parentAssetData.additional_context,
+        user_manual_content: parentAssetData.user_manual_content,
+        operating_hours: parentAssetData.operating_hours || '24/7',
+        pm_frequency: parentAssetData.pm_frequency || 'Standard',
+        criticality: parentAssetData.criticality || 'Medium'
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('🤖 Parent plan generation failed:', response.status, errorText);
+      throw new Error(`Failed to generate parent plan: ${response.status}`);
+    }
+
+    const result = await response.json();
+    console.log('🤖 Parent plan generated successfully:', result);
+    
+    return result.plan;
+  } catch (error) {
+    console.error('🤖 Error generating parent plan:', error);
+    throw error;
+  }
+};
+
+// Create PM Plan record for parent asset
+export const createParentPMPlan = async (parentAssetId, siteId) => {
+  try {
+    console.log('📋 Creating PM plan for parent asset:', parentAssetId);
+    
+    const today = new Date().toISOString().split('T')[0]; // Format as YYYY-MM-DD
+    
+    const { data, error } = await supabase
+      .from('pm_plans')
+      .insert([{
+        parent_asset_id: parentAssetId, // Link to parent asset
+        child_asset_id: null, // NULL for parent asset plans
+        status: 'Current',
+        plan_start_date: today, // Add the required plan_start_date
+        created_by: (await supabase.auth.getUser()).data.user.id,
+        created_at: new Date().toISOString()
+      }])
+      .select()
+      .single();
+    
+    if (error) throw error;
+    console.log('📋 PM plan created:', data);
+    return data;
+  } catch (error) {
+    console.error('📋 Error creating PM plan:', error);
+    throw error;
+  }
+};
+
+// Create PM Tasks from generated plan
+export const createPMTasks = async (pmPlanId, tasks) => {
+  try {
+    console.log('📝 Creating PM tasks for plan:', pmPlanId);
+    
+    const tasksToInsert = tasks.map(task => ({
+      pm_plan_id: pmPlanId,
+      task_name: task.task_name,
+      maintenance_interval: parseFloat(task.maintenance_interval),
+      instructions: task.instructions || [],
+      reason: task.reason,
+      engineering_rationale: task.engineering_rationale,
+      safety_precautions: task.safety_precautions,
+      common_failures_prevented: task.common_failures_prevented,
+      tools_needed: task.tools_needed,
+      est_minutes: parseInt(task.estimated_time_minutes) || 30,
+      criticality: task.criticality_rating || 'Medium',
+      created_at: new Date().toISOString()
+    }));
+    
+    const { data, error } = await supabase
+      .from('pm_tasks')
+      .insert(tasksToInsert)
+      .select();
+    
+    if (error) throw error;
+    console.log('📝 PM tasks created:', data);
+    return data;
+  } catch (error) {
+    console.error('📝 Error creating PM tasks:', error);
+    throw error;
+  }
+};
+
+// Update parent asset with critical spare parts
+export const updateParentAssetSpares = async (parentAssetId, criticalSpares) => {
+  try {
+    console.log('🔧 Updating parent asset with critical spares:', parentAssetId);
+    
+    const { data, error } = await supabase
+      .from('parent_assets')
+      .update({
+        critical_spare_parts: JSON.stringify(criticalSpares)
+      })
+      .eq('id', parentAssetId)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    console.log('🔧 Parent asset updated with spares:', data);
+    return data;
+  } catch (error) {
+    console.error('🔧 Error updating parent asset:', error);
+    throw error;
+  }
+};
+
+// Fetch Parent PM Tasks and Plans
+export const fetchParentPMTasks = async (parentAssetId, siteId) => {
+  try {
+    console.log('📋 Fetching parent PM tasks for asset:', parentAssetId, 'site:', siteId);
+    
+    // First get the parent PM plan using parent_asset_id
+    const { data: planData, error: planError } = await supabase
+      .from('pm_plans')
+      .select('id,status,plan_start_date')
+      .eq('parent_asset_id', parentAssetId)
+      .eq('status', 'Current')
+      .order('created_at', { ascending: false })
+      .limit(1);
+    
+    if (planError) {
+      console.error('📋 Error fetching parent PM plan:', planError);
+      throw planError;
+    }
+    
+    if (!planData || planData.length === 0) {
+      console.log('📋 No parent PM plan found');
+      return [];
+    }
+    
+    const planId = planData[0].id;
+    console.log('📋 Found parent PM plan:', planId);
+    
+    // Then get the PM tasks for this plan - using single line select (no spaces)
+    const { data: tasksData, error: tasksError } = await supabase
+      .from('pm_tasks')
+      .select('id,task_name,maintenance_interval,criticality,instructions,safety_precautions,tools_needed,est_minutes,reason,engineering_rationale')
+      .eq('pm_plan_id', planId);
+    
+    if (tasksError) {
+      console.error('📋 Error fetching parent PM tasks:', tasksError);
+      throw tasksError;
+    }
+    
+    console.log('📋 Parent PM tasks fetched:', tasksData);
+    return tasksData || [];
+  } catch (error) {
+    console.error('📋 Error in fetchParentPMTasks:', error);
+    throw error;
+  }
 };
 
 // AI-Powered Child Asset Suggestions with authentication

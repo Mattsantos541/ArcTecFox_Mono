@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { supabase } from '../../api';
+import { supabase, fetchParentPMTasks } from '../../api';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts';
@@ -12,6 +12,8 @@ const AssetInsightsDashboard = ({ parentAsset, childAssets }) => {
   const [selectedChildAsset, setSelectedChildAsset] = useState('all');
   const [dateRange, setDateRange] = useState({ start: null, end: null });
   const [showAsPercentage, setShowAsPercentage] = useState(false);
+  const [parentPMTasks, setParentPMTasks] = useState([]);
+  const [parentCriticalSpares, setParentCriticalSpares] = useState([]);
 
   // Custom label component for reference line with background
   const CustomReferenceLineLabel = ({ viewBox, value }) => {
@@ -67,6 +69,37 @@ const AssetInsightsDashboard = ({ parentAsset, childAssets }) => {
         end: today.toISOString().split('T')[0]
       });
     }
+  }, [parentAsset]);
+
+  // Fetch parent PM tasks and critical spares
+  useEffect(() => {
+    const fetchParentPMData = async () => {
+      if (!parentAsset?.id) return;
+      
+      try {
+        // Fetch parent PM tasks using the API function
+        const tasks = await fetchParentPMTasks(parentAsset.id, parentAsset.site_id);
+        setParentPMTasks(tasks);
+        
+        // Parse critical spare parts from parent asset
+        if (parentAsset.critical_spare_parts) {
+          try {
+            const spares = JSON.parse(parentAsset.critical_spare_parts);
+            setParentCriticalSpares(Array.isArray(spares) ? spares : []);
+          } catch (e) {
+            console.error('Error parsing critical spare parts:', e);
+            setParentCriticalSpares([]);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching parent PM data:', error);
+        // Set empty arrays on error to avoid showing outdated data
+        setParentPMTasks([]);
+        setParentCriticalSpares([]);
+      }
+    };
+    
+    fetchParentPMData();
   }, [parentAsset]);
 
   // Fetch maintenance history and consumables
@@ -317,42 +350,129 @@ const AssetInsightsDashboard = ({ parentAsset, childAssets }) => {
               ))}
             </select>
           </div>
-
-          <div className="flex gap-2">
-            <div>
-              <label className="block text-sm font-medium mb-2 text-blue-900">Start Date</label>
-              <input
-                type="date"
-                value={dateRange.start || ''}
-                min={parentAsset?.install_date || ''}
-                max={dateRange.end || ''}
-                onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
-                className="px-3 py-2 border border-blue-200 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-400"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-2 text-blue-900">End Date</label>
-              <input
-                type="date"
-                value={dateRange.end || ''}
-                min={dateRange.start || parentAsset?.install_date || ''}
-                max={new Date().toISOString().split('T')[0]}
-                onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
-                className="px-3 py-2 border border-blue-200 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-400"
-              />
-            </div>
-          </div>
-
-          <Button
-            variant="outline"
-            onClick={() => setShowAsPercentage(!showAsPercentage)}
-            className="flex items-center gap-2 border-blue-300 hover:bg-blue-50 hover:text-blue-700 text-blue-600"
-          >
-            {showAsPercentage ? <ToggleRight className="h-4 w-4" /> : <ToggleLeft className="h-4 w-4" />}
-            {showAsPercentage ? 'Show as %' : 'Show as $'}
-          </Button>
         </div>
       </div>
+
+      {/* Parent Maintenance Tasks Section */}
+      {parentPMTasks.length > 0 && (
+        <Card className="border-t-4 border-t-purple-600">
+          <CardHeader className="bg-gradient-to-r from-purple-50 to-indigo-50">
+            <CardTitle className="flex items-center gap-2 text-purple-900">
+              <Wrench className="h-5 w-5 text-purple-600" />
+              Parent Asset Maintenance Tasks
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-4">
+            <div className="space-y-3">
+              {parentPMTasks.map((task, index) => (
+                <div key={task.id} className="border-l-4 border-purple-200 pl-4 py-2 hover:bg-purple-50 transition-colors rounded-r">
+                  <div className="flex justify-between items-start">
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-gray-800">{task.task_name}</h4>
+                      <div className="mt-1 space-y-1">
+                        <p className="text-sm text-gray-600">
+                          <span className="font-medium">Interval:</span> Every {
+                            task.maintenance_interval < 1 
+                              ? `${Math.round(task.maintenance_interval * 30)} days`
+                              : task.maintenance_interval === 1 
+                                ? 'month' 
+                                : `${task.maintenance_interval} months`
+                          }
+                        </p>
+                        {task.reason && (
+                          <p className="text-sm text-gray-600">
+                            <span className="font-medium">Purpose:</span> {task.reason}
+                          </p>
+                        )}
+                        {task.est_minutes && (
+                          <p className="text-sm text-gray-600">
+                            <span className="font-medium">Est. Time:</span> {task.est_minutes} minutes
+                          </p>
+                        )}
+                        {task.tools_needed && task.tools_needed !== 'Not applicable' && (
+                          <p className="text-sm text-gray-600">
+                            <span className="font-medium">Tools:</span> {task.tools_needed}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="ml-4">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        task.criticality === 'High' 
+                          ? 'bg-red-100 text-red-800' 
+                          : task.criticality === 'Medium' 
+                            ? 'bg-yellow-100 text-yellow-800' 
+                            : 'bg-green-100 text-green-800'
+                      }`}>
+                        {task.criticality || 'Medium'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Critical Spare Parts Section */}
+      {parentCriticalSpares.length > 0 && (
+        <Card className="border-t-4 border-t-orange-600">
+          <CardHeader className="bg-gradient-to-r from-orange-50 to-amber-50">
+            <CardTitle className="flex items-center gap-2 text-orange-900">
+              <Wrench className="h-5 w-5 text-orange-600" />
+              Critical Spare Parts
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              {parentCriticalSpares.map((spare, index) => (
+                <div key={index} className="border border-orange-200 rounded-lg p-3 hover:bg-orange-50 transition-colors">
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-start">
+                      <h4 className="font-semibold text-gray-800 text-sm">{spare.part_name}</h4>
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                        spare.criticality === 'High' 
+                          ? 'bg-red-100 text-red-800' 
+                          : spare.criticality === 'Medium' 
+                            ? 'bg-yellow-100 text-yellow-800' 
+                            : 'bg-green-100 text-green-800'
+                      }`}>
+                        {spare.criticality || 'Medium'}
+                      </span>
+                    </div>
+                    {spare.part_number && spare.part_number !== 'Not applicable' && (
+                      <p className="text-xs text-gray-600">
+                        <span className="font-medium">P/N:</span> {spare.part_number}
+                      </p>
+                    )}
+                    {spare.manufacturer && spare.manufacturer !== 'Not applicable' && (
+                      <p className="text-xs text-gray-600">
+                        <span className="font-medium">Mfr:</span> {spare.manufacturer}
+                      </p>
+                    )}
+                    {spare.min_stock_level !== 'Not applicable' && spare.min_stock_level != null && (
+                      <p className="text-xs text-gray-600">
+                        <span className="font-medium">Min Stock:</span> {spare.min_stock_level} {spare.uom || ''}
+                      </p>
+                    )}
+                    {spare.lead_time_days !== 'Not applicable' && spare.lead_time_days != null && (
+                      <p className="text-xs text-gray-600">
+                        <span className="font-medium">Lead Time:</span> {spare.lead_time_days} days
+                      </p>
+                    )}
+                    {spare.failure_modes && spare.failure_modes.length > 0 && (
+                      <p className="text-xs text-gray-500 italic">
+                        Prevents: {spare.failure_modes.join(', ')}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -407,6 +527,45 @@ const AssetInsightsDashboard = ({ parentAsset, childAssets }) => {
             </p>
           </CardContent>
         </Card>
+      </div>
+
+      {/* Date Range and Display Controls */}
+      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-lg border border-blue-200">
+        <div className="flex flex-wrap items-end gap-4">
+          <div className="flex gap-2">
+            <div>
+              <label className="block text-sm font-medium mb-2 text-blue-900">Start Date</label>
+              <input
+                type="date"
+                value={dateRange.start || ''}
+                min={parentAsset?.install_date || ''}
+                max={dateRange.end || ''}
+                onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
+                className="px-3 py-2 border border-blue-200 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-400"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-2 text-blue-900">End Date</label>
+              <input
+                type="date"
+                value={dateRange.end || ''}
+                min={dateRange.start || parentAsset?.install_date || ''}
+                max={new Date().toISOString().split('T')[0]}
+                onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
+                className="px-3 py-2 border border-blue-200 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-400"
+              />
+            </div>
+          </div>
+
+          <Button
+            variant="outline"
+            onClick={() => setShowAsPercentage(!showAsPercentage)}
+            className="flex items-center gap-2 border-blue-300 hover:bg-blue-50 hover:text-blue-700 text-blue-600"
+          >
+            {showAsPercentage ? <ToggleRight className="h-4 w-4" /> : <ToggleLeft className="h-4 w-4" />}
+            {showAsPercentage ? 'Show as %' : 'Show as $'}
+          </Button>
+        </div>
       </div>
 
       {/* Expense Chart */}

@@ -21,6 +21,9 @@ out/
 # Logs
 *.log
 
+#Claude tracking files
+*.md
+
 # Python cache files
 __pycache__/
 **/__pycache__/

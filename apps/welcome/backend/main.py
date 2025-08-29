@@ -44,6 +44,9 @@ from pdf_export import (
     export_detailed_pm_plans_to_pdf
 )
 from api.suggest_child_assets import router as child_assets_router
+from api.agent_executor import router as agent_router
+from api.bulk_import import router as bulk_import_router
+from api.full_parent_create_prompt import router as parent_plan_router
 from api.send_invitation import InvitationRequest, send_invitation_email
 from api.send_test_invitation import TestInvitationRequest, send_test_invitation_email
 from api.add_existing_user import AddExistingUserRequest, AddExistingUserResponse, add_existing_user_to_site
@@ -87,6 +90,9 @@ if RATE_LIMITING_AVAILABLE and limiter:
 
 # Include routers
 app.include_router(child_assets_router, prefix="/api", tags=["child-assets"])
+app.include_router(agent_router, prefix="/api", tags=["agents"])
+app.include_router(bulk_import_router, prefix="/api", tags=["bulk-import"])
+app.include_router(parent_plan_router, prefix="/api", tags=["parent-plans"])
 
 # Environment-based CORS configuration with smart pattern matching
 cors_origins_env = os.getenv("CORS_ORIGIN", "https://arctecfox-mono.vercel.app")
