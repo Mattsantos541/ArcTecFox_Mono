@@ -1,26 +1,49 @@
 import React from "react";
-import { Link as ScrollLink } from "react-scroll";
 
 export default function NavigationBar() {
+  const scrollTo = (id) => {
+    const el = document.getElementById(id);
+    if (el) el.scrollIntoView({ behavior: "smooth" });
+  };
+
   return (
     <header className="w-full bg-white border-b border-gray-200 shadow-sm sticky top-0 z-40">
       <div className="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
-        <div className="font-bold text-lg text-blue-700">ArcTecFox</div>
-        <nav className="flex space-x-6 text-sm text-gray-700">
-          <ScrollLink to="features" smooth={true} duration={500} className="cursor-pointer hover:text-blue-600">
+        {/* Left spacer so your top-left brand area (in Home) isn't duplicated */}
+        <div className="h-8" />
+
+        <nav className="flex items-center gap-6 text-sm text-gray-700">
+          <button
+            className="hover:text-gray-900"
+            onClick={() => scrollTo("features")}
+            aria-label="Features"
+          >
             Features
-          </ScrollLink>
-          <ScrollLink to="how-it-works" smooth={true} duration={500} className="cursor-pointer hover:text-blue-600">
+          </button>
+          <button
+            className="hover:text-gray-900"
+            onClick={() => scrollTo("pm-planner-section")}
+            aria-label="How It Works"
+          >
             How It Works
-          </ScrollLink>
-          <ScrollLink to="about" smooth={true} duration={500} className="cursor-pointer hover:text-blue-600">
+          </button>
+          <button
+            className="hover:text-gray-900"
+            onClick={() => scrollTo("about")}
+            aria-label="About"
+          >
             About
-          </ScrollLink>
-          <ScrollLink to="contact" smooth={true} duration={500} className="cursor-pointer hover:text-blue-600">
+          </button>
+          <button
+            className="hover:text-gray-900"
+            onClick={() => scrollTo("contact")}
+            aria-label="Contact"
+          >
             Contact
-          </ScrollLink>
+          </button>
         </nav>
       </div>
     </header>
   );
 }
+
