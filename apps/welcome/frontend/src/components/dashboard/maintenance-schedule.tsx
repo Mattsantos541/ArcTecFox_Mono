@@ -197,12 +197,14 @@ export default function MaintenanceSchedule() {
               id,
               status,
               child_asset_id,
-              site_id,
               created_by,
               child_assets!inner (
                 id,
                 name,
-                criticality
+                criticality,
+                parent_assets!inner (
+                  site_id
+                )
               )
             )
           )
@@ -212,7 +214,7 @@ export default function MaintenanceSchedule() {
 
       // Add site filtering if a specific site is selected
       if (selectedSite && selectedSite !== 'all') {
-        query = query.eq('pm_tasks.pm_plans.site_id', selectedSite)
+        query = query.eq('pm_tasks.pm_plans.child_assets.parent_assets.site_id', selectedSite)
       }
 
       const { data, error } = await query
@@ -266,7 +268,7 @@ export default function MaintenanceSchedule() {
           priority: task.criticality || 'Medium', // Task criticality from pm_tasks table
           planId: plan.id,
           signoffId: signoff.id, // Store signoff ID for updates
-          siteId: plan?.site_id,
+          siteId: asset?.parent_assets?.site_id,
           createdByEmail: '', // Will need to fetch separately if needed
           notes: '', // Notes field doesn't exist in pm_tasks
           completedAt: signoff.comp_date, // Use comp_date from signoff
@@ -343,7 +345,11 @@ export default function MaintenanceSchedule() {
             pm_plans!inner (
               id,
               created_by,
-              site_id
+              child_assets!inner (
+                parent_assets!inner (
+                  site_id
+                )
+              )
             )
           `)
           .eq('id', taskId);

@@ -111,7 +111,10 @@ def calculate_due_date(start_date: str, interval_months: float, from_date: Optio
         # Handle fractional months (for weekly/biweekly)
         if interval_months < 1:
             # Convert fractional months to days (approximate: 1 month = 30 days)
-            days = round(interval_months * 30)
+            if interval_months == 0.25:
+                days = 7
+            else:
+                days = round(interval_months * 30)
             next_date = base_date + timedelta(days=days)
         else:
             # Add whole months using relativedelta for accurate month addition
