@@ -197,15 +197,8 @@ export default function MaintenanceSchedule() {
               id,
               status,
               child_asset_id,
-              created_by,
-              child_assets!inner (
-                id,
-                name,
-                criticality,
-                parent_assets!inner (
-                  site_id
-                )
-              )
+              parent_asset_id,
+              created_by
             )
           )
         `)
@@ -213,9 +206,8 @@ export default function MaintenanceSchedule() {
         .eq('pm_tasks.pm_plans.status', 'Current')
 
       // Add site filtering if a specific site is selected
-      if (selectedSite && selectedSite !== 'all') {
-        query = query.eq('pm_tasks.pm_plans.child_assets.parent_assets.site_id', selectedSite)
-      }
+      // Note: We can't filter by site_id directly in the query because we need to handle both parent and child asset paths
+      // Site filtering will be done in the data transformation step
 
       const { data, error } = await query
 
@@ -227,13 +219,104 @@ export default function MaintenanceSchedule() {
       // Transform data - each record is now a task_signoff with nested task/plan data
       const transformedTasks = [];
       
+      // Collect asset IDs to fetch in batches
+      const childAssetIds = [];
+      const parentAssetIds = [];
+      
+      for (const signoff of data) {
+        const plan = signoff.pm_tasks.pm_plans;
+        if (plan.child_asset_id) {
+          childAssetIds.push(plan.child_asset_id);
+        } else if (plan.parent_asset_id) {
+          parentAssetIds.push(plan.parent_asset_id);
+        }
+      }
+      
+      // Fetch child assets with parent site info
+      let childAssetsMap = {};
+      if (childAssetIds.length > 0) {
+        // Filter out any null/undefined values and get unique IDs
+        const uniqueChildIds = Array.from(new Set(childAssetIds.filter(id => id != null)));
+        
+        if (uniqueChildIds.length > 0) {
+          // Build a filter query for multiple IDs using or() instead of in()
+          let query = supabase
+            .from('child_assets')
+            .select('id, name, criticality, parent_assets(site_id)');
+          
+          // For a single ID, use eq. For multiple, use or with multiple eq conditions
+          if (uniqueChildIds.length === 1) {
+            query = query.eq('id', uniqueChildIds[0]);
+          } else {
+            // Build an OR filter string: id.eq.uuid1,id.eq.uuid2,...
+            const orConditions = uniqueChildIds.map(id => `id.eq.${id}`).join(',');
+            query = query.or(orConditions);
+          }
+          
+          const { data: childAssets, error: childError } = await query;
+          
+          if (childError) {
+            console.error('Error fetching child assets:', childError);
+          } else if (childAssets) {
+            childAssetsMap = Object.fromEntries(childAssets.map(asset => [asset.id, asset]));
+          }
+        }
+      }
+      
+      // Fetch parent assets using the exact working pattern from api.js
+      let parentAssetsMap = {};
+      if (parentAssetIds.length > 0) {
+        // Filter out any null/undefined values and get unique IDs
+        const uniqueParentIds = Array.from(new Set(parentAssetIds.filter(id => id != null)));
+        
+        if (uniqueParentIds.length > 0) {
+          // Use individual fetching with .eq() pattern from api.js (works without errors)
+          for (const parentId of uniqueParentIds) {
+            try {
+              const { data: parentAsset, error: parentError } = await supabase
+                .from('parent_assets')
+                .select('*')
+                .eq('id', parentId)
+                .single();
+              
+              if (parentError) {
+                console.error('Error fetching parent asset:', parentId, parentError);
+              } else if (parentAsset) {
+                parentAssetsMap[parentId] = parentAsset;
+              }
+            } catch (error) {
+              console.error('Exception fetching parent asset:', parentId, error);
+            }
+          }
+        }
+      }
+      
       for (const signoff of data) {
         const task = signoff.pm_tasks;
         const plan = task.pm_plans;
-        const asset = plan.child_assets;
         
-        // Get asset name from nested child_assets data
-        const assetName = asset?.name || 'Unknown Asset';
+        // Handle both parent and child asset plans
+        let assetName, siteId;
+        if (plan.child_asset_id) {
+          // Child asset plan
+          const asset = childAssetsMap[plan.child_asset_id];
+          assetName = asset?.name || 'Unknown Child Asset';
+          siteId = asset?.parent_assets?.site_id;
+        } else if (plan.parent_asset_id) {
+          // Parent asset plan
+          const asset = parentAssetsMap[plan.parent_asset_id];
+          assetName = asset?.name || 'Unknown Parent Asset';
+          siteId = asset?.site_id;
+        } else {
+          // Fallback for missing asset data
+          assetName = 'Unknown Asset';
+          siteId = null;
+        }
+        
+        // Apply site filtering if needed
+        if (selectedSite && selectedSite !== 'all' && siteId !== selectedSite) {
+          continue; // Skip this task if it doesn't match the selected site
+        }
         
         // Get due date from signoff record
         const dueDate = signoff.due_date || 'No date';
@@ -268,7 +351,7 @@ export default function MaintenanceSchedule() {
           priority: task.criticality || 'Medium', // Task criticality from pm_tasks table
           planId: plan.id,
           signoffId: signoff.id, // Store signoff ID for updates
-          siteId: asset?.parent_assets?.site_id,
+          siteId: siteId,
           createdByEmail: '', // Will need to fetch separately if needed
           notes: '', // Notes field doesn't exist in pm_tasks
           completedAt: signoff.comp_date, // Use comp_date from signoff
@@ -1179,14 +1262,14 @@ export default function MaintenanceSchedule() {
         .from('parent_assets')
         .select('site_id')
         .eq('id', childAssetData.parent_asset_id)
-        .single()
+        .maybeSingle() // Use maybeSingle to avoid errors if not found
 
       if (parentAssetError) {
         console.error('❌ Parent asset query error:', parentAssetError)
         throw parentAssetError
       }
 
-      const siteId = parentAssetData.site_id
+      const siteId = parentAssetData?.site_id
       
       if (!siteId) {
         throw new Error('Could not determine site for this task')
