@@ -422,24 +422,11 @@ export const recalculateTaskSignoffDates = async (childAssetId, newStartDate) =>
 const createInitialTaskSignoffs = async (pmPlanId, tasks) => {
   try {
     console.log('📝 Creating initial task_signoff records for PM plan:', pmPlanId);
+    console.log('📝 Tasks to process:', tasks.length);
     
-    // Get the PM plan with child asset details
-    const { data: planData, error: planError } = await supabase
-      .from('pm_plans')
-      .select('*, child_assets!inner(plan_start_date)')
-      .eq('id', pmPlanId)
-      .single();
-    
-    if (planError) {
-      console.error('Error fetching PM plan:', planError);
-      return;
-    }
-    
-    const planStartDate = planData?.child_assets?.plan_start_date || new Date().toISOString().split('T')[0];
-    console.log('📅 Using plan start date:', planStartDate);
-    
-    // Get current user
-    const { data: { user } } = await supabase.auth.getUser();
+    // Use today's date as the start date for all new PM plans
+    const planStartDate = new Date().toISOString().split('T')[0];
+    console.log('📅 Using start date:', planStartDate);
     
     // Create signoff records for each task
     const signoffRecords = tasks.map(task => {
@@ -2011,7 +1998,7 @@ export const createPMTasks = async (pmPlanId, tasks) => {
     const tasksToInsert = tasks.map(task => ({
       pm_plan_id: pmPlanId,
       task_name: task.task_name,
-      maintenance_interval: parseFloat(task.maintenance_interval),
+      maintenance_interval: task.maintenance_interval, // Store as string, parse when calculating due dates
       instructions: task.instructions || [],
       reason: task.reason,
       engineering_rationale: task.engineering_rationale,
@@ -2030,6 +2017,15 @@ export const createPMTasks = async (pmPlanId, tasks) => {
     
     if (error) throw error;
     console.log('📝 PM tasks created:', data);
+    
+    // Create task_signoff records for each task
+    try {
+      await createInitialTaskSignoffs(pmPlanId, data);
+    } catch (signoffError) {
+      console.error('⚠️ Failed to create task_signoff records, but PM tasks were created:', signoffError);
+      // Don't throw - let the parent workflow continue
+    }
+    
     return data;
   } catch (error) {
     console.error('📝 Error creating PM tasks:', error);
