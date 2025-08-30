@@ -229,8 +229,11 @@ export default function MaintenanceSchedule() {
           childAssetIds.push(plan.child_asset_id);
         } else if (plan.parent_asset_id) {
           parentAssetIds.push(plan.parent_asset_id);
+          console.log('🔍 Found parent asset task:', plan.parent_asset_id, signoff.pm_tasks.task_name);
         }
       }
+      
+      console.log('🔍 Total parent asset tasks found:', parentAssetIds.length);
       
       // Fetch child assets with parent site info
       let childAssetsMap = {};
@@ -307,6 +310,7 @@ export default function MaintenanceSchedule() {
           const asset = parentAssetsMap[plan.parent_asset_id];
           assetName = asset?.name || 'Unknown Parent Asset';
           siteId = asset?.site_id;
+          console.log('🔍 Processing parent asset task:', assetName, task.task_name);
         } else {
           // Fallback for missing asset data
           assetName = 'Unknown Asset';
