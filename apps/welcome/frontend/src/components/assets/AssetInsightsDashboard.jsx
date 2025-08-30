@@ -205,9 +205,10 @@ const AssetInsightsDashboard = ({ parentAsset, childAssets }) => {
 
     // Calculate maintenance hours (sum of est_minutes)
     const maintenanceMinutes = maintenanceHistory.reduce((sum, signoff) => {
-      return sum + (signoff.pm_tasks?.est_minutes || 0);
+      const minutes = parseInt(signoff.pm_tasks?.est_minutes) || 0;
+      return sum + minutes;
     }, 0);
-    const maintenanceHours = Math.round(maintenanceMinutes / 60 * 10) / 10;
+    const maintenanceHours = isNaN(maintenanceMinutes) ? 0 : Math.round(maintenanceMinutes / 60 * 10) / 10;
 
     // Calculate total expenses
     const totalExpenses = maintenanceHistory.reduce((sum, signoff) => {
@@ -332,27 +333,6 @@ const AssetInsightsDashboard = ({ parentAsset, childAssets }) => {
 
   return (
     <div className="w-full space-y-6">
-      {/* Controls Section */}
-      <div className="bg-gradient-to-r from-gray-50 to-blue-50 p-4 rounded-lg border border-blue-100">
-        <div className="flex flex-wrap gap-4 items-end">
-          <div className="flex-1 min-w-[200px]">
-            <label className="block text-sm font-medium mb-2 text-blue-900">Asset Filter</label>
-            <select
-              value={selectedChildAsset}
-              onChange={(e) => setSelectedChildAsset(e.target.value)}
-              className="flex h-10 w-full rounded-md border border-blue-200 bg-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:border-blue-400"
-            >
-              <option value="all">All Assets (Parent + Children)</option>
-              {childAssets.map(child => (
-                <option key={child.id} value={child.id}>
-                  {child.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-      </div>
-
       {/* Parent Maintenance Tasks Section */}
       {parentPMTasks.length > 0 && (
         <Card className="border-t-4 border-t-purple-600">
@@ -473,6 +453,27 @@ const AssetInsightsDashboard = ({ parentAsset, childAssets }) => {
           </CardContent>
         </Card>
       )}
+
+      {/* Controls Section - Asset Filter */}
+      <div className="bg-gradient-to-r from-gray-50 to-blue-50 p-4 rounded-lg border border-blue-100">
+        <div className="flex flex-wrap gap-4 items-end">
+          <div className="flex-1 min-w-[200px]">
+            <label className="block text-sm font-medium mb-2 text-blue-900">Asset Filter</label>
+            <select
+              value={selectedChildAsset}
+              onChange={(e) => setSelectedChildAsset(e.target.value)}
+              className="flex h-10 w-full rounded-md border border-blue-200 bg-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:border-blue-400"
+            >
+              <option value="all">All Assets (Parent + Children)</option>
+              {childAssets.map(child => (
+                <option key={child.id} value={child.id}>
+                  {child.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

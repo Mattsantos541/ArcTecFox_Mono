@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, Sparkles } from 'lucide-react';
+import { Upload, Sparkles, Download, Edit, Trash2 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
+import { Button } from '../components/ui/button';
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '../components/ui/tooltip';
 import { 
   supabase, 
   isUserSiteAdmin, 
@@ -1368,6 +1370,126 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate, selectedSite, userSites: pr
     });
   };
 
+  // PDF Export function for child assets
+  const handleExportChildAssetPDF = async (childAsset) => {
+    try {
+      setError(null);
+      console.log('Generating PDF export...');
+      
+      // Fetch the current PM plan for this child asset
+      const { data: pmPlan, error: planError } = await supabase
+        .from('pm_plans')
+        .select('id, created_at, created_by, status')
+        .eq('child_asset_id', childAsset.id)
+        .eq('status', 'Current')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+      
+      if (planError || !pmPlan) {
+        setError('No current PM plan found for this asset');
+        return;
+      }
+      
+      // Fetch PM tasks for this plan (simplified query without nested relations)
+      const { data: tasks, error: tasksError } = await supabase
+        .from('pm_tasks')
+        .select('*')
+        .eq('pm_plan_id', pmPlan.id)
+        .order('maintenance_interval', { ascending: true });
+      
+      if (tasksError) {
+        console.error('Error fetching PM tasks:', tasksError);
+        setError('Failed to fetch PM tasks');
+        return;
+      }
+      
+      if (!tasks || tasks.length === 0) {
+        setError('No PM tasks found for this asset');
+        return;
+      }
+      
+      // Transform data for PDF export (matching PMPlannerPDFExport format)
+      const transformedTasks = tasks.map(task => ({
+        id: task.id,
+        task_name: task.task_name,
+        asset_name: childAsset.name,
+        parent_asset_name: selectedParentAsset?.name || '',
+        serial_number: childAsset.serial_no || 'N/A',
+        manufacturer: childAsset.manufacturer || 'N/A',
+        model: childAsset.model || 'N/A',
+        maintenance_interval: task.maintenance_interval,
+        criticality: task.criticality || 'Medium',
+        est_minutes: task.est_minutes || 'N/A',
+        tools_needed: task.tools_needed || 'N/A',
+        no_techs_needed: task.no_techs_needed || 'N/A',
+        reason: task.reason || '',
+        safety_precautions: task.safety_precautions || '',
+        engineering_rationale: task.engineering_rationale || '',
+        common_failures_prevented: task.common_failures_prevented || '',
+        usage_insights: task.usage_insights || '',
+        consumables: task.consumables || '',
+        instructions: task.instructions || ''
+      }));
+      
+      // Generate filename
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-');
+      const cleanAssetName = childAsset.name.replace(/[^a-zA-Z0-9]/g, '_');
+      const filename = `PM_Plan_${cleanAssetName}_${timestamp}.pdf`;
+      
+      // Get authentication token
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session) {
+        throw new Error('Authentication required for PDF export');
+      }
+      
+      // Call the Python backend API for PDF generation
+      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'https://arctecfox-mono.onrender.com'}/api/export-pdf`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          data: transformedTasks,
+          filename: filename,
+          export_type: 'pm_plans',
+          asset_info: {
+            child_asset: childAsset.name,
+            parent_asset: selectedParentAsset?.name || 'N/A',
+            serial_number: childAsset.serial_no || 'N/A',
+            manufacturer: childAsset.manufacturer || 'N/A',
+            model: childAsset.model || 'N/A'
+          }
+        })
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+      }
+      
+      // Download the PDF file
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      console.log(`✅ PDF exported successfully: ${filename}`);
+      setError(null); // Clear any previous errors on success
+      
+    } catch (error) {
+      console.error('PDF export error:', error);
+      setError(`Failed to export PDF: ${error.message}`);
+    }
+  };
+
   const startEditingParent = (asset) => {
     setEditingParentAsset(asset.id);
     setEditingParentData({
@@ -2114,28 +2236,28 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate, selectedSite, userSites: pr
           <table className="w-full bg-white border border-gray-200 table-fixed">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/8">
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[15%]">
                   Name
                 </th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/8">
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[12%]">
                   Make
                 </th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/8">
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[12%]">
                   Model
                 </th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/8">
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[13%]">
                   Serial Number
                 </th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/8">
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[12%]">
                   Category
                 </th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/8">
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[12%]">
                   Purchase Date
                 </th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/8">
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[12%]">
                   Install Date
                 </th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/12">
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[12%]">
                   Actions
                 </th>
               </tr>
@@ -2185,24 +2307,43 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate, selectedSite, userSites: pr
                     </td>
                     <td className="px-3 py-4 whitespace-nowrap text-sm" onClick={(e) => e.stopPropagation()}>
                       <div className="flex space-x-1">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openEditModal(asset, true);
-                          }}
-                          className="text-blue-600 hover:text-blue-900 text-xs"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteParentAsset(asset.id);
-                          }}
-                          className="text-red-600 hover:text-red-900 text-xs"
-                        >
-                          Delete
-                        </button>
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openEditModal(asset, true);
+                                }}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>Edit parent asset</p>
+                            </TooltipContent>
+                          </Tooltip>
+                          
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteParentAsset(asset.id);
+                                }}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>Delete parent asset</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
                       </div>
                     </td>
                   </tr>
@@ -2213,17 +2354,8 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate, selectedSite, userSites: pr
                       {/* Child Assets Header Row */}
                       {childAssets.length > 0 && (
                         <tr className="bg-blue-100">
-                          <td className="px-1 py-1.5 text-xs font-medium text-blue-800 uppercase tracking-wide pl-2 text-left w-16">
-                            <div className="flex flex-col leading-tight">
-                              <span>Child</span>
-                              <span>Asset</span>
-                            </div>
-                          </td>
-                          <td className="px-3 py-1.5 text-xs font-medium text-blue-800 uppercase tracking-wide">
-                            Name
-                          </td>
-                          <td className="px-3 py-1.5 text-xs font-medium text-blue-800 uppercase tracking-wide">
-                            Purchase Date
+                          <td colSpan="2" className="px-3 py-1.5 text-xs font-medium text-blue-800 uppercase tracking-wide">
+                            Child Asset Name
                           </td>
                           <td className="px-3 py-1.5 text-xs font-medium text-blue-800 uppercase tracking-wide">
                             Install Date
@@ -2233,6 +2365,9 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate, selectedSite, userSites: pr
                           </td>
                           <td className="px-3 py-1.5 text-xs font-medium text-blue-800 uppercase tracking-wide">
                             Category
+                          </td>
+                          <td className="px-3 py-1.5 text-xs font-medium text-blue-800 uppercase tracking-wide">
+                            Criticality
                           </td>
                           <td className="px-3 py-1.5 text-xs font-medium text-blue-800 uppercase tracking-wide">
                             PM Plan
@@ -2250,19 +2385,12 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate, selectedSite, userSites: pr
                           className={`${selectedChildAssetForPlan?.id === childAsset.id ? 'bg-green-100' : 'bg-blue-50/30'} cursor-pointer hover:bg-blue-100/50`}
                           onClick={() => handleChildAssetClick(childAsset)}
                         >
-                          <td className="px-1 py-1.5 pl-2 w-16">
-                          </td>
-                          <td className="px-2 py-4 whitespace-nowrap">
+                          <td colSpan="2" className="px-3 py-4 whitespace-nowrap">
                             <div className="text-sm font-medium text-gray-900 flex items-center gap-2 truncate">
                               ↳ {childAsset.name}
                               {selectedChildAssetForPlan?.id === childAsset.id && (
                                 <span className="text-xs bg-green-200 text-green-800 px-2 py-1 rounded">Selected for PM Plans</span>
                               )}
-                            </div>
-                          </td>
-                          <td className="px-3 py-4 whitespace-nowrap">
-                            <div className="text-sm text-gray-500 truncate">
-                              {formatDate(childAsset.purchase_date)}
                             </div>
                           </td>
                           <td className="px-3 py-4 whitespace-nowrap">
@@ -2281,6 +2409,11 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate, selectedSite, userSites: pr
                             </div>
                           </td>
                           <td className="px-3 py-4 whitespace-nowrap">
+                            <div className="text-sm text-gray-500 truncate">
+                              {childAsset.criticality || 'Medium'}
+                            </div>
+                          </td>
+                          <td className="px-3 py-4 whitespace-nowrap">
                             <div className="text-sm flex justify-center">
                               {childAssetPlanStatuses[childAsset.id] ? (
                                 <span className="inline-flex items-center justify-center w-6 h-6 bg-green-100 text-green-600 rounded-full">
@@ -2295,24 +2428,61 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate, selectedSite, userSites: pr
                           </td>
                           <td className="px-3 py-4 whitespace-nowrap text-sm" onClick={(e) => e.stopPropagation()}>
                             <div className="flex space-x-1">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  openEditModal(childAsset, false);
-                                }}
-                                className="text-blue-600 hover:text-blue-900 text-xs"
-                              >
-                                Edit
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDeleteChildAsset(childAsset.id);
-                                }}
-                                className="text-red-600 hover:text-red-900 text-xs"
-                              >
-                                Delete
-                              </button>
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button 
+                                      variant="ghost" 
+                                      size="sm" 
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleExportChildAssetPDF(childAsset);
+                                      }}
+                                    >
+                                      <Download className="h-4 w-4" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>Export PDF</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                                
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button 
+                                      variant="ghost" 
+                                      size="sm" 
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        openEditModal(childAsset, false);
+                                      }}
+                                    >
+                                      <Edit className="h-4 w-4" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>Edit asset</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                                
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button 
+                                      variant="ghost" 
+                                      size="sm" 
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDeleteChildAsset(childAsset.id);
+                                      }}
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>Delete asset</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
                             </div>
                           </td>
                         </tr>
