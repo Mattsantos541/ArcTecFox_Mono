@@ -1,12 +1,95 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
+  <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AF-PM Planner</title>
-</head>
-<body>
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+    <title>ArcTecFox — AI Preventive Maintenance Plan Generator</title>
+
+    <!-- Primary SEO -->
+    <meta
+      name="description"
+      content="Generate preventive maintenance plans in minutes. ArcTecFox uses AI to produce task details, intervals, and schedules—delivered as a clean Excel (plus optional PDF). No sign-up required to try."
+    />
+    <meta name="robots" content="index,follow" />
+    <link rel="canonical" href="https://arctecfox.ai/" />
+
+    <!-- Open Graph -->
+    <meta property="og:title" content="ArcTecFox — AI Preventive Maintenance Plan Generator" />
+    <meta
+      property="og:description"
+      content="Stop firefighting. Generate tailored PM plans for your assets and conditions—fast. Export to Excel or PDF."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://arctecfox.ai/" />
+    <!-- Replace with a hosted image (1200x630 recommended) -->
+    <meta property="og:image" content="https://arctecfox.ai/og-image.jpg" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="ArcTecFox — AI Preventive Maintenance Plan Generator" />
+    <meta
+      name="twitter:description"
+      content="Generate preventive maintenance plans in minutes. Export to Excel or PDF. Try it free—no sign-up needed."
+    />
+    <meta name="twitter:image" content="https://arctecfox.ai/og-image.jpg" />
+
+    <!-- Theme Color -->
+    <meta name="theme-color" content="#1e6aff" />
+
+    <!-- JSON-LD: SoftwareApplication (Answer engines + rich results) -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "ArcTecFox",
+      "applicationCategory": "BusinessApplication",
+      "operatingSystem": "Web",
+      "url": "https://arctecfox.ai/",
+      "image": "https://arctecfox.ai/og-image.jpg",
+      "description": "AI-powered tool to generate preventive maintenance plans with tasks, intervals, and schedules. Export to Excel or PDF.",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD",
+        "description": "Free plan generation to try"
+      },
+      "publisher": {
+        "@type": "Organization",
+        "name": "ArcTecFox",
+        "logo": "https://arctecfox.ai/assets/ArcTecFox-logo.jpg",
+        "url": "https://arctecfox.ai/"
+      }
+    }
+    </script>
+
+    <!-- Optional FAQ JSON-LD (add later when you publish a FAQ section) -->
+    <!--
+    <script type="application/ld+json">
+    {
+      "@context":"https://schema.org",
+      "@type":"FAQPage",
+      "mainEntity":[
+        {
+          "@type":"Question",
+          "name":"What is ArcTecFox?",
+          "acceptedAnswer":{"@type":"Answer","text":"ArcTecFox is an AI-driven tool that generates preventive maintenance plans tailored to your assets and conditions."}
+        },
+        {
+          "@type":"Question",
+          "name":"Do I need to sign up?",
+          "acceptedAnswer":{"@type":"Answer","text":"No. You can try it free and generate a plan first; we’ll only ask for email and company to deliver and save your plan."}
+        }
+      ]
+    }
+    </script>
+    -->
+
+  </head>
+  <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
-</body>
+  </body>
 </html>
