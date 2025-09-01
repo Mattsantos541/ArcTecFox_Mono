@@ -1,15 +1,16 @@
 import React from "react";
 
-export default function ProgressBar({ progress, label }) {
-  if (!progress || progress < 5) return null;
-
+export default function ProgressBar({ progress = 0, label }) {
+  const pct = Math.max(0, Math.min(100, progress));
   return (
     <div className="mb-6">
-      <div className="text-gray-700 text-sm font-medium mb-1">{label}</div>
-      <div className="w-full bg-gray-200 rounded-full h-2.5">
+      {label && (
+        <p className="mb-2 text-sm text-gray-700 text-center">{label}</p>
+      )}
+      <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
         <div
-          className="bg-blue-600 h-2.5 rounded-full transition-all duration-500"
-          style={{ width: `${progress}%` }}
+          className="h-2.5 rounded-full bg-blue-600 transition-all duration-300"
+          style={{ width: `${pct}%` }}
         />
       </div>
     </div>
