@@ -3,59 +3,81 @@ import UserStatusBar from "../components/UserStatusBar";
 import LeadCaptureModal from "../components/LeadCaptureModal";
 import PMPlannerOpen from "../pages/PMPlannerOpen";
 import ProgressBar from "../components/ProgressBar";
-import NavigationBar from "../components/NavigationBar"; // footer nav (kept minimal)
+import NavigationBar from "../components/NavigationBar";
+import { generatePMPlan } from "../api";                // ⬅️ reuse your existing generator
+import { saveLeadAndPlan } from "../services/leadFunnelService";
+import { exportPlanToExcel } from "../utils/exportPlan";
 
-/**
- * Landing page:
- * - Top brand bar (logo + gradient ArcTecFox + sign-in)
- * - Hero with your new copy + CTA (scrolls to planner)
- * - Free offer section + CTA (scrolls to planner)
- * - Planner section with live progress + submission triggers lead modal
- * - Footer nav
- */
 export default function Home() {
   const [showLeadModal, setShowLeadModal] = useState(false);
   const [assetName, setAssetName] = useState("");
   const [completion, setCompletion] = useState(0);
+  const [formState, setFormState] = useState(null);     // <- hold planner form data
+  const [pendingTasks, setPendingTasks] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const scrollToPlanner = () => {
     const el = document.getElementById("pm-planner-section");
     if (el) el.scrollIntoView({ behavior: "smooth" });
   };
 
-  // progress coming from PMPlannerOpen (no email/company in form)
+  // progress coming from planner
   const handlePlannerProgress = (formData) => {
-    setAssetName(formData.name || "");
+    setFormState(formData);
+    setAssetName(formData?.name || "");
     const keys = [
-      "name",
-      "model",
-      "serial",
-      "category",
-      "hours",
-      "additional_context",
-      "environment",
-      "date_of_plan_start",
+      "name","model","serial","category","hours",
+      "additional_context","environment","date_of_plan_start",
     ];
-    const filled = keys.filter((k) => {
-      const v = formData[k];
+    const filled = keys.filter(k => {
+      const v = formData?.[k];
       return v !== undefined && String(v).trim() !== "";
     }).length;
     setCompletion(Math.round((filled / keys.length) * 100));
   };
 
-  // After user presses Generate in the planner, show lead modal
-  const handlePlannerSubmit = () => setShowLeadModal(true);
+  // Planner "Generate Plan" clicked: show lead modal (we won’t write yet)
+  const handlePlannerSubmit = async (formData) => {
+    // keep latest form snapshot for saving after email capture
+    setFormState(formData);
+    setShowLeadModal(true);
+  };
+
+  const handleLeadSubmit = async ({ email, company }) => {
+    try {
+      setSubmitting(true);
+
+      // 1) Generate tasks from AI using your existing endpoint
+      const tasks = await generatePMPlan(formState);
+      setPendingTasks(tasks);
+
+      // 2) Persist lead + plan + tasks
+      const { plan } = await saveLeadAndPlan({
+        form: formState,
+        lead: { email, company },
+        tasks,
+      });
+
+      // 3) Optional: automatically export to Excel for the user
+      exportPlanToExcel({ plan, tasks });
+
+      setShowLeadModal(false);
+      // You can also navigate or toast here
+      console.log("✅ Lead + plan saved and exported.");
+    } catch (err) {
+      console.error("❌ Lead funnel save failed:", err);
+      alert(`Failed to save lead/plan: ${err.message}`);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <div className="bg-gray-50 min-h-screen relative font-sans">
       {/* Brand + Sign-in */}
       <div className="w-full flex justify-between items-center px-6 pt-4">
         <div className="flex items-center space-x-2">
-          <img
-            src="/assets/ArcTecFox-logo.jpg"
-            alt="ArcTecFox Logo"
-            className="h-9 w-9"
-          />
+          <img src="/assets/ArcTecFox-logo.jpg" alt="ArcTecFox Logo" className="h-9 w-9" />
           <span className="font-bold text-xl tracking-tight bg-gradient-to-r from-blue-600 via-indigo-500 to-cyan-400 bg-clip-text text-transparent">
             ArcTecFox
           </span>
@@ -76,7 +98,6 @@ export default function Home() {
             assets stay running, and your team stops fighting costly breakdowns.
           </p>
 
-          {/* Pain points */}
           <div className="text-left max-w-2xl mx-auto">
             <h3 className="text-xl font-semibold text-gray-800 mb-3">
               Too many maintenance teams are stuck in firefighting mode:
@@ -89,7 +110,6 @@ export default function Home() {
             </ul>
           </div>
 
-          {/* Solution */}
           <p className="text-gray-700 mb-8 max-w-3xl mx-auto leading-relaxed">
             ArcTecFox uses AI to instantly generate custom preventive maintenance
             plans tailored to your assets and conditions. No guesswork. No wasted
@@ -116,12 +136,12 @@ export default function Home() {
             Enter your asset below and get a complete preventive maintenance plan instantly.
           </p>
 
-          <ul className="text-left max-w-xl mx-auto text-gray-700 mb-8 space-y-2">
-            <li>✔ Task details, intervals, and schedules</li>
-            <li>✔ Delivered as a clean Excel file (plus optional PDF)</li>
-            <li>✔ Based on proven standards + AI logic</li>
-            <li>✔ Ready to share or import into your CMMS</li>
-          </ul>
+            <ul className="text-left max-w-xl mx-auto text-gray-700 mb-8 space-y-2">
+              <li>✔ Task details, intervals, and schedules</li>
+              <li>✔ Delivered as a clean Excel file (plus optional PDF)</li>
+              <li>✔ Based on proven standards + AI logic</li>
+              <li>✔ Ready to share or import into your CMMS</li>
+            </ul>
 
           <p className="text-gray-600 mb-6">
             Just answer a few quick questions and you’ll have your plan in minutes.
@@ -149,18 +169,20 @@ export default function Home() {
         <PMPlannerOpen
           onChange={handlePlannerProgress}
           onGenerate={handlePlannerSubmit}
+          disabled={submitting}
         />
       </section>
 
-      {/* Lead capture shows after planner submit */}
+      {/* Lead capture modal */}
       {showLeadModal && (
         <LeadCaptureModal
+          submitting={submitting}
           onClose={() => setShowLeadModal(false)}
-          onLeadSubmit={() => setShowLeadModal(false)}
+          onLeadSubmit={handleLeadSubmit}
         />
       )}
 
-      {/* Footer nav (simple) */}
+      {/* Footer nav */}
       <footer className="mt-12 border-t py-6">
         <NavigationBar />
       </footer>
