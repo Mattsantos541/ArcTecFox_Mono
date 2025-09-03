@@ -2,8 +2,9 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase, fetchParentPMTasks } from '../../api';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts';
-import { Calendar, DollarSign, Clock, Wrench, TrendingUp, ToggleLeft, ToggleRight } from 'lucide-react';
+import { Calendar, DollarSign, Clock, Wrench, TrendingUp, ToggleLeft, ToggleRight, ClipboardList } from 'lucide-react';
 
 const AssetInsightsDashboard = ({ parentAsset, childAssets }) => {
   const [maintenanceHistory, setMaintenanceHistory] = useState([]);
@@ -332,129 +333,180 @@ const AssetInsightsDashboard = ({ parentAsset, childAssets }) => {
   }
 
   return (
-    <div className="w-full space-y-6">
-      {/* Parent Maintenance Tasks Section */}
-      {parentPMTasks.length > 0 && (
-        <Card className="border-t-4 border-t-purple-600">
-          <CardHeader className="bg-gradient-to-r from-purple-50 to-indigo-50">
-            <CardTitle className="flex items-center gap-2 text-purple-900">
-              <Wrench className="h-5 w-5 text-purple-600" />
-              Parent Asset Maintenance Tasks
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pt-4">
-            <div className="space-y-3">
-              {parentPMTasks.map((task, index) => (
-                <div key={task.id} className="border-l-4 border-purple-200 pl-4 py-2 hover:bg-purple-50 transition-colors rounded-r">
-                  <div className="flex justify-between items-start">
-                    <div className="flex-1">
-                      <h4 className="font-semibold text-gray-800">{task.task_name}</h4>
-                      <div className="mt-1 space-y-1">
-                        <p className="text-sm text-gray-600">
-                          <span className="font-medium">Interval:</span> Every {
-                            task.maintenance_interval < 1 
-                              ? `${Math.round(task.maintenance_interval * 30)} days`
-                              : task.maintenance_interval === 1 
-                                ? 'month' 
-                                : `${task.maintenance_interval} months`
-                          }
-                        </p>
-                        {task.reason && (
-                          <p className="text-sm text-gray-600">
-                            <span className="font-medium">Purpose:</span> {task.reason}
-                          </p>
-                        )}
-                        {task.est_minutes && (
-                          <p className="text-sm text-gray-600">
-                            <span className="font-medium">Est. Time:</span> {task.est_minutes} minutes
-                          </p>
-                        )}
-                        {task.tools_needed && task.tools_needed !== 'Not applicable' && (
-                          <p className="text-sm text-gray-600">
-                            <span className="font-medium">Tools:</span> {task.tools_needed}
-                          </p>
-                        )}
+    <div className="w-full">
+      <Tabs defaultValue="maintenance" className="w-full">
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="maintenance" className="flex items-center gap-2">
+            <ClipboardList className="h-4 w-4" />
+            Parent Maintenance Tasks
+          </TabsTrigger>
+          <TabsTrigger value="spares" className="flex items-center gap-2">
+            <Wrench className="h-4 w-4" />
+            Critical Spare Parts
+          </TabsTrigger>
+          <TabsTrigger value="analytics" className="flex items-center gap-2">
+            <TrendingUp className="h-4 w-4" />
+            Analytics
+          </TabsTrigger>
+        </TabsList>
+
+        {/* Parent Maintenance Tasks Tab */}
+        <TabsContent value="maintenance" className="mt-6">
+          <div className="space-y-6">
+            {parentPMTasks.length > 0 ? (
+              <Card className="border-t-4 border-t-purple-600">
+                <CardHeader className="bg-gradient-to-r from-purple-50 to-indigo-50">
+                  <CardTitle className="flex items-center gap-2 text-purple-900">
+                    <ClipboardList className="h-5 w-5 text-purple-600" />
+                    Parent Asset Maintenance Tasks
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="pt-4">
+                  <div className="space-y-3">
+                    {parentPMTasks.map((task, index) => (
+                      <div key={task.id} className="border-l-4 border-purple-200 pl-4 py-2 hover:bg-purple-50 transition-colors rounded-r">
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1">
+                            <h4 className="font-semibold text-gray-800">{task.task_name}</h4>
+                            <div className="mt-1 space-y-1">
+                              <p className="text-sm text-gray-600">
+                                <span className="font-medium">Interval:</span> Every {
+                                  task.maintenance_interval < 1 
+                                    ? `${Math.round(task.maintenance_interval * 30)} days`
+                                    : task.maintenance_interval === 1 
+                                      ? 'month' 
+                                      : `${task.maintenance_interval} months`
+                                }
+                              </p>
+                              {task.reason && (
+                                <p className="text-sm text-gray-600">
+                                  <span className="font-medium">Purpose:</span> {task.reason}
+                                </p>
+                              )}
+                              {task.est_minutes && (
+                                <p className="text-sm text-gray-600">
+                                  <span className="font-medium">Est. Time:</span> {task.est_minutes} minutes
+                                </p>
+                              )}
+                              {task.tools_needed && task.tools_needed !== 'Not applicable' && (
+                                <p className="text-sm text-gray-600">
+                                  <span className="font-medium">Tools:</span> {task.tools_needed}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                          <div className="ml-4">
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                              task.criticality === 'High' 
+                                ? 'bg-red-100 text-red-800' 
+                                : task.criticality === 'Medium' 
+                                  ? 'bg-yellow-100 text-yellow-800' 
+                                  : 'bg-green-100 text-green-800'
+                            }`}>
+                              {task.criticality || 'Medium'}
+                            </span>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                    <div className="ml-4">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        task.criticality === 'High' 
-                          ? 'bg-red-100 text-red-800' 
-                          : task.criticality === 'Medium' 
-                            ? 'bg-yellow-100 text-yellow-800' 
-                            : 'bg-green-100 text-green-800'
-                      }`}>
-                        {task.criticality || 'Medium'}
-                      </span>
-                    </div>
+                    ))}
                   </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Critical Spare Parts Section */}
-      {parentCriticalSpares.length > 0 && (
-        <Card className="border-t-4 border-t-orange-600">
-          <CardHeader className="bg-gradient-to-r from-orange-50 to-amber-50">
-            <CardTitle className="flex items-center gap-2 text-orange-900">
-              <Wrench className="h-5 w-5 text-orange-600" />
-              Critical Spare Parts
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pt-4">
-            <div className="grid gap-3 sm:grid-cols-2">
-              {parentCriticalSpares.map((spare, index) => (
-                <div key={index} className="border border-orange-200 rounded-lg p-3 hover:bg-orange-50 transition-colors">
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-start">
-                      <h4 className="font-semibold text-gray-800 text-sm">{spare.part_name}</h4>
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                        spare.criticality === 'High' 
-                          ? 'bg-red-100 text-red-800' 
-                          : spare.criticality === 'Medium' 
-                            ? 'bg-yellow-100 text-yellow-800' 
-                            : 'bg-green-100 text-green-800'
-                      }`}>
-                        {spare.criticality || 'Medium'}
-                      </span>
-                    </div>
-                    {spare.part_number && spare.part_number !== 'Not applicable' && (
-                      <p className="text-xs text-gray-600">
-                        <span className="font-medium">P/N:</span> {spare.part_number}
-                      </p>
-                    )}
-                    {spare.manufacturer && spare.manufacturer !== 'Not applicable' && (
-                      <p className="text-xs text-gray-600">
-                        <span className="font-medium">Mfr:</span> {spare.manufacturer}
-                      </p>
-                    )}
-                    {spare.min_stock_level !== 'Not applicable' && spare.min_stock_level != null && (
-                      <p className="text-xs text-gray-600">
-                        <span className="font-medium">Min Stock:</span> {spare.min_stock_level} {spare.uom || ''}
-                      </p>
-                    )}
-                    {spare.lead_time_days !== 'Not applicable' && spare.lead_time_days != null && (
-                      <p className="text-xs text-gray-600">
-                        <span className="font-medium">Lead Time:</span> {spare.lead_time_days} days
-                      </p>
-                    )}
-                    {spare.failure_modes && spare.failure_modes.length > 0 && (
-                      <p className="text-xs text-gray-500 italic">
-                        Prevents: {spare.failure_modes.join(', ')}
-                      </p>
-                    )}
+                </CardContent>
+              </Card>
+            ) : (
+              <Card className="border-t-4 border-t-gray-300">
+                <CardContent className="pt-6">
+                  <div className="text-center py-8">
+                    <ClipboardList className="mx-auto h-12 w-12 text-gray-400" />
+                    <h3 className="mt-2 text-sm font-medium text-gray-900">No Parent Maintenance Tasks</h3>
+                    <p className="mt-1 text-sm text-gray-500">
+                      This parent asset does not have any maintenance tasks defined.
+                    </p>
                   </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        </TabsContent>
 
-      {/* Controls Section - Asset Filter */}
+        {/* Critical Spare Parts Tab */}
+        <TabsContent value="spares" className="mt-6">
+          <div className="space-y-6">
+            {parentCriticalSpares.length > 0 ? (
+              <Card className="border-t-4 border-t-orange-600">
+                <CardHeader className="bg-gradient-to-r from-orange-50 to-amber-50">
+                  <CardTitle className="flex items-center gap-2 text-orange-900">
+                    <Wrench className="h-5 w-5 text-orange-600" />
+                    Critical Spare Parts
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="pt-4">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {parentCriticalSpares.map((spare, index) => (
+                      <div key={index} className="border border-orange-200 rounded-lg p-3 hover:bg-orange-50 transition-colors">
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-start">
+                            <h4 className="font-semibold text-gray-800 text-sm">{spare.part_name}</h4>
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                              spare.criticality === 'High' 
+                                ? 'bg-red-100 text-red-800' 
+                                : spare.criticality === 'Medium' 
+                                  ? 'bg-yellow-100 text-yellow-800' 
+                                  : 'bg-green-100 text-green-800'
+                            }`}>
+                              {spare.criticality || 'Medium'}
+                            </span>
+                          </div>
+                          {spare.part_number && spare.part_number !== 'Not applicable' && (
+                            <p className="text-xs text-gray-600">
+                              <span className="font-medium">P/N:</span> {spare.part_number}
+                            </p>
+                          )}
+                          {spare.manufacturer && spare.manufacturer !== 'Not applicable' && (
+                            <p className="text-xs text-gray-600">
+                              <span className="font-medium">Mfr:</span> {spare.manufacturer}
+                            </p>
+                          )}
+                          {spare.min_stock_level !== 'Not applicable' && spare.min_stock_level != null && (
+                            <p className="text-xs text-gray-600">
+                              <span className="font-medium">Min Stock:</span> {spare.min_stock_level} {spare.uom || ''}
+                            </p>
+                          )}
+                          {spare.lead_time_days !== 'Not applicable' && spare.lead_time_days != null && (
+                            <p className="text-xs text-gray-600">
+                              <span className="font-medium">Lead Time:</span> {spare.lead_time_days} days
+                            </p>
+                          )}
+                          {spare.failure_modes && spare.failure_modes.length > 0 && (
+                            <p className="text-xs text-gray-500 italic">
+                              Prevents: {spare.failure_modes.join(', ')}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card className="border-t-4 border-t-gray-300">
+                <CardContent className="pt-6">
+                  <div className="text-center py-8">
+                    <Wrench className="mx-auto h-12 w-12 text-gray-400" />
+                    <h3 className="mt-2 text-sm font-medium text-gray-900">No Critical Spare Parts</h3>
+                    <p className="mt-1 text-sm text-gray-500">
+                      This parent asset does not have any critical spare parts defined.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        </TabsContent>
+
+        {/* Analytics Tab */}
+        <TabsContent value="analytics" className="mt-6">
+          <div className="space-y-6">
+            {/* Controls Section - Asset Filter */}
       <div className="bg-gradient-to-r from-gray-50 to-blue-50 p-4 rounded-lg border border-blue-100">
         <div className="flex flex-wrap gap-4 items-end">
           <div className="flex-1 min-w-[200px]">
@@ -663,6 +715,9 @@ const AssetInsightsDashboard = ({ parentAsset, childAssets }) => {
           )}
         </CardContent>
       </Card>
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 };

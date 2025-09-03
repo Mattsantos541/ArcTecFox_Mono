@@ -2750,12 +2750,16 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate, selectedSite, userSites: pr
       {selectedParentAsset && !selectedChildAssetForPlan && (
         <div className="mt-8">
           <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
-            <div className="px-6 py-4 border-b border-blue-200 bg-gradient-to-r from-blue-600 to-indigo-600">
-              <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-                <div className="w-2 h-2 bg-white rounded-full"></div>
-                Asset Insights: {selectedParentAsset.name}
-              </h3>
-              <p className="text-blue-100 text-sm mt-1">Comprehensive maintenance analytics and cost tracking</p>
+            <div className="px-6 py-4 border-b border-blue-200 bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-700 relative overflow-hidden">
+              {/* Subtle pattern overlay */}
+              <div className="absolute inset-0 bg-gradient-to-tr from-white/10 via-transparent to-white/5 opacity-50"></div>
+              <div className="relative z-10">
+                <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                  <div className="w-2 h-2 bg-white/90 rounded-full shadow-sm"></div>
+                  Asset Insights: {selectedParentAsset.name}
+                </h3>
+                <p className="text-white/80 text-sm mt-1">Comprehensive maintenance analytics and cost tracking</p>
+              </div>
             </div>
             <div className="p-6">
               {loadingChildAssets ? (
