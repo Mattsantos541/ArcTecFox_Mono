@@ -3,7 +3,6 @@ import UserStatusBar from "../components/UserStatusBar";
 import LeadCaptureModal from "../components/LeadCaptureModal";
 import PMPlannerOpen from "../pages/PMPlannerOpen";
 import ProgressBar from "../components/ProgressBar";
-import NavigationBar from "../components/NavigationBar";
 import { generatePMPlan } from "../api";                // ⬅️ reuse your existing generator
 import { saveLeadAndPlan } from "../services/leadFunnelService";
 import { exportPlanToExcel } from "../utils/exportPlan";
@@ -74,17 +73,6 @@ export default function Home() {
 
   return (
     <div className="bg-gray-50 min-h-screen relative font-sans">
-      {/* Brand + Sign-in */}
-      <div className="w-full flex justify-between items-center px-6 pt-4">
-        <div className="flex items-center space-x-2">
-          <img src="/assets/ArcTecFox-logo.jpg" alt="ArcTecFox Logo" className="h-9 w-9" />
-          <span className="font-bold text-xl tracking-tight bg-gradient-to-r from-blue-600 via-indigo-500 to-cyan-400 bg-clip-text text-transparent">
-            ArcTecFox
-          </span>
-        </div>
-        <UserStatusBar />
-      </div>
-
       {/* HERO */}
       <section className="bg-white py-16 text-center border-b">
         <div className="max-w-4xl mx-auto px-4">
@@ -184,7 +172,6 @@ export default function Home() {
 
       {/* Footer nav */}
       <footer className="mt-12 border-t py-6">
-        <NavigationBar />
       </footer>
     </div>
   );
