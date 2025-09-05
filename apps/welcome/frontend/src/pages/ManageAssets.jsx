@@ -1777,14 +1777,15 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate, selectedSite, userSites: pr
         const suggestion = suggestedAssets[index];
         
         // Create child asset with AI-suggested data
+        const parentAsset = createdParentAsset || selectedParentAsset;
         const childAssetData = {
           name: suggestion.name,
           make: suggestion.make || null,
           model: suggestion.model || null,
           serial_no: null, // User will fill this in later
           category: suggestion.category || null,
-          purchase_date: null,
-          install_date: null,
+          purchase_date: parentAsset?.purchase_date || null,
+          install_date: parentAsset?.install_date || null,
           notes: [
             suggestion.function ? `Function: ${suggestion.function}` : '',
             suggestion.pm_relevance ? `PM Relevance: ${suggestion.pm_relevance}` : '',
@@ -2493,7 +2494,27 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate, selectedSite, userSites: pr
                         <td colSpan="8" className="px-6 py-2 bg-gray-50">
                           <div className="flex gap-2">
                             <button
-                              onClick={() => setShowAddChildAsset(!showAddChildAsset)}
+                              onClick={() => {
+                                if (!showAddChildAsset) {
+                                  // When opening the form, pre-populate with parent's dates
+                                  setNewChildAsset({
+                                    name: '',
+                                    make: '',
+                                    model: '',
+                                    serial_number: '',
+                                    category: '',
+                                    purchase_date: selectedParentAsset.purchase_date || '',
+                                    install_date: selectedParentAsset.install_date || '',
+                                    notes: '',
+                                    operating_hours: '',
+                                    addtl_context: '',
+                                    plan_start_date: '',
+                                    criticality: '',
+                                    cost_to_replace: ''
+                                  });
+                                }
+                                setShowAddChildAsset(!showAddChildAsset);
+                              }}
                               className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-xs"
                             >
                               {showAddChildAsset ? 'Cancel' : 'Add Child Asset'}
