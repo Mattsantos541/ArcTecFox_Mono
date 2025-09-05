@@ -57,19 +57,23 @@ Parent/Child Hierarchy & Universal Context (applies to all tasks unless overridd
 * Avoid redundant phrasing across tasks. Keep fields concise and only include details unique to the task.
 * If any universal field is unknown, proceed using best practices and state assumptions in the relevant task's "comments".
 
-**Instructions:**
-1. Organize tasks into the following standard frequency groups:
-   * Daily
-   * Weekly
-   * Monthly
-   * Quarterly
-   * Yearly
+**Manual & Sources Policy (MANDATORY):**
+* If a **manufacturer’s manual or manual content has been uploaded/provided to the system**, treat it as primary. **Extract and include exact steps, specifications, materials (brands/grades), and part numbers** from the manual where relevant, and **cite section/page** in "citations".
+* If **no manual content** is available, provide **concrete, authoritative** recommendations using credible standards (ISO/ASTM/API) or reputable supplier docs (e.g., SKF, Mobil, Shell), and cite those sources.
+* ⚠️ **Never** output phrases like "refer to the manual" or "see manual"; always include the actual recommended values/steps/materials.
 
-2. For each task, provide **all** of the following fields. If a field is not applicable, explicitly return a value like "Not applicable". Do not omit fields. If a user has not provided enough input for a given field, reference the manufacturer's manual or reliable standards to determine an appropriate recommendation. If a manual is uploaded or accessible, reference it directly alongside any additional industry knowledge:
-   * "parent_asset": The parent asset this task belongs to (inherit from universal context).
-   * "child_asset": The specific child asset this task applies to (inherit from universal context).
+**Instructions:**
+1. Organize tasks into the following standard frequency groups (for readability only):
+   * Daily, Weekly, Monthly, Quarterly, Yearly
+   However, **all task frequencies must be expressed as a numeric `maintenance_interval` in months**:
+   - Daily ≈ 0.033, Weekly ≈ 0.25, Biweekly ≈ 0.5, Monthly = 1, Quarterly = 3, Yearly = 12
+   Use fractional months as needed. **Do not output any calendar dates.**
+
+2. For each task, provide **all** of the following fields. If a field is not applicable, explicitly return "Not applicable". Do not omit fields. Apply the **Manual & Sources Policy** above:
+   * "parent_asset": Inherit from universal context.
+   * "child_asset": Inherit from universal context.
    * "task_name": A clear, specific name for the maintenance task.
-   * "maintenance_interval": The interval between task occurrences, expressed **in months** as a number (e.g., 1, 3, 6, 12). Use fractional values if needed (e.g., 0.25 ≈ weekly, 0.5 ≈ biweekly). This **replaces any per-date scheduling output**.
+   * "maintenance_interval": Months only (numeric, e.g., 0.25, 1, 3, 12). This **replaces any per-date scheduling output**.
    * "instructions": An array of clear, step-by-step instructions.
    * "reason": A short explanation of why this task is necessary.
    * "engineering_rationale": A technical explanation that references universal context **only when it changes or is directly relevant**. Explicitly call out when the task addresses something from the additional context: "{data.additional_context}".
@@ -80,8 +84,10 @@ Parent/Child Hierarchy & Universal Context (applies to all tasks unless overridd
    * "number_of_technicians": How many technicians are typically needed.
    * "estimated_time_minutes": Estimated time in minutes to complete this task. This field must be included for every task.
    * "consumables": Supplies or parts that will be consumed in this task (single-use or limited-use). Be specific about **top recommendations** (brands, grades, part numbers). If not applicable, state "Not applicable".
+   * "risk_assessment": Likely risks and possible failures before the next interval for this task/component.
+   * "criticality_rating": "High" | "Medium" | "Low" for this task’s priority.
    * "comments": Any additional notes, edge cases, or **explicit overrides** to the universal context (e.g., a task that must be done indoors despite an outdoor environment). If nothing to add, return "None".
-   * "citations": Cite reliable sources—preferably the manufacturer’s manual. If not available, use credible standards (ISO, ASTM, API) or supplier data (e.g., SKF, Mobil, Shell).
+   * "citations": If manual content exists, cite **exact manual section/page** used. Otherwise cite credible standards (ISO/ASTM/API) or supplier data (e.g., SKF, Mobil, Shell).
    * "inherits_parent_context": true/false indicating whether the task fully inherits the parent/child universal context.
    * "context_overrides": Object with only the fields that deviate from the universal context (e.g., {{"environment": "Clean room"}}). Use an empty object if none.
 
@@ -89,7 +95,7 @@ Parent/Child Hierarchy & Universal Context (applies to all tasks unless overridd
 
 4. You must address all input provided in the "additional_context". If specific tasks are generated as a result, make that connection clear in "engineering_rationale" or "comments".
 
-5. Prioritize information from the manufacturer’s manual. If not available, rely on best practices from industry standards and reputable sources.
+5. Follow the **Manual & Sources Policy**: use concrete details from the uploaded manual if provided; otherwise use authoritative standards/suppliers. **Never** tell the user to "refer to the manual".
 
 **Output Format:** Return a single valid JSON object structured like:
 {{ "maintenance_plan": [ {{task1}}, {{task2}}, ... ] }}
@@ -133,7 +139,8 @@ def _validate_plan_structure(plan_json: Dict[str, Any]) -> None:
             "parent_asset", "child_asset", "task_name", "maintenance_interval", "instructions",
             "reason", "engineering_rationale", "safety_precautions", "common_failures_prevented",
             "usage_insights", "tools_needed", "number_of_technicians", "estimated_time_minutes",
-            "consumables", "comments", "citations", "inherits_parent_context", "context_overrides"
+            "consumables", "risk_assessment", "criticality_rating", "comments", "citations",
+            "inherits_parent_context", "context_overrides"
         ]
         for key in required_keys:
             if key not in task:
@@ -144,6 +151,12 @@ def _validate_plan_structure(plan_json: Dict[str, Any]) -> None:
             errors.append(f"{path}.maintenance_interval must be numeric (months)")
         if "estimated_time_minutes" in task and not _is_number(task.get("estimated_time_minutes")):
             errors.append(f"{path}.estimated_time_minutes must be numeric (minutes)")
+
+        # Enum validation for criticality_rating
+        if "criticality_rating" in task:
+            val = task.get("criticality_rating")
+            if not isinstance(val, str) or val.strip().title() not in {"High", "Medium", "Low"}:
+                errors.append(f"{path}.criticality_rating must be one of High, Medium, Low")
 
         # Type expectations
         if "inherits_parent_context" in task and not isinstance(task.get("inherits_parent_context"), bool):
