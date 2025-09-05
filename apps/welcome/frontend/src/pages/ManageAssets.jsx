@@ -1777,14 +1777,15 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate, selectedSite, userSites: pr
         const suggestion = suggestedAssets[index];
         
         // Create child asset with AI-suggested data
+        const parentAsset = createdParentAsset || selectedParentAsset;
         const childAssetData = {
           name: suggestion.name,
           make: suggestion.make || null,
           model: suggestion.model || null,
           serial_no: null, // User will fill this in later
           category: suggestion.category || null,
-          purchase_date: null,
-          install_date: null,
+          purchase_date: parentAsset?.purchase_date || null,
+          install_date: parentAsset?.install_date || null,
           notes: [
             suggestion.function ? `Function: ${suggestion.function}` : '',
             suggestion.pm_relevance ? `PM Relevance: ${suggestion.pm_relevance}` : '',
@@ -2493,7 +2494,27 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate, selectedSite, userSites: pr
                         <td colSpan="8" className="px-6 py-2 bg-gray-50">
                           <div className="flex gap-2">
                             <button
-                              onClick={() => setShowAddChildAsset(!showAddChildAsset)}
+                              onClick={() => {
+                                if (!showAddChildAsset) {
+                                  // When opening the form, pre-populate with parent's dates
+                                  setNewChildAsset({
+                                    name: '',
+                                    make: '',
+                                    model: '',
+                                    serial_number: '',
+                                    category: '',
+                                    purchase_date: selectedParentAsset.purchase_date || '',
+                                    install_date: selectedParentAsset.install_date || '',
+                                    notes: '',
+                                    operating_hours: '',
+                                    addtl_context: '',
+                                    plan_start_date: '',
+                                    criticality: '',
+                                    cost_to_replace: ''
+                                  });
+                                }
+                                setShowAddChildAsset(!showAddChildAsset);
+                              }}
                               className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-xs"
                             >
                               {showAddChildAsset ? 'Cancel' : 'Add Child Asset'}
@@ -2750,12 +2771,16 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate, selectedSite, userSites: pr
       {selectedParentAsset && !selectedChildAssetForPlan && (
         <div className="mt-8">
           <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
-            <div className="px-6 py-4 border-b border-blue-200 bg-gradient-to-r from-blue-600 to-indigo-600">
-              <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-                <div className="w-2 h-2 bg-white rounded-full"></div>
-                Asset Insights: {selectedParentAsset.name}
-              </h3>
-              <p className="text-blue-100 text-sm mt-1">Comprehensive maintenance analytics and cost tracking</p>
+            <div className="px-6 py-4 border-b border-blue-200 bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-700 relative overflow-hidden">
+              {/* Subtle pattern overlay */}
+              <div className="absolute inset-0 bg-gradient-to-tr from-white/10 via-transparent to-white/5 opacity-50"></div>
+              <div className="relative z-10">
+                <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                  <div className="w-2 h-2 bg-white/90 rounded-full shadow-sm"></div>
+                  Asset Insights: {selectedParentAsset.name}
+                </h3>
+                <p className="text-white/80 text-sm mt-1">Comprehensive maintenance analytics and cost tracking</p>
+              </div>
             </div>
             <div className="p-6">
               {loadingChildAssets ? (
