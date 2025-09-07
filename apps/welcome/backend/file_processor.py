@@ -30,6 +30,19 @@ class FileProcessor:
         
         try:
             # Download file from Supabase storage
+            logger.info(f"🔽 Attempting to download from bucket 'user-manuals', path: '{file_path}'")
+            logger.info(f"🔑 Using Supabase client with key type: {'SERVICE' if 'service' in str(type(self.supabase_client)) else 'ANON'}")
+            
+            # Test if we can access the bucket at all
+            try:
+                folder_path = file_path.split('/')[0] if '/' in file_path else ''
+                if folder_path:
+                    logger.info(f"🗂️ Testing folder access: {folder_path}")
+                    folder_contents = self.supabase_client.storage.from_("user-manuals").list(folder_path)
+                    logger.info(f"🗂️ Folder contents: {len(folder_contents) if folder_contents else 0} items")
+            except Exception as list_error:
+                logger.warning(f"🗂️ Could not list folder contents: {list_error}")
+            
             response = self.supabase_client.storage.from_("user-manuals").download(file_path)
             
             if not response:
