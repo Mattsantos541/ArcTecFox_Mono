@@ -640,6 +640,19 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate, selectedSite, userSites: pr
   const handleCreateParentAsset = async (e) => {
     e.preventDefault();
     
+    // Validate file type if a manual is attached
+    if (parentManualFile) {
+      const supportedTypes = ['.pdf', '.doc', '.docx', '.txt', '.jpg', '.jpeg', '.png', '.gif'];
+      const fileName = parentManualFile.name.toLowerCase();
+      const fileExtension = fileName.substring(fileName.lastIndexOf('.'));
+      
+      if (!supportedTypes.includes(fileExtension)) {
+        setError(`Unsupported file type: ${fileExtension}. Supported file types are: PDF, DOC, DOCX, TXT, JPG, JPEG, PNG, GIF`);
+        setParentFileUploadError(`File type ${fileExtension} is not supported`);
+        return; // Stop the creation process
+      }
+    }
+    
     // Debug logging to track different contexts
     console.log('🔍 [Parent Asset Creation] Starting...');
     console.log('🔍 [Context] Current URL:', window.location.pathname);
@@ -782,6 +795,19 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate, selectedSite, userSites: pr
     if (!newChildAsset.name.trim()) {
       setError('Asset name is required');
       return;
+    }
+
+    // Validate file type if a manual is attached
+    if (childManualFile) {
+      const supportedTypes = ['.pdf', '.doc', '.docx', '.txt', '.jpg', '.jpeg', '.png', '.gif'];
+      const fileName = childManualFile.name.toLowerCase();
+      const fileExtension = fileName.substring(fileName.lastIndexOf('.'));
+      
+      if (!supportedTypes.includes(fileExtension)) {
+        setError(`Unsupported file type: ${fileExtension}. Supported file types are: PDF, DOC, DOCX, TXT, JPG, JPEG, PNG, GIF`);
+        setChildFileUploadError(`File type ${fileExtension} is not supported`);
+        return; // Stop the creation process
+      }
     }
 
     try {
@@ -2195,7 +2221,7 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate, selectedSite, userSites: pr
               </div>
               
               <FileUpload
-                label="Include User Manual (Optional)"
+                label="Include User Manual (Optional - PDF, DOC, DOCX, TXT, or images only)"
                 accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png,.gif"
                 maxSize={30 * 1024 * 1024} // 30MB
                 onFileSelect={handleParentFileSelect}
@@ -2742,7 +2768,7 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate, selectedSite, userSites: pr
                                 </div>
                                 
                                 <FileUpload
-                                  label="Include User Manual (Optional)"
+                                  label="Include User Manual (Optional - PDF, DOC, DOCX, TXT, or images only)"
                                   accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png,.gif"
                                   maxSize={30 * 1024 * 1024} // 30MB
                                   onFileSelect={handleChildFileSelect}
