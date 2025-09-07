@@ -167,8 +167,8 @@ export default function GlobalNavigation() {
               alt="ArcTecFox" 
               className="h-8 w-8"
             />
-            <span className="font-bold text-xl tracking-tight bg-gradient-to-r from-blue-600 via-indigo-500 to-cyan-400 bg-clip-text text-transparent">
-              ArcTecFox
+            <span className="hidden sm:inline font-bold text-xl tracking-tight bg-gradient-to-r from-blue-600 via-indigo-500 to-cyan-400 bg-clip-text text-transparent">
+              ArcTecFox — AI-Powered Preventive Maintenance
             </span>
           </Link>
 
