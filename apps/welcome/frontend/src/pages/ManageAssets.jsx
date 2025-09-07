@@ -1955,6 +1955,9 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate, selectedSite, userSites: pr
       };
       
       console.log('Generating PM plan for child asset:', formData);
+      console.log('📋 Parent Asset ID being sent:', formData.parent_asset_id);
+      console.log('📋 Child Asset ID being sent:', formData.child_asset_id);
+      console.log('📋 Number of manuals being sent:', formData.manual_count);
       
       // Call the AI API to generate the plan
       const aiGeneratedPlan = await generatePMPlan(formData);
