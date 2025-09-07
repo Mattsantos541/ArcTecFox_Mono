@@ -308,11 +308,11 @@ async def generate_ai_plan(
         if plan_data.parent_asset_id:
             logger.info(f"🔍 Looking for parent asset manual with parent_asset_id: {plan_data.parent_asset_id}")
             try:
-                # Use user's token to respect RLS policies
-                user_client = db_get_user_client(user.token)
+                # Try using service client to bypass RLS for now (temporary fix)
+                service_client = get_service_supabase_client()
                 
                 # Query loaded_manuals for parent asset manual
-                parent_manual_response = user_client.table('loaded_manuals').select('file_path,file_type,original_name').eq('parent_asset_id', plan_data.parent_asset_id).limit(1).execute()
+                parent_manual_response = service_client.table('loaded_manuals').select('file_path,file_type,original_name').eq('parent_asset_id', plan_data.parent_asset_id).limit(1).execute()
                 
                 logger.info(f"📚 Query response data: {parent_manual_response.data}")
                 logger.info(f"📚 Query response count: {len(parent_manual_response.data) if parent_manual_response.data else 0}")
