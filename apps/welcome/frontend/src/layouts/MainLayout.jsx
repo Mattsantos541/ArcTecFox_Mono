@@ -78,7 +78,7 @@ function AdminMenu({ adminSites = [] }) {
           )}
           <div className="py-1">
             <button
-              onClick={() => handleNavigation('/')}
+              onClick={() => handleNavigation('/dashboard')}
               className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 font-medium"
             >
               Dashboard

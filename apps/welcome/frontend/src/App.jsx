@@ -27,7 +27,7 @@ export default function App() {
       <Router>
         <AuthProvider>
           <Routes>
-            {/* PUBLIC */}
+            {/* ---------- PUBLIC (no app layout) ---------- */}
             <Route
               path="/"
               element={
@@ -40,47 +40,19 @@ export default function App() {
             <Route path="/privacy-policy" element={<PrivacyPolicy />} />
             <Route path="/accept-invitation/:token" element={<AcceptInvitation />} />
 
-            {/* PROTECTED */}
+            {/* ---------- PROTECTED (uses MainLayout with <Outlet />) ---------- */}
             <Route
-              path="/dashboard"
               element={
                 <ProtectedRoute>
-                  <MainLayout>
-                    <MaintenanceSchedule />
-                  </MainLayout>
+                  <MainLayout />
                 </ProtectedRoute>
               }
-            />
-            <Route
-              path="/admin/users"
-              element={
-                <ProtectedRoute>
-                  <MainLayout>
-                    <UserManagement />
-                  </MainLayout>
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/admin/companies"
-              element={
-                <ProtectedRoute>
-                  <MainLayout>
-                    <CompanyManagement />
-                  </MainLayout>
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/admin/super-admins"
-              element={
-                <ProtectedRoute>
-                  <MainLayout>
-                    <SuperAdminManagement />
-                  </MainLayout>
-                </ProtectedRoute>
-              }
-            />
+            >
+              <Route path="/dashboard" element={<MaintenanceSchedule />} />
+              <Route path="/admin/users" element={<UserManagement />} />
+              <Route path="/admin/companies" element={<CompanyManagement />} />
+              <Route path="/admin/super-admins" element={<SuperAdminManagement />} />
+            </Route>
           </Routes>
         </AuthProvider>
       </Router>
