@@ -13,14 +13,23 @@ class FileProcessor:
     def __init__(self):
         supabase_url = os.getenv("SUPABASE_URL")
         # Use service key for file processing to ensure sufficient permissions
-        supabase_key = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_ANON_KEY")
+        service_key = os.getenv("SUPABASE_SERVICE_KEY")
+        anon_key = os.getenv("SUPABASE_ANON_KEY")
         
-        if not supabase_url or not supabase_key:
-            logger.warning("⚠️ Supabase credentials not found - file processing will be disabled")
+        if not supabase_url:
+            logger.warning("⚠️ SUPABASE_URL not found - file processing will be disabled")
             self.supabase_client = None
-        else:
-            self.supabase_client: Client = create_client(supabase_url, supabase_key)
+        elif service_key:
+            logger.info("🔗 FileProcessor: Using SUPABASE_SERVICE_KEY")
+            self.supabase_client: Client = create_client(supabase_url, service_key)
             logger.info("🔗 FileProcessor: Supabase client initialized with service key")
+        elif anon_key:
+            logger.warning("⚠️ SUPABASE_SERVICE_KEY not found, falling back to SUPABASE_ANON_KEY")
+            self.supabase_client: Client = create_client(supabase_url, anon_key)
+            logger.info("🔗 FileProcessor: Supabase client initialized with anon key")
+        else:
+            logger.warning("⚠️ No Supabase keys found - file processing will be disabled")
+            self.supabase_client = None
 
     async def extract_text_from_file(self, file_path: str, file_type: str) -> str:
         """Extract text content from uploaded files"""
