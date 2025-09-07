@@ -309,7 +309,7 @@ async def generate_ai_plan(
             logger.info(f"🔍 Looking for parent asset manual with parent_asset_id: {plan_data.parent_asset_id}")
             try:
                 # Query loaded_manuals for parent asset manual
-                parent_manual_response = supabase_client.table('loaded_manuals').select('file_path, file_type, original_name').eq('parent_asset_id', plan_data.parent_asset_id).limit(1).execute()
+                parent_manual_response = supabase_client.from('loaded_manuals').select('file_path, file_type, original_name').eq('parent_asset_id', plan_data.parent_asset_id).limit(1).execute()
                 
                 if parent_manual_response.data and len(parent_manual_response.data) > 0:
                     parent_manual = parent_manual_response.data[0]
