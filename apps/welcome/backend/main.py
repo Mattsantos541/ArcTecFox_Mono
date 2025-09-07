@@ -221,6 +221,8 @@ class PlanData(BaseModel):
     environment: Optional[str] = Field(None, max_length=500, description="Environmental conditions")
     date_of_plan_start: Optional[str] = Field(None, max_length=20, description="Plan start date")
     userManual: Optional[UserManual] = None
+    parent_asset_id: Optional[str] = Field(None, description="Parent asset ID")
+    child_asset_id: Optional[str] = Field(None, description="Child asset ID")
 
 class GenerateAIPlanRequest(BaseModel):
     planData: PlanData
@@ -267,6 +269,7 @@ async def generate_ai_plan(
     try:
         plan_data = plan_request.planData
         logger.info(f"🚀 User {user.email} requesting AI plan for: {plan_data.name}")
+        logger.info(f"📋 Plan data - parent_asset_id: {plan_data.parent_asset_id}, child_asset_id: {plan_data.child_asset_id}")
         
         # Optional: If the plan request includes a site_id, verify access
         # This would be added when you want to tie PM plans to specific sites
@@ -300,6 +303,32 @@ async def generate_ai_plan(
         else:
             logger.info("📚 No manual content provided for this child asset PM plan")
 
+        # Fetch parent asset manual if parent_asset_id is provided
+        parent_manual_content = ""
+        if plan_data.parent_asset_id:
+            logger.info(f"🔍 Looking for parent asset manual with parent_asset_id: {plan_data.parent_asset_id}")
+            try:
+                # Query loaded_manuals for parent asset manual
+                parent_manual_response = supabase_client.table('loaded_manuals').select('file_path, file_type, original_name').eq('parent_asset_id', plan_data.parent_asset_id).limit(1).execute()
+                
+                if parent_manual_response.data and len(parent_manual_response.data) > 0:
+                    parent_manual = parent_manual_response.data[0]
+                    logger.info(f"📚 Found parent asset manual: {parent_manual['original_name']}")
+                    
+                    parent_manual_content = await file_processor.extract_text_from_file(
+                        parent_manual['file_path'],
+                        parent_manual['file_type']
+                    )
+                    
+                    if parent_manual_content:
+                        logger.info(f"📚 Successfully extracted parent manual content: {len(parent_manual_content)} characters")
+                else:
+                    logger.info(f"📚 No parent manual found in database for parent_asset_id: {plan_data.parent_asset_id}")
+            except Exception as e:
+                logger.error(f"⚠️ Error fetching parent manual: {e}")
+        else:
+            logger.info("📚 No parent_asset_id provided, skipping parent manual fetch")
+
         prompt = f"""
 Generate a detailed preventive maintenance (PM) plan for the following asset:
 
@@ -314,14 +343,16 @@ Generate a detailed preventive maintenance (PM) plan for the following asset:
 
 {f'''
 **USER MANUAL CONTENT:**
-The following is the extracted content from the uploaded user manual for this asset:
+{f"CHILD ASSET MANUAL:" if user_manual_content and parent_manual_content else ""}
+{user_manual_content if user_manual_content else ""}
 
-{user_manual_content}
+{f"PARENT ASSET MANUAL:" if parent_manual_content else ""}
+{parent_manual_content if parent_manual_content else ""}
 
 **END OF USER MANUAL CONTENT**
 
-Use the information from the user manual above to determine recommended maintenance tasks and intervals. If specific maintenance procedures are mentioned in the manual, follow those recommendations. If the manual is not available or doesn't contain specific maintenance information, infer recommendations from best practices for similar assets in the same category.
-''' if user_manual_content else '''
+Use the information from the manual(s) above to determine recommended maintenance tasks and intervals. If specific maintenance procedures are mentioned in the manual, follow those recommendations. If the manual is not available or doesn't contain specific maintenance information, infer recommendations from best practices for similar assets in the same category.
+''' if (user_manual_content or parent_manual_content) else '''
 Use the manufacturer's user manual to determine recommended maintenance tasks and intervals. If the manual is not available, infer recommendations from best practices for similar assets in the same category.
 '''}
 
