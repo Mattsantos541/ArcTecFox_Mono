@@ -1880,6 +1880,16 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate, selectedSite, userSites: pr
       // Get all manuals for this child asset
       const childManuals = loadedManuals[childAsset.id] || [];
       
+      // Log manual information for debugging
+      if (childManuals.length > 0) {
+        console.log(`📚 [Child PM Plan] Found ${childManuals.length} manual(s) for child asset: ${childAsset.name}`);
+        childManuals.forEach((manual, index) => {
+          console.log(`📚 [Child PM Plan] Manual ${index + 1}: ${manual.original_name} (${manual.file_type})`);
+        });
+      } else {
+        console.log(`📚 [Child PM Plan] No manuals found for child asset: ${childAsset.name}`);
+      }
+      
       // Prepare form data similar to PMPlanner
       const formData = {
         // Core asset identification
@@ -2492,7 +2502,7 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate, selectedSite, userSites: pr
                       {/* Add Child Asset Button Row - appears after all child assets */}
                       <tr>
                         <td colSpan="8" className="px-6 py-2 bg-gray-50">
-                          <div className="flex gap-2">
+                          <div className="flex gap-2 flex-wrap">
                             <button
                               onClick={() => {
                                 if (!showAddChildAsset) {
@@ -2525,6 +2535,32 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate, selectedSite, userSites: pr
                             >
                               Suggest Child Assets
                             </button>
+                            
+                            {/* Show these buttons only when a child asset is selected */}
+                            {selectedChildAssetForPlan && (
+                              <>
+                                <div className="border-l border-gray-400 mx-2"></div>
+                                <button
+                                  onClick={() => handleCreateUpdatePMPlan(selectedChildAssetForPlan)}
+                                  className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 transition-colors text-xs disabled:bg-gray-400 disabled:cursor-not-allowed"
+                                  disabled={loadingPlans || generatingPlan}
+                                >
+                                  {loadingPlans ? 'Loading...' : generatingPlan ? 'Generating Plan...' : (existingPlans.length > 0 ? 'Update PM Plan' : 'Create PM Plan')}
+                                </button>
+                                <button
+                                  onClick={() => openEditModal(selectedChildAssetForPlan, false)}
+                                  className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-xs"
+                                >
+                                  Edit Asset
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteChildAsset(selectedChildAssetForPlan.id)}
+                                  className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 transition-colors text-xs"
+                                >
+                                  Delete Asset
+                                </button>
+                              </>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -2906,27 +2942,7 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate, selectedSite, userSites: pr
               )}
             </div>
             
-            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end space-x-2">
-              <button
-                onClick={() => handleCreateUpdatePMPlan(selectedChildAssetForPlan)}
-                className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors text-sm disabled:bg-gray-400 disabled:cursor-not-allowed"
-                disabled={loadingPlans || generatingPlan}
-              >
-                {loadingPlans ? 'Loading...' : generatingPlan ? 'Generating Plan...' : (existingPlans.length > 0 ? 'Update PM Plan' : 'Create PM Plan')}
-              </button>
-              <button
-                onClick={() => openEditModal(selectedChildAssetForPlan, false)}
-                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-sm"
-              >
-                Edit Asset
-              </button>
-              <button
-                onClick={() => handleDeleteChildAsset(selectedChildAssetForPlan.id)}
-                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors text-sm"
-              >
-                Delete Asset
-              </button>
-            </div>
+            {/* Buttons moved to top section with Add Child Asset and Suggest Child Assets */}
           </div>
           
           {/* PM Plans Section */}
