@@ -1,5 +1,4 @@
 import React, { useState } from "react";
-import UserStatusBar from "../components/UserStatusBar";
 import LeadCaptureModal from "../components/LeadCaptureModal";
 import PMPlannerOpen from "../pages/PMPlannerOpen";
 import ProgressBar from "../components/ProgressBar";
@@ -73,39 +72,7 @@ export default function Home() {
   };
 
   return (
-    <div className="bg-gray-50 min-h-screen relative font-sans">
-      {/* --- Top Navbar --- */}
-      <header className="sticky top-0 z-40 border-b bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60">
-        <div className="mx-auto max-w-6xl h-14 px-4 flex items-center justify-between">
-          {/* Logo + Brand */}
-          <a href="/" className="flex items-center gap-2">
-            <img
-              src="/assets/ArcTecFox-logo.jpg"
-              alt="ArcTecFox"
-              className="h-8 w-8 rounded"
-            />
-            <span className="hidden sm:inline font-semibold tracking-tight bg-gradient-to-r from-blue-600 via-indigo-500 to-cyan-400 bg-clip-text text-transparent">
-              ArcTecFox — AI-Powered Preventive Maintenance
-            </span>
-          </a>
-
-          {/* Right controls */}
-          <nav className="ml-auto flex items-center gap-2">
-            {/* Header CTA (desktop only) */}
-            <button
-              onClick={scrollToPlanner}
-              className="hidden md:inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50"
-              aria-label="Generate PM Plan"
-            >
-              Generate PM Plan
-            </button>
-
-            {/* Inline user status / sign-in */}
-            <UserStatusBar variant="inline" />
-          </nav>
-        </div>
-      </header>
-
+    <div className="bg-gray-50 relative font-sans">
       {/* --- HERO --- */}
       <section className="bg-white py-16 text-center border-b">
         <div className="max-w-4xl mx-auto px-4">
