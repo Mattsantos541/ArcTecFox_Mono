@@ -13,7 +13,7 @@ class FileProcessor:
     def __init__(self):
         supabase_url = os.getenv("SUPABASE_URL")
         # Use service key for file processing to ensure sufficient permissions
-        service_key = os.getenv("SUPABASE_SERVICE_KEY")
+        service_key = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_KEY")
         anon_key = os.getenv("SUPABASE_ANON_KEY")
         
         if not supabase_url:
