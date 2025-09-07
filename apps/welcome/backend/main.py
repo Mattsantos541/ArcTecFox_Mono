@@ -286,9 +286,19 @@ async def generate_ai_plan(
                 plan_data.userManual.fileType
             )
             if user_manual_content:
-                logger.info(f"✅ Successfully extracted {len(user_manual_content)} characters from user manual")
+                # Log manual details for debugging
+                manual_lines = user_manual_content.split('\n')
+                first_10_lines = '\n'.join(manual_lines[:10])
+                
+                logger.info(f"📚 Manual Content Detected for Child Asset PM Plan!")
+                logger.info(f"📚 Manual filename: {plan_data.userManual.fileName}")
+                logger.info(f"📚 Manual length: {len(user_manual_content)} characters")
+                logger.info(f"📚 Manual has {len(manual_lines)} lines")
+                logger.info(f"📚 First 10 lines of manual:\n{first_10_lines}")
             else:
                 logger.warning("⚠️ Failed to extract content from user manual")
+        else:
+            logger.info("📚 No manual content provided for this child asset PM plan")
 
         prompt = f"""
 Generate a detailed preventive maintenance (PM) plan for the following asset:

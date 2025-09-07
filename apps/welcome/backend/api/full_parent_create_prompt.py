@@ -83,11 +83,22 @@ async def generate_parent_plan(
     # Include manual content if supplied
     manual_section = ""
     if input_data.user_manual_content:
+        # Log manual details for debugging
+        manual_lines = input_data.user_manual_content.split('\n')
+        first_10_lines = '\n'.join(manual_lines[:10])
+        
+        logger.info(f"📚 Manual Content Detected!")
+        logger.info(f"📚 Manual length: {len(input_data.user_manual_content)} characters")
+        logger.info(f"📚 Manual has {len(manual_lines)} lines")
+        logger.info(f"📚 First 10 lines of manual:\n{first_10_lines}")
+        
         manual_section = f"""
 
 User Manual Content (authoritative if present; extract concrete details from here):
 {input_data.user_manual_content}
 """
+    else:
+        logger.info("📚 No manual content provided for this parent asset")
 
     # -------------------------
     # PROMPT (updated rules)

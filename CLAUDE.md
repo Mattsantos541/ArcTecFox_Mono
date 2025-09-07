@@ -194,3 +194,56 @@ CREATE POLICY "good" ON table USING (created_by = auth.uid());
 - Parent PM data fetching in `AssetInsightsDashboard.jsx:75-103`
 - UI sections for parent tasks and spare parts in `AssetInsightsDashboard.jsx:415-534`
 - Parent-level maintenance tasks now display correctly in Asset Insights dashboard
+
+## CURRENT DEVELOPMENT TASK - Parent Asset PDF Export
+
+### What We're Trying to Accomplish
+Add PDF export functionality for parent assets that mirrors the existing child asset export but includes parent-specific data:
+
+**Required Features:**
+1. **Export Button**: Add a Download icon button to parent asset rows (matching child asset button style and order: Download → Edit → Delete)
+2. **PDF Content**:
+   - Page 1: Parent asset metadata + Critical spare parts table
+   - Page 2: Parent maintenance tasks (from parent PM plans)  
+   - Page 3: Analytics graph from Asset Insights dashboard
+3. **Data Integration**: Use existing APIs and data structures where possible
+
+### Issues Encountered with Multi-Agent Approach
+- **Complexity Overload**: Multiple agents made assumptions and created integration gaps
+- **Over-Engineering**: Created extensive documentation and test frameworks before core functionality worked
+- **Coordination Problems**: Agents modified multiple files simultaneously without verification
+- **Unverified Implementation**: Changes made without testing actual functionality
+
+### SIMPLIFIED IMPLEMENTATION PLAN 
+
+**Phase 1: Core Functionality (Direct Implementation)**
+1. Add `html2canvas` dependency for graph export: `npm install html2canvas`
+2. Add Download button to parent asset row in `ManageAssets.jsx` (line ~2313)
+   - Use existing `Download` icon from lucide-react
+   - Match child asset button styling exactly
+   - Place before Edit button for consistent order
+3. Create `handleExportParentAssetPDF()` function to gather data
+4. Create `exportParentAssetToPDF()` function in `pdfExport.js` based on existing `exportMaintenanceTaskToPDF()`
+
+**Phase 2: Integration & Testing**
+1. Test with real parent asset data
+2. Verify graph export with html2canvas works
+3. Handle edge cases (no spares, no tasks, etc.)
+4. Match existing PDF styling and colors
+
+**Phase 3: Polish**
+1. Add loading states to button
+2. Error handling and user feedback
+3. File naming consistency
+
+**Key Success Metrics:**
+- ✅ Button appears in parent asset row
+- ✅ Clicking generates multi-page PDF
+- ✅ PDF contains all parent asset data
+- ✅ Styling matches existing child asset PDFs
+
+**Critical Implementation Notes:**
+- Reuse existing `fetchParentPMTasks()` API function
+- Parse `critical_spare_parts` JSON field from parent asset
+- Use existing `COLORS` scheme from `pdfExport.js`  
+- Follow same error handling patterns as child exports
