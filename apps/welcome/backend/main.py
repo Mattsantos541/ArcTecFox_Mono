@@ -321,6 +321,9 @@ async def generate_ai_plan(
                     parent_manual = parent_manual_response.data[0]
                     logger.info(f"📚 Found parent asset manual: {parent_manual['original_name']}")
                     
+                    logger.info(f"📚 Attempting to extract from file_path: {parent_manual['file_path']}")
+                    logger.info(f"📚 File type: {parent_manual['file_type']}")
+                    
                     parent_manual_content = await file_processor.extract_text_from_file(
                         parent_manual['file_path'],
                         parent_manual['file_type']
