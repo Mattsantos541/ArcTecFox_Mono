@@ -1,3 +1,5 @@
+# full_parent_create_prompt.py
+
 from fastapi import APIRouter, HTTPException, Request, Depends
 from pydantic import BaseModel, Field
 import google.generativeai as genai
@@ -32,6 +34,7 @@ if RATE_LIMITING_AVAILABLE:
 else:
     limiter = None
 
+
 # =============================
 # Pydantic Models
 # =============================
@@ -48,6 +51,7 @@ class ParentPlanInput(BaseModel):
     pm_frequency: Optional[str] = Field(None, max_length=100, description="PM frequency")
     criticality: Optional[str] = Field(None, max_length=50, description="Criticality level")
 
+
 # =============================
 # Parent Asset Maintenance Plan Endpoint
 # =============================
@@ -59,20 +63,22 @@ async def generate_parent_plan(
 ):
     """
     Generate AI-powered parent asset maintenance plan and critical spare parts list.
-    Uses Gemini and returns pure JSON (no markdown).
+    Uses the same Google AI infrastructure as child asset suggestions.
     Requires authentication.
     """
     logger.info(f"🧩 User {user.email} requesting parent plan for: {input_data.parent_asset_name}")
 
-    # Build parent asset label
+    # Build parent asset details string
     parent_label = f"{input_data.parent_asset_name}"
     if input_data.parent_asset_make:
         parent_label += f" - {input_data.parent_asset_make}"
     if input_data.parent_asset_model:
         parent_label += f" {input_data.parent_asset_model}"
 
-    # Defaults for optional fields
+    # Get today's date for plan start date
     today = date.today().isoformat()
+
+    # Default values for optional fields
     site_location = input_data.site_location if input_data.site_location else "Not provided"
     environment = input_data.environment if input_data.environment else "Not provided"
     operating_hours = input_data.operating_hours if input_data.operating_hours else "Standard operating hours"
@@ -80,29 +86,16 @@ async def generate_parent_plan(
     criticality = input_data.criticality if input_data.criticality else "Medium"
     additional_context = input_data.additional_context if input_data.additional_context else "None provided"
 
-    # Include manual content if supplied
+    # Add user manual content if provided
     manual_section = ""
     if input_data.user_manual_content:
-        # Log manual details for debugging
-        manual_lines = input_data.user_manual_content.split('\n')
-        first_10_lines = '\n'.join(manual_lines[:10])
-        
-        logger.info(f"📚 Manual Content Detected!")
-        logger.info(f"📚 Manual length: {len(input_data.user_manual_content)} characters")
-        logger.info(f"📚 Manual has {len(manual_lines)} lines")
-        logger.info(f"📚 First 10 lines of manual:\n{first_10_lines}")
-        
         manual_section = f"""
 
-User Manual Content (authoritative if present; extract concrete details from here):
+User Manual Content (for reference):
 {input_data.user_manual_content}
 """
-    else:
-        logger.info("📚 No manual content provided for this parent asset")
 
-    # -------------------------
-    # PROMPT (updated rules)
-    # -------------------------
+    # Create the AI prompt
     prompt = f"""
 You are an expert in preventive maintenance (PM) for industrial assets. Generate a *parent-asset health plan* for the overall system (NOT for specific child components), and list *critical spare parts for the parent asset*.
 
@@ -198,25 +191,22 @@ Parent/Child Hierarchy & Universal Context (applies to all tasks unless overridd
     try:
         # Use the same Google AI pattern as suggest_child_assets
         model = genai.GenerativeModel('gemini-2.0-flash-exp')
-        full_prompt = (
-            "You are an expert in asset management and preventive maintenance planning. "
-            "Always return pure JSON without any markdown formatting.\n\n" + prompt
-        )
+        full_prompt = "You are an expert in asset management and preventive maintenance planning. Always return pure JSON without any markdown formatting.\n\n" + prompt
         response = model.generate_content(
             full_prompt,
             generation_config=genai.types.GenerationConfig(
                 temperature=0.7,
-                max_output_tokens=8192,  # Large to accommodate detailed tasks + spares
+                max_output_tokens=8192,  # Increased for larger response
             )
         )
     except Exception as ge:
         logger.error(f"🧠 Gemini API error: {ge}")
         raise HTTPException(status_code=502, detail="Gemini API error")
 
-    raw_content = response.text or ""
+    raw_content = response.text
     logger.info("🧠 AI response received from Gemini for parent asset maintenance plan")
 
-    # Clean and parse JSON
+    # Clean the response (same pattern as suggest_child_assets)
     raw_content = raw_content.replace("```json", "").replace("```", "").strip()
 
     try:
@@ -225,5 +215,5 @@ Parent/Child Hierarchy & Universal Context (applies to all tasks unless overridd
         return {"success": True, "plan": plan_data}
     except json.JSONDecodeError as e:
         logger.error(f"❌ JSON decode error: {e}")
-        logger.error(f"Raw content (truncated): {raw_content[:500]}...")
+        logger.error(f"Raw content: {raw_content[:200]}...")
         raise HTTPException(status_code=500, detail="AI returned invalid JSON format")
