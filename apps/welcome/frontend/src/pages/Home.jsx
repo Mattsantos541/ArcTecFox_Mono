@@ -7,15 +7,11 @@ import { generatePMPlan } from "../api";
 import { saveLeadAndPlan } from "../services/leadFunnelService";
 import { exportPlanToExcel } from "../utils/exportPlan";
 
-// If you add the screenshot gallery file, uncomment this import and the section below
-// import PMPlanScreenshots from "../components/PMPlanScreenshots";
-
 export default function Home() {
   const [showLeadModal, setShowLeadModal] = useState(false);
   const [assetName, setAssetName] = useState("");
   const [completion, setCompletion] = useState(0);
   const [formState, setFormState] = useState(null);
-  const [pendingTasks, setPendingTasks] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
   const scrollToPlanner = () => {
@@ -23,22 +19,28 @@ export default function Home() {
     if (el) el.scrollIntoView({ behavior: "smooth" });
   };
 
-  // progress coming from planner
   const handlePlannerProgress = (formData) => {
     setFormState(formData);
     setAssetName(formData?.name || "");
+
     const keys = [
-      "name", "model", "serial", "category", "hours",
-      "additional_context", "environment", "date_of_plan_start",
+      "name",
+      "model",
+      "serial",
+      "category",
+      "hours",
+      "additional_context",
+      "environment",
+      "date_of_plan_start",
     ];
     const filled = keys.filter((k) => {
       const v = formData?.[k];
       return v !== undefined && String(v).trim() !== "";
     }).length;
+
     setCompletion(Math.round((filled / keys.length) * 100));
   };
 
-  // Planner "Generate Plan" clicked: show lead modal (we won’t write yet)
   const handlePlannerSubmit = async (formData) => {
     setFormState(formData);
     setShowLeadModal(true);
@@ -48,9 +50,8 @@ export default function Home() {
     try {
       setSubmitting(true);
 
-      // 1) Generate tasks from AI using your existing endpoint
+      // 1) Generate PM tasks
       const tasks = await generatePMPlan(formState);
-      setPendingTasks(tasks);
 
       // 2) Persist lead + plan + tasks
       const { plan } = await saveLeadAndPlan({
@@ -59,11 +60,10 @@ export default function Home() {
         tasks,
       });
 
-      // 3) Optional: automatically export to Excel for the user
+      // 3) Auto-export to Excel for the user
       exportPlanToExcel({ plan, tasks });
 
       setShowLeadModal(false);
-      console.log("✅ Lead + plan saved and exported.");
     } catch (err) {
       console.error("❌ Lead funnel save failed:", err);
       alert(`Failed to save lead/plan: ${err.message}`);
@@ -73,11 +73,10 @@ export default function Home() {
   };
 
   return (
-    <div className="bg-gray-50 min-h-screen relative font-sans">
-      {/* --- Top Navbar --- */}
+    <div className="bg-gray-50 min-h-screen font-sans">
+      {/* Header (only header on the site) */}
       <header className="sticky top-0 z-40 border-b bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60">
         <div className="mx-auto max-w-6xl h-14 px-4 flex items-center justify-between">
-          {/* Logo + Brand */}
           <a href="/" className="flex items-center gap-2">
             <img
               src="/assets/ArcTecFox-logo.jpg"
@@ -88,32 +87,17 @@ export default function Home() {
               ArcTecFox — AI-Powered Preventive Maintenance
             </span>
           </a>
-
-          {/* Right controls */}
-          <nav className="ml-auto flex items-center gap-2">
-            {/* Header CTA (desktop only) */}
-            <button
-              onClick={scrollToPlanner}
-              className="hidden md:inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50"
-              aria-label="Generate PM Plan"
-            >
-              Generate PM Plan
-            </button>
-
-            {/* Inline user status / sign-in */}
-            <UserStatusBar variant="inline" />
-          </nav>
+          <UserStatusBar />
         </div>
       </header>
 
-      {/* --- HERO --- */}
+      {/* Hero */}
       <section className="bg-white py-16 text-center border-b">
         <div className="max-w-4xl mx-auto px-4">
           <h1 className="text-4xl sm:text-5xl font-extrabold text-gray-900 mb-6">
             Failing to plan is planning to fail.
           </h1>
-
-          <p className="text-lg text-gray-700 mb-8 leading-relaxed max-w-3xl mx-auto">
+          <p className="text-lg text-gray-700 mb-8 max-w-3xl mx-auto leading-relaxed">
             Before you can predict failure, you need a plan to prevent it.
             ArcTecFox helps maintenance teams build fast, structured PMs — ready for action.
           </p>
@@ -137,14 +121,13 @@ export default function Home() {
             <span>⚡</span> Build My Free PM Plan
           </button>
 
-          {/* Optional reassurance line near CTA */}
           <p className="text-sm text-gray-600 mt-3">
             Predictive maintenance is powerful — but useless without a preventive foundation.
           </p>
         </div>
       </section>
 
-      {/* --- “Before You Predict… Plan.” Section --- */}
+      {/* Positioning Section */}
       <section className="my-16 text-center px-4">
         <div className="max-w-4xl mx-auto">
           <h2 className="text-2xl md:text-3xl font-bold mb-4">
@@ -170,29 +153,13 @@ export default function Home() {
         </div>
       </section>
 
-      {/* --- Optional: Screenshot Gallery (uncomment if you add the component) --- */}
-      {/*
-      <section className="bg-white border-y">
-        <PMPlanScreenshots
-          screenshots={[
-            { src: "/screenshots/plan-preview.webp", alt: "Plan preview", caption: "Tasks, frequencies, criticality—at a glance." },
-            { src: "/screenshots/excel-export.webp", alt: "Excel export", caption: "One-click Excel export." },
-            { src: "/screenshots/pdf-export.webp", alt: "PDF export", caption: "Branded PDF for audits and sign-off." },
-            { src: "/screenshots/cmms-mapping.webp", alt: "CMMS mapping", caption: "Map fields to your CMMS in seconds." },
-            { src: "/screenshots/child-assets.webp", alt: "Child assets selection", caption: "Recommend child assets to complete the hierarchy." },
-            { src: "/screenshots/generate-flow.webp", alt: "Generate flow", caption: "Baseline plan in under 60 seconds." },
-          ]}
-        />
-      </section>
-      */}
-
-      {/* --- FREE OFFER --- */}
+      {/* Free Offer */}
       <section className="bg-gray-100 py-14 text-center">
         <div className="max-w-4xl mx-auto px-4">
           <h2 className="text-3xl font-semibold text-gray-800 mb-4">
             Try It Free—No Sign-Up Needed
           </h2>
-          <p className="text-gray-700 mb-6 max-w-2xl mx-auto">
+        <p className="text-gray-700 mb-6 max-w-2xl mx-auto">
             Enter your asset below and get a complete preventive maintenance plan instantly.
           </p>
 
@@ -203,9 +170,7 @@ export default function Home() {
             <li>✔ Ready to share or import into your CMMS</li>
           </ul>
 
-          <p className="text-gray-600 mb-6">
-            Takes less than 1 minute to complete.
-          </p>
+          <p className="text-gray-600 mb-6">Takes less than 1 minute to complete.</p>
 
           <button
             onClick={scrollToPlanner}
@@ -214,14 +179,13 @@ export default function Home() {
             <span>👉</span> Start Planning in 60 Seconds
           </button>
 
-          {/* Process clarity */}
           <p className="text-sm text-gray-600 mt-3">
             Your preventive maintenance plan will be generated instantly and emailed to you.
           </p>
         </div>
       </section>
 
-      {/* --- PLANNER + PROGRESS --- */}
+      {/* Planner + Progress */}
       <section id="pm-planner-section" className="max-w-5xl mx-auto px-4 py-16">
         <ProgressBar
           progress={completion}
@@ -238,7 +202,6 @@ export default function Home() {
         />
       </section>
 
-      {/* Lead capture modal */}
       {showLeadModal && (
         <LeadCaptureModal
           submitting={submitting}
@@ -247,7 +210,6 @@ export default function Home() {
         />
       )}
 
-      {/* Footer */}
       <footer className="mt-12 border-t py-6" />
     </div>
   );

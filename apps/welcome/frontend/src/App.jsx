@@ -8,18 +8,16 @@ import SuperAdminManagement from "./pages/SuperAdminManagement";
 import TermsOfService from "./pages/TermsOfService";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import AcceptInvitation from "./pages/AcceptInvitation";
-import UnifiedLayout from "./layouts/UnifiedLayout";
 import MainLayout from "./layouts/MainLayout";
 import { AuthProvider, useAuth } from "./hooks/useAuth";
 import ErrorBoundary from "./components/ErrorBoundary";
+import RedirectIfAuthed from "./routes/RedirectIfAuthed";
 
 // Protected Route wrapper
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
-  
   if (loading) return null;
   if (!user) return <Navigate to="/" replace />;
-  
   return children;
 }
 
@@ -29,35 +27,31 @@ export default function App() {
       <Router>
         <AuthProvider>
           <Routes>
-            {/* All routes use UnifiedLayout for consistent navigation */}
-            <Route element={<UnifiedLayout />}>
-              {/* Public routes */}
-              <Route path="/" element={<Home />} />
-              <Route path="/terms-of-service" element={<TermsOfService />} />
-              <Route path="/privacy-policy" element={<PrivacyPolicy />} />
-              <Route path="/accept-invitation/:token" element={<AcceptInvitation />} />
-              
-              {/* Protected routes */}
-              <Route path="/dashboard" element={
+            {/* ---------- PUBLIC (no app layout) ---------- */}
+            <Route
+              path="/"
+              element={
+                <RedirectIfAuthed>
+                  <Home />
+                </RedirectIfAuthed>
+              }
+            />
+            <Route path="/terms-of-service" element={<TermsOfService />} />
+            <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+            <Route path="/accept-invitation/:token" element={<AcceptInvitation />} />
+
+            {/* ---------- PROTECTED (uses MainLayout with <Outlet />) ---------- */}
+            <Route
+              element={
                 <ProtectedRoute>
-                  <MaintenanceSchedule />
+                  <MainLayout />
                 </ProtectedRoute>
-              } />
-              <Route path="/admin/users" element={
-                <ProtectedRoute>
-                  <UserManagement />
-                </ProtectedRoute>
-              } />
-              <Route path="/admin/companies" element={
-                <ProtectedRoute>
-                  <CompanyManagement />
-                </ProtectedRoute>
-              } />
-              <Route path="/admin/super-admins" element={
-                <ProtectedRoute>
-                  <SuperAdminManagement />
-                </ProtectedRoute>
-              } />
+              }
+            >
+              <Route path="/dashboard" element={<MaintenanceSchedule />} />
+              <Route path="/admin/users" element={<UserManagement />} />
+              <Route path="/admin/companies" element={<CompanyManagement />} />
+              <Route path="/admin/super-admins" element={<SuperAdminManagement />} />
             </Route>
           </Routes>
         </AuthProvider>
