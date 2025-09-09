@@ -11,65 +11,29 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const { handleAsyncError } = useErrorHandler();
-  
-  // Preload auth state for faster initial load
-  const [initialCheckComplete, setInitialCheckComplete] = useState(false);
 
   // Check for existing auth session and listen for changes
   useEffect(() => {
     let mounted = true;
-    
-    // Get initial session with faster resolution
-    const getInitialSession = async () => {
-      const startTime = performance.now();
-      
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const endTime = performance.now();
-        
-        // Only log if there's a user or if it takes too long
-        if (session?.user || (endTime - startTime) > 1000) {
-          console.log('🔄 Auth: Session check', { 
-            hasUser: !!session?.user, 
-            email: session?.user?.email,
-            duration: Math.round(endTime - startTime) + 'ms'
-          });
+    let initialCheckDone = false;
+    console.log('🔄 [AUTH EFFECT] useAuth useEffect triggered - checking auth state');
+
+    // Listen for auth state changes FIRST - this handles initial session too
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        // Skip ALL events after initial check is done (prevents tab focus reloads)
+        if (initialCheckDone && (event === 'INITIAL_SESSION' || event === 'SIGNED_IN')) {
+          return;
         }
         
         if (mounted) {
           setUser(session?.user ?? null);
           setLoading(false);
-        }
-      } catch (error) {
-        console.error('❌ Auth: Session error:', error);
-        if (mounted) {
-          setUser(null);
-          setLoading(false);
-        }
-      }
-    };
-
-    getInitialSession();
-
-    // Listen for auth state changes (this handles OAuth redirects)
-    // Only update state for significant auth events, not on every tab focus
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        // Only handle significant auth events
-        if (event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'USER_UPDATED' || event === 'TOKEN_REFRESHED') {
-          // Only log meaningful auth changes
-          if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
-            console.log('🔄 Auth: State changed:', event, { email: session?.user?.email });
-          }
+          initialCheckDone = true;
           
-          if (mounted) {
-            setUser(session?.user ?? null);
-            setLoading(false);
-            
-            // Clear any error when successfully authenticated
-            if (session?.user) {
-              setError(null);
-            }
+          // Clear any error when successfully authenticated
+          if (session?.user) {
+            setError(null);
           }
         }
       }

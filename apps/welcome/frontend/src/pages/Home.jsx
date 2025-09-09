@@ -1,4 +1,6 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "../hooks/useAuth";
 import LeadCaptureModal from "../components/LeadCaptureModal";
 import PMPlannerOpen from "../pages/PMPlannerOpen";
 import ProgressBar from "../components/ProgressBar";
@@ -7,11 +9,45 @@ import { saveLeadAndPlan } from "../services/leadFunnelService";
 import { exportPlanToExcel } from "../utils/exportPlan";
 
 export default function Home() {
+  const { user, loading } = useAuth();
+  const navigate = useNavigate();
+  
   const [showLeadModal, setShowLeadModal] = useState(false);
   const [assetName, setAssetName] = useState("");
   const [completion, setCompletion] = useState(0);
   const [formState, setFormState] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Redirect authenticated users to dashboard
+  useEffect(() => {
+    if (!loading && user) {
+      console.log('🏠 [HOME] Authenticated user detected - redirecting to dashboard');
+      navigate('/dashboard', { replace: true });
+    }
+  }, [user, loading, navigate]);
+
+  // Don't render landing page if user is authenticated (prevents flash)
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <p>Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <p>Redirecting to dashboard...</p>
+        </div>
+      </div>
+    );
+  }
 
   const scrollToPlanner = () => {
     const el = document.getElementById("pm-planner-section");
