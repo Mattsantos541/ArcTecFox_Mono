@@ -39,7 +39,7 @@ class PMPlanInput(BaseModel):
 def generate_prompt(data: PMPlanInput) -> str:
     today = datetime.utcnow().date().isoformat()
     return f"""
-You are an expert in preventive maintenance (PM) for industrial assets. Generate a detailed preventive maintenance plan for the following asset.
+Using the attached Maintenance User Manual for the [Equipment Name, Model XYZ], develop a detailed Preventive Maintenance plan for the specified **child asset**.
 
 Parent/Child Hierarchy & Universal Context (applies to all tasks unless overridden):
 * Parent Asset: {data.parent_asset if data.parent_asset else "Not provided"}
@@ -53,51 +53,52 @@ Parent/Child Hierarchy & Universal Context (applies to all tasks unless overridd
 * Plan Start Date: {today}
 
 **Deduplication & Inheritance Rules (IMPORTANT):**
-* Treat Site Location, Environment, Operating Hours, and Criticality as **universal** for this plan and **inherited by the child asset**. Do **not** repeat these in every field; only call out **deviations or overrides** at the task level.
+* Treat Site Location, Environment, Operating Hours, and Criticality as **universal** context. Do **not** repeat them in every field; only call out **deviations or overrides** at the task level.
 * Avoid redundant phrasing across tasks. Keep fields concise and only include details unique to the task.
-* If any universal field is unknown, proceed using best practices and state assumptions in the relevant task's "comments".
+* If any universal field is unknown, proceed using best practices and state assumptions in the task "comments".
 
 **Manual & Sources Policy (MANDATORY):**
-* If a **manufacturer’s manual or manual content has been uploaded/provided to the system**, treat it as primary. **Extract and include exact steps, specifications, materials (brands/grades), and part numbers** from the manual where relevant, and **cite section/page** in "citations".
-* If **no manual content** is available, provide **concrete, authoritative** recommendations using credible standards (ISO/ASTM/API) or reputable supplier docs (e.g., SKF, Mobil, Shell), and cite those sources.
-* ⚠️ **Never** output phrases like "refer to the manual" or "see manual"; always include the actual recommended values/steps/materials.
+* If a **manufacturer’s manual or manual content** has been uploaded/provided to the system, treat it as **primary**. **Extract and include exact instructions, intervals, lubrication requirements, specifications, materials (brands/grades), and part numbers** from the manual where relevant, and **cite the exact section/page** in "citations".
+* If **no manual content** is available, provide **concrete, authoritative** recommendations using recognized **standards** (ISO/ASTM/API) or reputable **supplier documentation** (e.g., SKF, Mobil, Shell), and cite those sources.
+* ⚠️ **Do NOT** write “refer to the manual” or similar placeholders. Always include the actual recommended values/steps/materials (from the provided manual or from standards/suppliers).
+* **Verification & Deviations:** Verify each task against the manual. If you recommend a deviation (e.g., due to {data.environment} or {data.hours}), clearly state the deviation and justify it in "engineering_rationale", citing a standard/supplier source.
+
+**Scope Notes (Child Asset):**
+* Include lubrication/grease tasks and **identify grease points/zones** when the manual specifies them; cite the exact product/type and quantity where available.
+* **Do not force cleaning or visual inspection tasks**. Only include them if they are **explicitly prescribed in the manual** or are justified by credible standards/supplier guidance (with citations).
 
 **Instructions:**
-1. Organize tasks into the following standard frequency groups (for readability only):
-   * Daily, Weekly, Monthly, Quarterly, Yearly
-   However, **all task frequencies must be expressed as a numeric `maintenance_interval` in months**:
+1. Organize tasks for readability into groups such as Daily, Weekly, Monthly, Quarterly, Yearly — **but output frequency only as a numeric `maintenance_interval` in months**:
    - Daily ≈ 0.033, Weekly ≈ 0.25, Biweekly ≈ 0.5, Monthly = 1, Quarterly = 3, Yearly = 12
    Use fractional months as needed. **Do not output any calendar dates.**
 
-2. For each task, provide **all** of the following fields. If a field is not applicable, explicitly return "Not applicable". Do not omit fields. Apply the **Manual & Sources Policy** above:
+2. For **every task**, provide **all** of the following fields. If a field is not applicable, explicitly return "Not applicable". Apply the **Manual & Sources Policy** above:
    * "parent_asset": Inherit from universal context.
    * "child_asset": Inherit from universal context.
-   * "task_name": A clear, specific name for the maintenance task.
-   * "maintenance_interval": Months only (numeric, e.g., 0.25, 1, 3, 12). This **replaces any per-date scheduling output**.
-   * "instructions": An array of clear, step-by-step instructions.
-   * "reason": A short explanation of why this task is necessary.
-   * "engineering_rationale": A technical explanation that references universal context **only when it changes or is directly relevant**. Explicitly call out when the task addresses something from the additional context: "{data.additional_context}".
-   * "safety_precautions": Important safety measures or PPE required.
-   * "common_failures_prevented": Typical failures this task helps avoid. Highlight known failure modes and grease points or wear-prone areas where relevant.
+   * "task_name": Clear, specific name for the maintenance task.
+   * "maintenance_interval": **Months only** (numeric, e.g., 0.25, 1, 3, 12). This **replaces any per-date scheduling**.
+   * "instructions": Array of step-by-step instructions (**use exact manual steps** when available; otherwise standards/suppliers).
+   * "reason": Why this task is necessary.
+   * "engineering_rationale": Technical rationale referencing universal context **only when directly relevant**. Explicitly state how this addresses "{data.additional_context}" when applicable, and **note any deviations from the manual with justification**.
+   * "safety_precautions": PPE and hazards.
+   * "common_failures_prevented": Typical failures this task helps avoid; **highlight grease points/wear-prone areas** where relevant.
    * "usage_insights": Insights related to {data.hours}. Do **not** reference usage cycles.
-   * "tools_needed": List of tools required to complete the task.
-   * "number_of_technicians": How many technicians are typically needed.
-   * "estimated_time_minutes": Estimated time in minutes to complete this task. This field must be included for every task.
-   * "consumables": Supplies or parts that will be consumed in this task (single-use or limited-use). Be specific about **top recommendations** (brands, grades, part numbers). If not applicable, state "Not applicable".
-   * "risk_assessment": Likely risks and possible failures before the next interval for this task/component.
-   * "criticality_rating": "High" | "Medium" | "Low" for this task’s priority.
-   * "comments": Any additional notes, edge cases, or **explicit overrides** to the universal context (e.g., a task that must be done indoors despite an outdoor environment). If nothing to add, return "None".
-   * "citations": If manual content exists, cite **exact manual section/page** used. Otherwise cite credible standards (ISO/ASTM/API) or supplier data (e.g., SKF, Mobil, Shell).
-   * "inherits_parent_context": true/false indicating whether the task fully inherits the parent/child universal context.
-   * "context_overrides": Object with only the fields that deviate from the universal context (e.g., {{"environment": "Clean room"}}). Use an empty object if none.
+   * "tools_needed": Tools required for the task.
+   * "number_of_technicians": Typical headcount.
+   * "estimated_time_minutes": Numeric estimate in minutes for the task (required).
+   * "consumables": Supplies/parts consumed by this task. Provide **specific brands/grades/part numbers** (from manual when available; otherwise standards/suppliers). If not applicable, use "Not applicable".
+   * "risk_assessment": Likely risks and possible failures **before the next interval** specific to this task/component.
+   * "criticality_rating": "High" | "Medium" | "Low" for the task’s priority.
+   * "comments": Notes, assumptions, or **explicit overrides** to the universal context; "None" if nothing to add.
+   * "citations": If manual content exists, cite **exact manual section/page**. Otherwise cite the specific standard/supplier source used.
+   * "inherits_parent_context": true/false (does the task fully inherit universal context?).
+   * "context_overrides": Object containing only deviations from the universal context (e.g., {{"environment": "Clean room"}}). Use an empty object if none.
 
-3. **Do not output any per-task scheduled dates.** Replace any scheduling output with the required numeric "maintenance_interval" in months.
+3. **Do not output any per-task scheduled dates.** Replace any scheduling with numeric "maintenance_interval" in months.
 
-4. You must address all input provided in the "additional_context". If specific tasks are generated as a result, make that connection clear in "engineering_rationale" or "comments".
+4. You must address the "additional_context" input. If it causes tasks to be generated or modified, **make that connection explicit** in "engineering_rationale" or "comments".
 
-5. Follow the **Manual & Sources Policy**: use concrete details from the uploaded manual if provided; otherwise use authoritative standards/suppliers. **Never** tell the user to "refer to the manual".
-
-**Output Format:** Return a single valid JSON object structured like:
+**Output Format:** Return a single valid JSON object:
 {{ "maintenance_plan": [ {{task1}}, {{task2}}, ... ] }}
 
 ⚠️ **IMPORTANT:** Return only the raw JSON object. Do not include markdown formatting, commentary, or extra text.
