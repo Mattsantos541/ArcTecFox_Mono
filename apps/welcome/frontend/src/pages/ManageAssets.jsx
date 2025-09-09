@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, Sparkles, Download, Edit, Trash2 } from 'lucide-react';
+import { Upload, Sparkles, Download, Edit, Trash2, FileText } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { Button } from '../components/ui/button';
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '../components/ui/tooltip';
@@ -3040,6 +3040,66 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate, selectedSite, userSites: pr
                             </div>
                           </div>
                         )}
+                        <div className="mt-4 pt-4 border-t">
+                          <button
+                            onClick={async () => {
+                              try {
+                                // Get authentication token
+                                const { data: { session } } = await supabase.auth.getSession();
+                                if (!session) {
+                                  throw new Error('Authentication required for PDF export');
+                                }
+
+                                const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-');
+                                const filename = `Task_${task.task_name.replace(/[^a-zA-Z0-9]/g, '_')}_${timestamp}.pdf`;
+                                const backendUrl = import.meta.env.VITE_BACKEND_URL || 'https://arctecfox-mono.onrender.com';
+
+                                const response = await fetch(`${backendUrl}/api/export-pdf`, {
+                                  method: 'POST',
+                                  headers: {
+                                    'Content-Type': 'application/json',
+                                    'Authorization': `Bearer ${session.access_token}`,
+                                  },
+                                  body: JSON.stringify({
+                                    data: [{
+                                      ...task,
+                                      task: task.task_name,
+                                      asset: selectedChildAssetForPlan?.name || 'Unknown Asset',
+                                      asset_name: selectedChildAssetForPlan?.name || 'Unknown Asset',
+                                      parent_asset_name: selectedParentAsset?.name || '',
+                                      duration: task.maintenance_interval,
+                                      time_to_complete: task.est_minutes ? `${task.est_minutes} minutes` : 'Not specified'
+                                    }],
+                                    filename: filename,
+                                    export_type: 'maintenance_task'
+                                  })
+                                });
+
+                                if (!response.ok) {
+                                  throw new Error(`Export failed: ${response.statusText}`);
+                                }
+
+                                // Download the PDF
+                                const blob = await response.blob();
+                                const url = window.URL.createObjectURL(blob);
+                                const a = document.createElement('a');
+                                a.href = url;
+                                a.download = filename;
+                                document.body.appendChild(a);
+                                a.click();
+                                window.URL.revokeObjectURL(url);
+                                document.body.removeChild(a);
+                              } catch (error) {
+                                console.error('PDF export error:', error);
+                                alert(`Failed to export PDF: ${error.message}`);
+                              }
+                            }}
+                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm flex items-center gap-2"
+                          >
+                            <FileText className="w-4 h-4" />
+                            Export Task
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>

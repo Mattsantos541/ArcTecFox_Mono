@@ -230,6 +230,11 @@ def export_maintenance_task_to_pdf(task, output_path=None):
         textColor=colors.black
     )
     
+    # Get parent asset name if available
+    parent_asset_name = (task.get('parent_asset_name') or 
+                         task.get('parent_asset') or 
+                         task.get('parentAssetName') or '')
+    
     # Task Name Header - using table to match width of other sections
     task_title = task.get('task', 'Maintenance Task')
     header_para = Paragraph(
@@ -253,7 +258,7 @@ def export_maintenance_task_to_pdf(task, output_path=None):
                   task.get('pm_plan', {}).get('asset_name') or
                   'Unknown Asset')
     asset_para = Paragraph(
-        asset_name,
+        f"<b>Asset:</b> {asset_name}",
         ParagraphStyle(
             'AssetContent',
             parent=styles['Normal'],
@@ -266,17 +271,49 @@ def export_maintenance_task_to_pdf(task, output_path=None):
         )
     )
     
-    header_table = Table([[header_para], [asset_para]], colWidths=[6.6*inch])
-    header_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, -1), colors.Color(25/255, 55/255, 109/255)),  # Dark blue
-        ('LEFTPADDING', (0, 0), (-1, -1), 10),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 10),
-        ('TOPPADDING', (0, 0), (0, 0), 8),
-        ('BOTTOMPADDING', (0, 0), (0, 0), 2),
-        ('TOPPADDING', (0, 1), (0, 1), 2),
-        ('BOTTOMPADDING', (0, 1), (0, 1), 8),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-    ]))
+    # Parent Asset Name - include in header if available
+    if parent_asset_name:
+        parent_para = Paragraph(
+            f"<b>Parent Asset:</b> {parent_asset_name}",
+            ParagraphStyle(
+                'ParentAssetHeader',
+                parent=styles['Normal'],
+                fontSize=9,
+                textColor=colors.white,
+                leftIndent=0,
+                rightIndent=0,
+                topPadding=0,
+                bottomPadding=0
+            )
+        )
+        header_table = Table([[header_para], [asset_para], [parent_para]], colWidths=[6.6*inch])
+    else:
+        header_table = Table([[header_para], [asset_para]], colWidths=[6.6*inch])
+    # Apply styling based on whether parent asset is included
+    if parent_asset_name:
+        header_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), colors.Color(25/255, 55/255, 109/255)),  # Dark blue
+            ('LEFTPADDING', (0, 0), (-1, -1), 10),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 10),
+            ('TOPPADDING', (0, 0), (0, 0), 8),
+            ('BOTTOMPADDING', (0, 0), (0, 0), 2),
+            ('TOPPADDING', (0, 1), (0, 1), 2),
+            ('BOTTOMPADDING', (0, 1), (0, 1), 2),
+            ('TOPPADDING', (0, 2), (0, 2), 2),
+            ('BOTTOMPADDING', (0, 2), (0, 2), 8),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
+    else:
+        header_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), colors.Color(25/255, 55/255, 109/255)),  # Dark blue
+            ('LEFTPADDING', (0, 0), (-1, -1), 10),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 10),
+            ('TOPPADDING', (0, 0), (0, 0), 8),
+            ('BOTTOMPADDING', (0, 0), (0, 0), 2),
+            ('TOPPADDING', (0, 1), (0, 1), 2),
+            ('BOTTOMPADDING', (0, 1), (0, 1), 8),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
     
     story.append(header_table)
     story.append(Spacer(1, 12))
@@ -554,6 +591,11 @@ def export_pm_plans_data_to_pdf(data, output_path=None):
         if task_index > 0:
             story.append(PageBreak())
         
+        # Get parent asset name if available
+        parent_asset_name = (task.get('parent_asset_name') or 
+                             task.get('parent_asset') or 
+                             task.get('parentAssetName') or '')
+        
         # Task Name Header - using table to match width of other sections
         task_title = task.get('task_name') or task.get('task', f'Maintenance Task {task_index + 1}')
         header_para = Paragraph(
@@ -577,7 +619,7 @@ def export_pm_plans_data_to_pdf(data, output_path=None):
                       task.get('pm_plan', {}).get('asset_name') or
                       'Unknown Asset')
         asset_para = Paragraph(
-            asset_name,
+            f"<b>Asset:</b> {asset_name}",
             ParagraphStyle(
                 'AssetContent',
                 parent=styles['Normal'],
@@ -590,10 +632,37 @@ def export_pm_plans_data_to_pdf(data, output_path=None):
             )
         )
         
-        header_table = RoundedTableWrapper(
-            [[header_para], [asset_para]], 
-            [6.6*inch],
-            TableStyle([
+        # Create header table with parent asset if available
+        if parent_asset_name:
+            parent_para = Paragraph(
+                f"<b>Parent Asset:</b> {parent_asset_name}",
+                ParagraphStyle(
+                    'ParentAssetHeader',
+                    parent=styles['Normal'],
+                    fontSize=9,
+                    textColor=colors.white,
+                    leftIndent=0,
+                    rightIndent=0,
+                    topPadding=0,
+                    bottomPadding=0
+                )
+            )
+            header_table_data = [[header_para], [asset_para], [parent_para]]
+            header_table_style = TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), colors.Color(25/255, 55/255, 109/255)),  # Dark blue
+                ('LEFTPADDING', (0, 0), (-1, -1), 10),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 10),
+                ('TOPPADDING', (0, 0), (0, 0), 8),
+                ('BOTTOMPADDING', (0, 0), (0, 0), 2),
+                ('TOPPADDING', (0, 1), (0, 1), 2),
+                ('BOTTOMPADDING', (0, 1), (0, 1), 2),
+                ('TOPPADDING', (0, 2), (0, 2), 2),
+                ('BOTTOMPADDING', (0, 2), (0, 2), 8),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ])
+        else:
+            header_table_data = [[header_para], [asset_para]]
+            header_table_style = TableStyle([
                 ('BACKGROUND', (0, 0), (-1, -1), colors.Color(25/255, 55/255, 109/255)),  # Dark blue
                 ('LEFTPADDING', (0, 0), (-1, -1), 10),
                 ('RIGHTPADDING', (0, 0), (-1, -1), 10),
@@ -602,7 +671,12 @@ def export_pm_plans_data_to_pdf(data, output_path=None):
                 ('TOPPADDING', (0, 1), (0, 1), 2),
                 ('BOTTOMPADDING', (0, 1), (0, 1), 8),
                 ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ]),
+            ])
+        
+        header_table = RoundedTableWrapper(
+            header_table_data, 
+            [6.6*inch],
+            header_table_style,
             corner_radius=20
         )
         

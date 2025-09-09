@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { FileText, Download } from "lucide-react";
+import { supabase } from "@/api";
 // Using ReportLab Python backend for PDF generation
 
 interface PDFExportButtonProps {
@@ -68,11 +69,22 @@ export default function PDFExportButton({
           throw new Error(`Unsupported export type: ${exportType}`);
       }
 
-      // Call the Python backend API
-      const response = await fetch('https://arctecfox-mono.onrender.com/api/export-pdf', {
+      // Get the authentication token
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError || !session) {
+        throw new Error("Authentication required for PDF export");
+      }
+
+      // Use environment variable for backend URL if available
+      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'https://arctecfox-mono.onrender.com';
+
+      // Call the Python backend API with authentication
+      const response = await fetch(`${backendUrl}/api/export-pdf`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({
           data: data,
