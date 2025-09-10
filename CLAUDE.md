@@ -294,3 +294,55 @@ logger.info(f"📚 First 10 lines of manual:\n{first_10_lines}")
 
 ### Resolution: No Action Required
 The error is expected behavior for non-admin users and doesn't indicate a functional problem. The storage bucket exists, policies work correctly, and uploads succeed despite the cosmetic error message.
+
+## SEO Implementation Pattern - Dynamic Canonical Tags
+
+### Background
+Google flagged pages with "Alternate page with proper canonical tag" error because the static canonical tag in index.html pointed all routes to the homepage, preventing proper indexing.
+
+### Solution Architecture
+We use **react-helmet-async** for dynamic meta tag management (industry standard, 2M+ weekly downloads).
+
+### Implementation Pattern for New Pages
+
+1. **Import SEO Component** at the top of your page component:
+```javascript
+import SEO from '../components/SEO';
+```
+
+2. **Wrap your component return with Fragment** and add SEO as first element:
+```javascript
+return (
+  <>
+    <SEO 
+      title="Page Title"  // Will be formatted as "Page Title | ArcTecFox"
+      description="Page description for search results (150-160 chars)"
+      noindex={false}  // Set to true for protected/admin pages
+    />
+    <div>
+      {/* Your page content */}
+    </div>
+  </>
+);
+```
+
+### SEO Component Features
+- **Automatic canonical URL** generation based on current route
+- **Title formatting** with site name appended
+- **Open Graph and Twitter Card** meta tags
+- **Robots meta tag** management (index/noindex)
+- **Location-aware** using React Router's useLocation
+
+### Current Implementation
+- ✅ **Home** (`/`) - Main landing page SEO
+- ✅ **Privacy Policy** (`/privacy-policy`) - Indexed with policy-specific description
+- ✅ **Terms of Service** (`/terms-of-service`) - Indexed with terms-specific description
+- ✅ **Dashboard** (`/dashboard`) - Protected with `noindex=true`
+- ✅ **HelmetProvider** wraps entire app in App.jsx
+
+### Guidelines for New Pages
+1. **Public pages** (marketing, info): Use descriptive titles/descriptions, `noindex=false`
+2. **Protected pages** (user data, admin): Always use `noindex=true`
+3. **Dynamic content pages**: Can update SEO tags based on fetched data
+4. **Keep descriptions 150-160 characters** for optimal search result display
+5. **Unique titles and descriptions** for each page to maximize SEO value
