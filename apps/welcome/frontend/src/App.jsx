@@ -1,5 +1,6 @@
 import { BrowserRouter as Router, Route, Routes, Navigate } from "react-router-dom";
 import React, { Suspense } from 'react';
+import { HelmetProvider } from 'react-helmet-async';
 
 // Import Home eagerly for fast initial load
 import Home from "./pages/Home";
@@ -42,10 +43,11 @@ export default function App() {
 
   return (
     <ErrorBoundary>
-      <Router>
-        <AuthProvider>
-          <Suspense fallback={<LoadingSpinner text="Loading page..." />}>
-            <Routes>
+      <HelmetProvider>
+        <Router>
+          <AuthProvider>
+            <Suspense fallback={<LoadingSpinner text="Loading page..." />}>
+              <Routes>
               {/* All routes use UnifiedLayout for consistent navigation */}
               <Route element={<UnifiedLayout />}>
                 {/* Public routes */}
@@ -80,6 +82,7 @@ export default function App() {
           </Suspense>
         </AuthProvider>
       </Router>
+    </HelmetProvider>
     </ErrorBoundary>
   );
 }

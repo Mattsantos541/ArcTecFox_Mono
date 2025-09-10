@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from "react"
 import { useNavigate } from "react-router-dom"
+import SEO from "../SEO"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -2034,9 +2035,15 @@ const MaintenanceSchedule = React.memo(function MaintenanceSchedule() {
   const stats = getSummaryStats()
 
   return (
-    <ComponentErrorBoundary name="Maintenance Schedule" fallbackMessage="Unable to load the maintenance schedule. Please try refreshing the page.">
-      <TooltipProvider>
-        <div className="space-y-6">
+    <>
+      <SEO 
+        title="Maintenance Dashboard"
+        description="Manage your preventive maintenance schedules, track tasks, and monitor asset health with ArcTecFox's AI-powered PM platform."
+        noindex={true}
+      />
+      <ComponentErrorBoundary name="Maintenance Schedule" fallbackMessage="Unable to load the maintenance schedule. Please try refreshing the page.">
+        <TooltipProvider>
+          <div className="space-y-6">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-2xl font-bold">Maintenance Schedule</h2>
@@ -3692,6 +3699,7 @@ const MaintenanceSchedule = React.memo(function MaintenanceSchedule() {
         </div>
       </TooltipProvider>
     </ComponentErrorBoundary>
+    </>
   )
 });
 

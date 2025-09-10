@@ -7,6 +7,7 @@ import ProgressBar from "../components/ProgressBar";
 import { generatePMPlan } from "../api";
 import { saveLeadAndPlan } from "../services/leadFunnelService";
 import { exportPlanToExcel } from "../utils/exportPlan";
+import SEO from "../components/SEO";
 
 export default function Home() {
   const { user, loading } = useAuth();
@@ -108,8 +109,13 @@ export default function Home() {
   };
 
   return (
-    <div className="bg-gray-50 relative font-sans">
-      {/* --- HERO --- */}
+    <>
+      <SEO 
+        title="ArcTecFox"
+        description="Generate preventive maintenance plans in minutes with AI. Create detailed PM tasks, intervals, and schedules. Export to Excel or PDF. No sign-up required to try."
+      />
+      <div className="bg-gray-50 relative font-sans">
+        {/* --- HERO --- */}
       <section className="bg-white py-16 text-center border-b">
         <div className="max-w-4xl mx-auto px-4">
           <h1 className="text-4xl sm:text-5xl font-extrabold text-gray-900 mb-6">
@@ -230,5 +236,6 @@ export default function Home() {
 
       <footer className="mt-12 border-t py-6" />
     </div>
+    </>
   );
 }

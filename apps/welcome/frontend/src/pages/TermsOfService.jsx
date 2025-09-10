@@ -1,8 +1,14 @@
 import React from 'react';
+import SEO from '../components/SEO';
 
 function TermsOfService() {
   return (
-    <div className="prose max-w-4xl mx-auto p-8">
+    <>
+      <SEO 
+        title="Terms of Service"
+        description="Read the ArcTecFox Terms of Service. Understand your rights and responsibilities when using our AI-powered preventive maintenance planning platform."
+      />
+      <div className="prose max-w-4xl mx-auto p-8">
       <div className="mb-12">
         <h1 className="text-4xl font-bold mb-4">Terms of Service for ArcTecFox</h1>
         <p className="text-lg text-gray-600">
@@ -324,6 +330,7 @@ function TermsOfService() {
         </section>
       </div>
     </div>
+    </>
   );
 }
 
