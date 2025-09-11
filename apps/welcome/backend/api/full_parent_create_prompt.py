@@ -93,7 +93,7 @@ User Manual Content (for reference):
 """
 
     # =============================
-    # Gemini-aligned Prompt (reordered, few-shot, output prefix)
+    # Gemini-aligned Prompt (weeks-based, few-shot, output prefix)
     # =============================
     prompt = f"""
 ROLE & SCOPE
@@ -114,15 +114,20 @@ UNIVERSAL CONTEXT (inherits unless overridden at task-level)
 POLICIES (MANDATORY)
 - If User Manual Content is supplied above, treat it as the primary source. Extract concrete specs/steps/part numbers/brands and cite exact sections/pages in "citations".
 - If no manual content, use recognized standards/suppliers (ISO/ASTM/API; SKF/Mobil/Shell). Cite them. Never write “refer to the manual.” Provide actual values/steps.
-- Do not include calendar dates anywhere; use numeric intervals only.
+- Do not include calendar dates anywhere; use numeric intervals in **weeks** only.
+
+TASK TYPE RESTRICTIONS
+- Do NOT include generic “visual inspection” or “cleaning” tasks unless they are explicitly listed in the supplied manual or a cited standard/supplier recommendation.
+- If no manual is provided, omit such tasks entirely.
+- Focus on technical, measurable tasks (lubrication, torque, calibration, functional checks, replacements, adjustments, monitoring, safety interlocks).
 
 DEDUPLICATION & INHERITANCE
 - Treat Site Location, Environment, Operating Hours, and Criticality as universal context. Do NOT repeat them in every field; only note deviations in "context_overrides".
 - Keep language concise. Avoid redundant phrasing across tasks.
 
 DATA TYPES & UNITS
-- maintenance_interval: months as a number ONLY. Use the mapping:
-  Daily=0.033, Weekly=0.25, Biweekly=0.5, Monthly=1, Quarterly=3, Yearly=12. Use fractional months as needed.
+- maintenance_interval: **weeks as a number ONLY**. Mapping:
+  Daily ≈ 0.143, Weekly = 1, Biweekly = 2, Monthly ≈ 4, Quarterly ≈ 13, Yearly ≈ 52. Use fractional weeks as needed.
 - estimated_time_minutes, number_of_technicians, lead_time_days: integers.
 - Use "Not applicable" for any field where nothing applies. Arrays must contain at least one item (e.g., ["Not applicable"]) if empty.
 - Safety steps must precede any action that could expose energy. If LOTO applies, include it as the first step.
@@ -137,9 +142,9 @@ HALLUCINATION GUARDRAILS
 OUTPUT SECTIONS
 1) "maintenance_plan": parent-oversight tasks ONLY.
    - Include at least:
-     - "Parent Asset Weekly Health Check" — maintenance_interval: 0.25
-     - "Parent Asset Monthly Health Audit" — maintenance_interval: 1
-   - Add additional system-level checks when best practice applies (controls/PLC status, alarms review, utilities, safety interlocks, vibration across assemblies, housekeeping, corrosion survey).
+     - "Parent Asset Weekly Health Check" — maintenance_interval: 1
+     - "Parent Asset Monthly Health Audit" — maintenance_interval: 4
+   - Add additional system-level checks when best practice applies (controls/PLC status, alarms review, utilities, safety interlocks, vibration across assemblies, housekeeping for safety compliance, corrosion survey) — but obey TASK TYPE RESTRICTIONS.
    - REQUIRED FIELDS for each task (never omit; use "Not applicable" where needed):
      "parent_asset", "child_asset", "task_name", "maintenance_interval",
      "instructions" (array of steps),
@@ -167,7 +172,7 @@ OUTPUT SECTIONS
      "lead_time_days",
      "criticality" ("High"|"Medium"|"Low"),
      "failure_modes" (array),
-     "associated_maintenance_interval_months",
+     "associated_maintenance_interval_weeks",
      "storage_conditions",
      "citations" (array),
      "notes"
@@ -180,7 +185,7 @@ Example task (one item):
   "parent_asset": "{input_data.parent_asset_name}",
   "child_asset": "Not applicable",
   "task_name": "{input_data.parent_asset_name} – Weekly System Alarm Review – Controls",
-  "maintenance_interval": 0.25,
+  "maintenance_interval": 1,
   "instructions": [
     "Lock out/tag out if required by site policy before opening panels",
     "Access HMI/SCADA alarm history for prior 7 days",
@@ -189,7 +194,7 @@ Example task (one item):
     "Escalate any safety-critical or repeated events"
   ],
   "reason": "Catch emerging system faults early via alarm trends",
-  "engineering_rationale": "Weekly review aligns with continuous operations and medium criticality",
+  "engineering_rationale": "Weekly interval aligns with continuous operations and medium criticality",
   "safety_precautions": ["PPE per site policy", "LOTO if panel access is required"],
   "common_failures_prevented": ["Nuisance trips", "Hidden interlock failures"],
   "usage_insights": "Tailor review depth when operating hours exceed standard shift patterns",
@@ -215,12 +220,12 @@ Example spare (one item):
   "manufacturer": "Not applicable",
   "preferred_brand": "Not applicable",
   "uom": "each",
-  "min_stock_level": "1",
-  "max_stock_level": "2",
-  "lead_time_days": "7",
+  "min_stock_level": 1,
+  "max_stock_level": 2,
+  "lead_time_days": 7,
   "criticality": "High",
   "failure_modes": ["Relay coil open/short", "Contact welding"],
-  "associated_maintenance_interval_months": "Not applicable",
+  "associated_maintenance_interval_weeks": "Not applicable",
   "storage_conditions": "Dry indoor storage, anti-static bag if solid-state",
   "citations": ["IEC 60947 guidance"],
   "notes": "Replace with identical coil voltage and contact rating"
@@ -240,7 +245,6 @@ SCHEMA REMINDER
 """
 
     try:
-        # Model with stricter JSON control. response_mime_type enforces JSON responses.
         model = genai.GenerativeModel(
             model_name="gemini-2.0-flash-exp",
             generation_config=genai.types.GenerationConfig(
@@ -251,7 +255,6 @@ SCHEMA REMINDER
             system_instruction="Always return pure JSON, no markdown, no prose outside the JSON."
         )
 
-        # Nudge with a minimal JSON prefix to reduce stray tokens even further
         full_prompt = (
             "You are an expert in asset management and preventive maintenance planning. "
             "Always return pure JSON without any markdown formatting.\n\n" + prompt
@@ -262,11 +265,8 @@ SCHEMA REMINDER
         logger.error(f"🧠 Gemini API error: {ge}")
         raise HTTPException(status_code=502, detail="Gemini API error")
 
-    raw_content = response.text or ""
+    raw_content = (response.text or "").replace("```json", "").replace("```", "").strip()
     logger.info("🧠 AI response received from Gemini for parent asset maintenance plan")
-
-    # Defensive cleanup (should be unnecessary with response_mime_type, but kept for resilience)
-    raw_content = raw_content.replace("```json", "").replace("```", "").strip()
 
     try:
         plan_data = json.loads(raw_content)

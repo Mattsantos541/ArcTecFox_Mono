@@ -65,22 +65,25 @@ UNIVERSAL CONTEXT (inherits unless overridden at task level)
 POLICIES (MANDATORY)
 - If the system has manufacturer manual content available, treat it as primary. Extract concrete instructions/intervals/specs/lubricants/part numbers and cite exact sections/pages in "citations".
 - If no manual content is available, use recognized standards/suppliers (ISO/ASTM/API; SKF/Mobil/Shell). Cite them. Never write “refer to the manual”; always provide actual values/steps.
-- Do not include calendar dates anywhere; use numeric intervals only.
+- Do not include calendar dates anywhere; use numeric intervals in **weeks** only.
+
+TASK TYPE RESTRICTIONS
+- Exclude routine cleaning or visual-only inspections unless the OEM manual explicitly prescribes them or a standard/supplier requires them. If included, cite the exact source.
+- Otherwise, focus on technical, measurable tasks (lubrication, torque, calibration, functional checks, replacements, adjustments, monitoring, safety interlocks).
 
 DEDUPLICATION & INHERITANCE
 - Treat Site Location, Environment, Operating Hours, and Criticality as universal context. Do NOT repeat them in every field; only note deviations in "context_overrides".
 - Keep language concise. Avoid redundant phrasing across tasks.
 
 DATA TYPES & UNITS
-- maintenance_interval: months as a number ONLY. Mapping:
-  Daily=0.033, Weekly=0.25, Biweekly=0.5, Monthly=1, Quarterly=3, Yearly=12. Use fractional months as needed.
+- maintenance_interval: **weeks as a number ONLY**. Mapping:
+  Daily ≈ 0.143, Weekly = 1, Biweekly = 2, Monthly ≈ 4, Quarterly ≈ 13, Yearly ≈ 52. Use fractional weeks as needed.
 - estimated_time_minutes, number_of_technicians: integers.
 - Use "Not applicable" for any field where nothing applies. Arrays must contain at least one item (e.g., ["Not applicable"]) when otherwise empty.
 - Safety steps must precede any action that could expose energy. If LOTO applies, include it as the first step.
 
 CHILD-ASSET SCOPE NOTES
 - Include lubrication tasks when applicable; identify grease points/zones if known. Provide specific product/type/quantity when available (prefer OEM), otherwise standards/suppliers with citations.
-- Do not force cleaning/visual inspection tasks unless explicitly prescribed or credibly justified by standards/suppliers (with citations).
 
 TASK NAMING CONVENTION
 - task_name = "{child_asset} – {{Action}} – {{Area/Subsystem}}" (no marketing fluff).
@@ -114,8 +117,8 @@ FEW-SHOT EXAMPLE (ABBREVIATED; 1 task)
 {{
   "parent_asset": "{parent_asset}",
   "child_asset": "{child_asset}",
-  "task_name": "{child_asset} – Monthly Bearing Lubrication – Drive End",
-  "maintenance_interval": 1,
+  "task_name": "{child_asset} – Bearing Lubrication – Drive End",
+  "maintenance_interval": 4,
   "instructions": [
     "Lock out/tag out per site policy",
     "Clean grease fitting and surrounding area",
@@ -124,7 +127,7 @@ FEW-SHOT EXAMPLE (ABBREVIATED; 1 task)
     "Wipe excess and re-install fitting cap"
   ],
   "reason": "Maintain adequate film and prevent bearing wear due to lubricant depletion",
-  "engineering_rationale": "Monthly interval aligned to continuous operation in {environment}. If ambient >40°C, increase frequency based on supplier guidance",
+  "engineering_rationale": "Approx. monthly (4 weeks) interval aligned to continuous operation in {environment}; adjust if temperature trending indicates",
   "safety_precautions": ["PPE per site policy", "LOTO before contact with rotating equipment"],
   "common_failures_prevented": ["Bearing overheating", "Premature wear", "Seizure"],
   "usage_insights": "For {hours}, consider trending vibration/temperature to optimize interval",
@@ -198,7 +201,7 @@ def _validate_plan_structure(plan_json: Dict[str, Any]) -> None:
 
         # Numeric validations
         if "maintenance_interval" in task and not _is_number(task.get("maintenance_interval")):
-            errors.append(f"{path}.maintenance_interval must be numeric (months)")
+            errors.append(f"{path}.maintenance_interval must be numeric (weeks)")
         if "estimated_time_minutes" in task and not _is_number(task.get("estimated_time_minutes")):
             errors.append(f"{path}.estimated_time_minutes must be numeric (minutes)")
 
@@ -216,7 +219,7 @@ def _validate_plan_structure(plan_json: Dict[str, Any]) -> None:
 
         # Disallow deprecated or off-spec fields
         if "scheduled_dates" in task:
-            errors.append(f"{path}.scheduled_dates must NOT be included; use maintenance_interval in months instead")
+            errors.append(f"{path}.scheduled_dates must NOT be included; use maintenance_interval in weeks instead")
 
     if errors:
         raise HTTPException(status_code=422, detail={"validation_errors": errors})
@@ -242,7 +245,6 @@ async def generate_ai_plan(input: PMPlanInput, request: Request):
             system_instruction="Always return pure JSON, no markdown, no prose outside the JSON."
         )
 
-        # Nudge with a minimal JSON prefix (also provided inside the prompt)
         full_prompt = (
             "You are an expert in preventive maintenance planning. "
             "Always return pure JSON without any markdown formatting.\n\n" + prompt
