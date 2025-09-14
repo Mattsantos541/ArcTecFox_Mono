@@ -50,7 +50,7 @@ def get_service_supabase_client():
     All usage should be logged for security auditing.
     """
     url = os.getenv("SUPABASE_URL")
-    service_key = os.getenv("SUPABASE_KEY")  # Use same key name as existing system
+    service_key = os.getenv("SUPABASE_SERVICE_KEY")  # Updated to match .env file
     
     if not url or not service_key:
         logger.error("❌ Missing Supabase service credentials")

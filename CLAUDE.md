@@ -9,20 +9,33 @@ ArcTecFox Mono - Preventive Maintenance (PM) planning application with AI-powere
 - **AI**: Google Gemini
 - **Email**: Resend (production) or Supabase native
 
-## Testing
-All testing is done in github codespaces and I used the following script to ensure the local back end server is up, then the front end server starts up:
+## Development Setup
+
+### Quick Start
+Use the provided startup script for GitHub Codespaces development:
+```bash
 /workspaces/ArcTecFox_Mono/start-dev.sh
-While testing all environment variables are stored in the frontend and backend .env files
+```
+This script ensures the backend server starts first, then launches the frontend server.
 
-
-# Backend  
+### Manual Start Commands
+```bash
+# Backend
 cd apps/welcome/backend
 uvicorn main:app --reload --host 0.0.0.0 --port 8000  # Note: use --host 0.0.0.0 for Codespaces
 
-# Dependencies
+# Frontend (from root)
+npm run dev
+```
+
+### Dependencies
+```bash
 npm install               # Frontend (from root)
 pip install -r requirements.txt  # Backend
 ```
+
+### Environment Variables
+All environment variables are stored in `.env` files in both frontend and backend directories during development.
 
 ## Core Database Schema
 ```sql
@@ -161,9 +174,9 @@ CREATE POLICY "good" ON table USING (created_by = auth.uid());
 - Backend handles invitation creation with service key
 - Frontend calls `/api/send-invitation` endpoint
 
-## CURRENT IMPLEMENTATION STATUS - Parent Asset PM Enhancement
+## Parent Asset PM Enhancement
 
-### What We've Implemented ✅
+### Implemented Features
 1. **Parent Asset Creation Workflow**:
    - Enhanced parent asset creation process in `ManageAssets.jsx`
    - Added `ParentPlanLoadingModal` component for user feedback
@@ -171,7 +184,7 @@ CREATE POLICY "good" ON table USING (created_by = auth.uid());
    - Creates PM plan records with `child_asset_id = NULL` for parent assets
    - Stores critical spare parts in `parent_assets.critical_spare_parts` JSON field
 
-2. **API Functions Added**:
+2. **API Functions**:
    - `generateParentPlan()` - Calls AI to generate parent maintenance plan
    - `createParentPMPlan()` - Creates PM plan record for parent asset
    - `createPMTasks()` - Creates multiple PM task records from AI response
@@ -183,117 +196,14 @@ CREATE POLICY "good" ON table USING (created_by = auth.uid());
    - Generates at least 2 parent oversight tasks (Weekly Health Check, Monthly Audit)
 
 4. **Database Schema**:
-   - Fixed `pm_plans.plan_start_date` NOT NULL constraint issue
    - Parent plans stored with `child_asset_id = NULL`
    - PM tasks created with proper maintenance intervals and details
 
-### Successfully Implemented Features ✅
-
-**Asset Insights Parent Task Display**:
-- `fetchParentPMTasks()` function in `api.js:2054-2109` 
-- Parent PM data fetching in `AssetInsightsDashboard.jsx:75-103`
-- UI sections for parent tasks and spare parts in `AssetInsightsDashboard.jsx:415-534`
-- Parent-level maintenance tasks now display correctly in Asset Insights dashboard
-
-## CURRENT TROUBLESHOOTING - Storage Bucket Error (RESOLVED)
-
-### Issue Description 
-When creating parent assets with manual uploads, users encounter this error:
-```
-🎭 [Modal Render Check] createdParentAsset: null
-Bucket 'user-manuals' not found. Attempting to create...
-POST https://[supabase-url]/storage/v1/bucket 400 (Bad Request)
-```
-However, the manual upload still succeeds and the workflow completes normally.
-
-### Root Cause Analysis (CONFIRMED)
-
-**Primary Issue: Bucket Existence Check Permissions**
-- **Location**: `storageService.js:15` - `await this.supabase.storage.listBuckets()`
-- **Problem**: User's anon key lacks permission to list buckets
-- **Sequence**:
-  1. `createStorageService()` called during manual upload
-  2. Storage service tries to verify bucket exists via `listBuckets()`
-  3. Permission denied (silent error handling at line 21)
-  4. Code assumes bucket doesn't exist
-  5. Attempts to create bucket (line 30) → **400 Bad Request**
-  6. Error handled as "expected for non-admin users" (lines 46-50)
-  7. Process continues successfully
-
-**Secondary Issue: SiteId Timing (Cosmetic)**
-- **Location**: `ManageAssets.jsx:489` - `parentAssets.find(a => a.id === assetId)`
-- **Problem**: `parentAssets` state not yet refreshed with newly created asset
-- **Result**: `siteId` becomes `null`, files use legacy `{user_id}/{filename}` paths
-- **Impact**: None - storage policies support both path formats
-
-### File Paths and Code Locations
-
-**Frontend Files:**
-- `ManageAssets.jsx:706` - Manual upload trigger after parent asset creation
-- `ManageAssets.jsx:489-490` - SiteId retrieval logic (timing issue)
-- `ManageAssets.jsx:496-497` - Storage service creation and upload call
-- `storageService.js:15` - Bucket existence check (main error source)
-- `storageService.js:27-34` - Bucket creation attempt
-- `storageService.js:46-50` - Error handling that allows process to continue
-
-**Storage Policies (Working Correctly):**
-```sql
--- Supports both path formats:
--- 1. sites/{site_id}/{filename} (preferred)
--- 2. {user_id}/{filename} (legacy/fallback)
-```
-
-### Current Status: COSMETIC ERROR ONLY
-
-**✅ What Works:**
-- Manual uploads complete successfully
-- Files stored with proper permissions  
-- Parent asset creation workflow functions normally
-- Storage policies correctly configured
-- Both parent and child PM plan generation include manual content
-
-**⚠️ Cosmetic Issues:**
-- Unnecessary 400 error logged (expected behavior)
-- Files use legacy path format instead of site-based paths
-- Error appears alarming but doesn't affect functionality
-
-### Logging Added for Verification
-
-**Frontend Logging** (`ManageAssets.jsx:1884-1891`):
-```javascript
-console.log(`📚 [Child PM Plan] Found ${childManuals.length} manual(s) for child asset: ${childAsset.name}`);
-```
-
-**Backend Logging** (`main.py:293-297`):
-```javascript
-logger.info(f"📚 Manual Content Detected for Child Asset PM Plan!")
-logger.info(f"📚 Manual filename: {plan_data.userManual.fileName}")
-logger.info(f"📚 First 10 lines of manual:\n{first_10_lines}")
-```
-
-**Parent Asset Backend Logging** (`full_parent_create_prompt.py:94-98`):
-```javascript
-logger.info(f"📚 Manual Content Detected!")
-logger.info(f"📚 Manual filename: {manual_filename}")  
-logger.info(f"📚 First 10 lines of manual:\n{first_10_lines}")
-```
-
-### Manual Content Flow Verification
-
-**✅ Parent Assets:**
-1. Manual uploaded via `uploadManualForAsset()` → stored in `loaded_manuals` table
-2. `generateParentPlanWorkflow()` processes without fetching manual content
-3. Backend should fetch manual from storage (NOT IMPLEMENTED - manual content not included in AI prompt)
-
-**✅ Child Assets:**
-1. Manual uploaded and stored in `loaded_manuals` table  
-2. `handleCreateUpdatePMPlan()` fetches manuals from `loadedManuals[childAsset.id]`
-3. Manual data passed to `generatePMPlan()` → `generateAIPlan()`
-4. Backend extracts manual content via `file_processor.extract_text_from_file()`
-5. Manual content included in AI prompt with proper formatting
-
-### Resolution: No Action Required
-The error is expected behavior for non-admin users and doesn't indicate a functional problem. The storage bucket exists, policies work correctly, and uploads succeed despite the cosmetic error message.
+5. **Asset Insights Display**:
+   - `fetchParentPMTasks()` function in `api.js:2054-2109`
+   - Parent PM data fetching in `AssetInsightsDashboard.jsx:75-103`
+   - UI sections for parent tasks and spare parts in `AssetInsightsDashboard.jsx:415-534`
+   - Parent-level maintenance tasks display correctly in Asset Insights dashboard
 
 ## SEO Implementation Pattern - Dynamic Canonical Tags
 
@@ -302,6 +212,19 @@ Google flagged pages with "Alternate page with proper canonical tag" error becau
 
 ### Solution Architecture
 We use **react-helmet-async** for dynamic meta tag management (industry standard, 2M+ weekly downloads).
+
+### AI Agents
+I have a repository of AI agents that can work together. Here's the agent data:
+.claude/agents/
+
+Key Constraints:
+   - UX agent only decides positioning/layout of YOUR defined features
+   - Each agent must save outputs and read from previous agents
+   - Agents need clear handoff instructions
+   - Include polished UI and micro-interactions
+   - No web search allowed
+   - Agents should never make assumptions and always confirm anything unknown
+   - Agents should always ensure the most simple, scalable solution is used
 
 ### Implementation Pattern for New Pages
 

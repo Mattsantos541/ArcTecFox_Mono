@@ -1,15 +1,28 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
+import { useSearchParams } from 'react-router-dom';
+import { useToast } from '../hooks/use-toast';
+import AccessRequestsTab from '../components/AccessRequestsTab';
 import { 
   fetchAllRoles,
   updateUserRoleInCompany,
   removeUserRoleFromCompany,
   createUserByEmail,
+  fetchAccessRequests,
+  approveAccessRequest,
+  rejectAccessRequest,
   supabase
 } from '../api';
 
 const SuperAdminManagement = () => {
   const { user } = useAuth();
+  const { toast } = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
+  
+  // Tab state - initialize from URL (default to access-requests)
+  const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'access-requests');
+  
+  // Super admin state
   const [superAdmins, setSuperAdmins] = useState([]);
   const [allUsers, setAllUsers] = useState([]);
   const [allRoles, setAllRoles] = useState([]);
@@ -21,11 +34,19 @@ const SuperAdminManagement = () => {
   const [selectedUserId, setSelectedUserId] = useState('');
   const [userSearchTerm, setUserSearchTerm] = useState('');
   const [showUserDropdown, setShowUserDropdown] = useState(false);
+  
+  // Access requests state
+  const [accessRequests, setAccessRequests] = useState([]);
+  const [pendingRequests, setPendingRequests] = useState([]);
+  const [companies, setCompanies] = useState([]);
+  const [processingRequestId, setProcessingRequestId] = useState(null);
 
   useEffect(() => {
     loadSuperAdmins();
     loadAllUsers();
     loadAllRoles();
+    loadAccessRequests();
+    loadCompanies();
   }, []);
 
   useEffect(() => {
@@ -105,6 +126,80 @@ const SuperAdminManagement = () => {
       setAllRoles(roles);
     } catch (err) {
       console.error('Error loading roles:', err);
+    }
+  };
+
+  const loadAccessRequests = async () => {
+    try {
+      const requests = await fetchAccessRequests('pending');
+      setAccessRequests(requests);
+      setPendingRequests(requests);
+    } catch (err) {
+      console.error('Error loading access requests:', err);
+      setError('Failed to load access requests');
+    }
+  };
+
+  const loadCompanies = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('companies')
+        .select('id, name')
+        .order('name');
+      
+      if (error) throw error;
+      setCompanies(data || []);
+    } catch (err) {
+      console.error('Error loading companies:', err);
+    }
+  };
+
+  const handleApproveRequest = async (requestId, companyId, roleId) => {
+    try {
+      setProcessingRequestId(requestId);
+      await approveAccessRequest({
+        request_id: requestId,
+        company_id: companyId,
+        role_id: roleId
+      });
+      
+      // Refresh access requests
+      await loadAccessRequests();
+      setError(null);
+      toast({
+        title: "Access Request Approved!",
+        description: "User will receive account setup instructions via email.",
+        variant: "default"
+      });
+    } catch (err) {
+      console.error('Error approving request:', err);
+      setError('Failed to approve access request');
+    } finally {
+      setProcessingRequestId(null);
+    }
+  };
+
+  const handleRejectRequest = async (requestId, reason) => {
+    try {
+      setProcessingRequestId(requestId);
+      await rejectAccessRequest({
+        request_id: requestId,
+        rejection_reason: reason
+      });
+      
+      // Refresh access requests
+      await loadAccessRequests();
+      setError(null);
+      toast({
+        title: "Access Request Rejected",
+        description: "The access request has been rejected.",
+        variant: "default"
+      });
+    } catch (err) {
+      console.error('Error rejecting request:', err);
+      setError('Failed to reject access request');
+    } finally {
+      setProcessingRequestId(null);
     }
   };
 
@@ -256,6 +351,60 @@ const SuperAdminManagement = () => {
             {error}
           </div>
         )}
+
+        {/* Tab Navigation */}
+        <div className="mb-6">
+          <div className="border-b border-gray-200">
+            <nav className="-mb-px flex space-x-8">
+              <button
+                onClick={() => {
+                  setActiveTab('access-requests');
+                  setSearchParams({ tab: 'access-requests' });
+                }}
+                className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === 'access-requests'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                Access Requests
+                {pendingRequests.length > 0 && (
+                  <span className="ml-2 bg-red-100 text-red-800 text-xs px-2 py-1 rounded-full">
+                    {pendingRequests.length}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => {
+                  setActiveTab('super-admins');
+                  setSearchParams({ tab: 'super-admins' });
+                }}
+                className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === 'super-admins'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                Super Admins
+              </button>
+            </nav>
+          </div>
+        </div>
+
+        {/* Tab Content */}
+        {activeTab === 'access-requests' && (
+          <AccessRequestsTab
+            accessRequests={pendingRequests}
+            companies={companies}
+            allRoles={allRoles}
+            onApprove={handleApproveRequest}
+            onReject={handleRejectRequest}
+            processingRequestId={processingRequestId}
+          />
+        )}
+
+        {activeTab === 'super-admins' && (
+          <div>
 
         {/* Add Super Admin Section */}
         <div className="mb-6">
@@ -446,6 +595,8 @@ const SuperAdminManagement = () => {
             </div>
           )}
         </div>
+          </div>
+        )}
       </div>
     </div>
   );

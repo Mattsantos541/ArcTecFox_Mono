@@ -4,6 +4,7 @@ import { HelmetProvider } from 'react-helmet-async';
 
 // Import Home eagerly for fast initial load
 import Home from "./pages/Home";
+import Login from "./pages/Login";
 import UnifiedLayout from "./layouts/UnifiedLayout";
 import { AuthProvider, useAuth } from "./hooks/useAuth";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -17,6 +18,7 @@ const SuperAdminManagement = React.lazy(() => import("./pages/SuperAdminManageme
 const TermsOfService = React.lazy(() => import("./pages/TermsOfService"));
 const PrivacyPolicy = React.lazy(() => import("./pages/PrivacyPolicy"));
 const AcceptInvitation = React.lazy(() => import("./pages/AcceptInvitation"));
+const ApprovedSignup = React.lazy(() => import("./pages/ApprovedSignup"));
 
 // Protected Route wrapper
 function ProtectedRoute({ children }) {
@@ -52,9 +54,11 @@ export default function App() {
               <Route element={<UnifiedLayout />}>
                 {/* Public routes */}
                 <Route path="/" element={<Home />} />
+                <Route path="/login" element={<Login />} />
                 <Route path="/terms-of-service" element={<TermsOfService />} />
                 <Route path="/privacy-policy" element={<PrivacyPolicy />} />
                 <Route path="/accept-invitation/:token" element={<AcceptInvitation />} />
+                <Route path="/approved-signup" element={<ApprovedSignup />} />
                 
                 {/* Protected routes */}
                 <Route path="/dashboard" element={
