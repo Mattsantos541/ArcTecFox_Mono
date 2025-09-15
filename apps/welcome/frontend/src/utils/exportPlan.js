@@ -21,15 +21,19 @@ export function exportPlanToExcel({ plan, tasks }) {
 
   // Sheet 2: Tasks
   const taskRows = tasks.map(t => ({
-    Task: t.task_name || "",
-    Interval: t.maintenance_interval || "",
-    Instructions: Array.isArray(t.instructions) ? t.instructions.join(" / ") : (t.instructions || ""),
-    Reason: t.reason || "",
-    "Engineering Rationale": t.engineering_rationale || "",
-    "Safety Precautions": t.safety_precautions || "",
-    "Common Failures Prevented": t.common_failures_prevented || "",
-    "Usage Insights": t.usage_insights || "",
-    "Scheduled Dates": Array.isArray(t.scheduled_dates) ? t.scheduled_dates.join(", ") : (t.scheduled_dates || "")
+    Task: t["Task name"] || t.task_name || "",
+    Interval: t["Maintenance interval"] || t.maintenance_interval || "",
+    Instructions: t["Step-by-step instructions"] || (Array.isArray(t.instructions) ? t.instructions.join(" / ") : (t.instructions || "")),
+    Reason: t["Reason for the task"] || t.reason || "",
+    "Engineering Rationale": t["Engineering rationale"] || t.engineering_rationale || "",
+    "Safety Precautions": t["Safety precautions"] || t.safety_precautions || "",
+    "Common Failures Prevented": t["Common failures prevented"] || t.common_failures_prevented || "",
+    "Usage Insights": t["Usage insights"] || t.usage_insights || "",
+    "Est. Time (min)": t["Estimated time in minutes"] || t.est_minutes || "",
+    "Tools Needed": t["Tools needed"] || t.tools_needed || "",
+    "Technicians": t["Number of technicians needed"] || t.no_techs_needed || "",
+    "Consumables": t["Consumables required"] || t.consumables || "",
+    "Criticality": t["Criticality"] || t.criticality || ""
   }));
   const tasksSheet = XLSX.utils.json_to_sheet(taskRows);
 

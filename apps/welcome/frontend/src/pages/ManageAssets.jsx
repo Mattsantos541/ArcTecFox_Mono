@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, Sparkles, Download, Edit, Trash2 } from 'lucide-react';
+import { Upload, Sparkles, Download, Edit, Trash2, FileText } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { Button } from '../components/ui/button';
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '../components/ui/tooltip';
@@ -21,101 +21,20 @@ import { createStorageService } from '../services/storageService';
 import { saveState, loadState } from '../utils/statePersistence';
 import AssetInsightsDashboard from '../components/assets/AssetInsightsDashboard';
 import BulkImportModal from '../components/assets/BulkImportModal';
+import AssetForm from '../components/assets/AssetForm';
+import AssetTable from '../components/assets/AssetTable';
+import PMPlanManager from '../components/assets/PMPlanManager';
+import { LoadingModal, SuggestionsLoadingModal, ConfirmModal } from '../components/assets/AssetModals';
+import ParentPlanLoadingModal from '../components/assets/ParentPlanLoadingModal';
 
-// Loading Modal Component (copied from PMPlanner)
-function LoadingModal({ isOpen }) {
-  if (!isOpen) return null;
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-8 max-w-md mx-4 text-center">
-        <div className="mb-6">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 rounded-full mb-4">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
-          </div>
-          <h3 className="text-xl font-semibold text-gray-800 mb-2">Generating Your PM Plan</h3>
-          <p className="text-gray-600 mb-4">
-            Our AI is analyzing your asset and creating a comprehensive maintenance plan...
-          </p>
-          <div className="flex justify-center">
-            <div className="text-sm text-blue-600">
-              This may take a few moments...
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// AI Suggestions Loading Modal
-function SuggestionsLoadingModal({ isOpen }) {
-  if (!isOpen) return null;
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-8 max-w-md mx-4 text-center">
-        <div className="mb-6">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-green-100 rounded-full mb-4">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600" />
-          </div>
-          <h3 className="text-xl font-semibold text-gray-800 mb-2">🤖 Getting AI Suggestions</h3>
-          <p className="text-gray-600 mb-4">
-            Our AI is analyzing your parent asset and suggesting relevant child components...
-          </p>
-          <div className="flex justify-center">
-            <div className="text-sm text-green-600">
-              This may take a few moments...
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Parent Plan Generation Loading Modal
-function ParentPlanLoadingModal({ isOpen, status, progress }) {
-  if (!isOpen) return null;
+const ManageAssets = React.memo(({ onAssetUpdate, onPlanCreate, selectedSite, userSites: propUserSites }) => {
+  console.log('🏭 [MANAGE ASSETS] Component rendering - props changed?', { 
+    selectedSite, 
+    propUserSites: propUserSites?.length,
+    onAssetUpdate: typeof onAssetUpdate,
+    onPlanCreate: typeof onPlanCreate 
+  });
   
-  const statusMessages = {
-    'analyzing': 'Analyzing equipment specifications...',
-    'generating': 'Consulting maintenance best practices...',
-    'creating': 'Generating optimal maintenance schedule...',
-    'saving': 'Saving maintenance plan...'
-  };
-  
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-8 max-w-md mx-4 text-center">
-        <div className="mb-6">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-indigo-100 rounded-full mb-4">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600" />
-          </div>
-          <h3 className="text-xl font-semibold text-gray-800 mb-2">
-            🤖 Generating Parent Maintenance Plan
-          </h3>
-          <p className="text-gray-600 mb-4">
-            {statusMessages[status] || 'Processing...'}
-          </p>
-          
-          {/* Progress Bar */}
-          <div className="w-full bg-gray-200 rounded-full h-2 mb-4">
-            <div 
-              className="bg-indigo-600 h-2 rounded-full transition-all duration-500" 
-              style={{width: `${progress || 10}%`}} 
-            />
-          </div>
-          
-          <div className="text-sm text-gray-500 space-y-1">
-            <div>Creating oversight tasks...</div>
-            <div>Identifying critical spare parts...</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-const ManageAssets = ({ onAssetUpdate, onPlanCreate, selectedSite, userSites: propUserSites }) => {
   const { user } = useAuth();
   const [parentAssets, setParentAssets] = useState([]);
   const [childAssets, setChildAssets] = useState([]);
@@ -3040,6 +2959,66 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate, selectedSite, userSites: pr
                             </div>
                           </div>
                         )}
+                        <div className="mt-4 pt-4 border-t">
+                          <button
+                            onClick={async () => {
+                              try {
+                                // Get authentication token
+                                const { data: { session } } = await supabase.auth.getSession();
+                                if (!session) {
+                                  throw new Error('Authentication required for PDF export');
+                                }
+
+                                const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-');
+                                const filename = `Task_${task.task_name.replace(/[^a-zA-Z0-9]/g, '_')}_${timestamp}.pdf`;
+                                const backendUrl = import.meta.env.VITE_BACKEND_URL || 'https://arctecfox-mono.onrender.com';
+
+                                const response = await fetch(`${backendUrl}/api/export-pdf`, {
+                                  method: 'POST',
+                                  headers: {
+                                    'Content-Type': 'application/json',
+                                    'Authorization': `Bearer ${session.access_token}`,
+                                  },
+                                  body: JSON.stringify({
+                                    data: [{
+                                      ...task,
+                                      task: task.task_name,
+                                      asset: selectedChildAssetForPlan?.name || 'Unknown Asset',
+                                      asset_name: selectedChildAssetForPlan?.name || 'Unknown Asset',
+                                      parent_asset_name: selectedParentAsset?.name || '',
+                                      duration: task.maintenance_interval,
+                                      time_to_complete: task.est_minutes ? `${task.est_minutes} minutes` : 'Not specified'
+                                    }],
+                                    filename: filename,
+                                    export_type: 'maintenance_task'
+                                  })
+                                });
+
+                                if (!response.ok) {
+                                  throw new Error(`Export failed: ${response.statusText}`);
+                                }
+
+                                // Download the PDF
+                                const blob = await response.blob();
+                                const url = window.URL.createObjectURL(blob);
+                                const a = document.createElement('a');
+                                a.href = url;
+                                a.download = filename;
+                                document.body.appendChild(a);
+                                a.click();
+                                window.URL.revokeObjectURL(url);
+                                document.body.removeChild(a);
+                              } catch (error) {
+                                console.error('PDF export error:', error);
+                                alert(`Failed to export PDF: ${error.message}`);
+                              }
+                            }}
+                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm flex items-center gap-2"
+                          >
+                            <FileText className="w-4 h-4" />
+                            Export Task
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -3653,6 +3632,6 @@ const ManageAssets = ({ onAssetUpdate, onPlanCreate, selectedSite, userSites: pr
       <LoadingModal isOpen={generatingPlan} />
     </div>
   );
-};
+});
 
 export default ManageAssets;

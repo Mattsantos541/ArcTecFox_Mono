@@ -1,17 +1,60 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "../hooks/useAuth";
 import LeadCaptureModal from "../components/LeadCaptureModal";
 import PMPlannerOpen from "../pages/PMPlannerOpen";
 import ProgressBar from "../components/ProgressBar";
-import { generatePMPlan } from "../api";
-import { saveLeadAndPlan } from "../services/leadFunnelService";
+import ParentPlanLoadingModal from "../components/assets/ParentPlanLoadingModal";
+import { captureLeadWithPlan, sendPMPlanNotification } from "../api";
 import { exportPlanToExcel } from "../utils/exportPlan";
+import { useToast } from "../hooks/use-toast";
+import SEO from "../components/SEO";
 
 export default function Home() {
+  const { user, loading } = useAuth();
+  const navigate = useNavigate();
+  
   const [showLeadModal, setShowLeadModal] = useState(false);
+  const [showLoadingModal, setShowLoadingModal] = useState(false);
+  const [loadingStatus, setLoadingStatus] = useState('analyzing');
+  const [loadingProgress, setLoadingProgress] = useState(0);
   const [assetName, setAssetName] = useState("");
   const [completion, setCompletion] = useState(0);
   const [formState, setFormState] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [resetFormTrigger, setResetFormTrigger] = useState(0);
+  const { toast } = useToast();
+
+  // Redirect authenticated users to dashboard
+  useEffect(() => {
+    if (!loading && user) {
+      console.log('🏠 [HOME] Authenticated user detected - redirecting to dashboard');
+      navigate('/dashboard', { replace: true });
+    }
+  }, [user, loading, navigate]);
+
+  // Don't render landing page if user is authenticated (prevents flash)
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <p>Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <p>Redirecting to dashboard...</p>
+        </div>
+      </div>
+    );
+  }
 
   const scrollToPlanner = () => {
     const el = document.getElementById("pm-planner-section");
@@ -45,35 +88,132 @@ export default function Home() {
     setShowLeadModal(true);
   };
 
-  const handleLeadSubmit = async ({ email, company }) => {
+  const handleLeadSubmit = async ({ email, company, fullName, requestAccess }) => {
     try {
       setSubmitting(true);
-
-      // 1) Generate PM tasks
-      const tasks = await generatePMPlan(formState);
-
-      // 2) Persist lead + plan + tasks
-      const { plan } = await saveLeadAndPlan({
-        form: formState,
-        lead: { email, company },
-        tasks,
-      });
-
-      // 3) Auto-export to Excel for the user
-      exportPlanToExcel({ plan, tasks });
-
       setShowLeadModal(false);
+      setShowLoadingModal(true);
+      
+      // Simulate loading progression
+      const progressSteps = [
+        { status: 'analyzing', progress: 25, delay: 800 },
+        { status: 'generating', progress: 50, delay: 1200 },
+        { status: 'creating', progress: 75, delay: 1000 },
+        { status: 'saving', progress: 90, delay: 500 }
+      ];
+      
+      for (const step of progressSteps) {
+        setLoadingStatus(step.status);
+        setLoadingProgress(step.progress);
+        await new Promise(resolve => setTimeout(resolve, step.delay));
+      }
+
+      // Call the backend endpoint that handles everything
+      const result = await captureLeadWithPlan({
+        planData: formState,
+        email,
+        company,
+        fullName,
+        requestAccess
+      });
+      
+      setLoadingProgress(100);
+      await new Promise(resolve => setTimeout(resolve, 300));
+      setShowLoadingModal(false);
+
+      // Send notification email to support
+      try {
+        await sendPMPlanNotification({
+          user_name: fullName,
+          user_email: email,
+          company_name: company,
+          asset_name: formState?.asset_name,
+          asset_type: formState?.asset_type
+        });
+        console.log('✅ Support notification sent successfully');
+      } catch (emailError) {
+        console.log('⚠️ Support notification failed (non-critical):', emailError);
+      }
+
+      // Auto-export to Excel for the user
+      exportPlanToExcel({ plan: result.plan, tasks: result.data });
+
+      // Download PDF if available
+      if (result.pdf_url) {
+        const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+        const pdfUrl = `${backendUrl}${result.pdf_url}`;
+        
+        console.log('📄 Attempting PDF download from:', pdfUrl);
+        
+        // Use window.open as a fallback for better cross-browser compatibility
+        try {
+          // Try fetch first to ensure the file exists
+          const response = await fetch(pdfUrl);
+          if (response.ok) {
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `PM_Plan_${result.plan.id}.pdf`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(url);
+            console.log('✅ PDF download successful');
+          } else {
+            console.error('❌ PDF download failed: Response not OK', response.status);
+          }
+        } catch (error) {
+          console.error('❌ PDF download error:', error);
+          // Fallback: open in new tab
+          window.open(pdfUrl, '_blank');
+        }
+      }
+
+      // Show success toast notification
+      if (requestAccess) {
+        toast({
+          title: "Plan Created & Access Requested!",
+          description: "You'll receive an email when your account is approved.",
+          variant: "default"
+        });
+      } else {
+        toast({
+          title: "PM Plan Generated Successfully!",
+          description: result.pdf_url 
+            ? "Your preventive maintenance plan has been downloaded as PDF and Excel."
+            : "Your preventive maintenance plan has been downloaded as Excel.",
+          variant: "default"
+        });
+      }
+
+      // Clear the form after successful generation
+      setResetFormTrigger(prev => prev + 1);
+      setAssetName("");
+      setCompletion(0);
+      setFormState(null);
+
     } catch (err) {
-      console.error("❌ Lead funnel save failed:", err);
-      alert(`Failed to save lead/plan: ${err.message}`);
+      console.error("❌ Lead capture failed:", err);
+      setShowLoadingModal(false);
+      toast({
+        title: "Plan Generation Failed",
+        description: `Failed to generate plan: ${err.message}`,
+        variant: "destructive"
+      });
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <div className="bg-gray-50 relative font-sans">
-      {/* --- HERO --- */}
+    <>
+      <SEO 
+        title="ArcTecFox"
+        description="Generate preventive maintenance plans in minutes with AI. Create detailed PM tasks, intervals, and schedules. Export to Excel or PDF. No sign-up required to try."
+      />
+      <div className="bg-gray-50 relative font-sans">
+        {/* --- HERO --- */}
       <section className="bg-white py-16 text-center border-b">
         <div className="max-w-4xl mx-auto px-4">
           <h1 className="text-4xl sm:text-5xl font-extrabold text-gray-900 mb-6">
@@ -181,6 +321,7 @@ export default function Home() {
           onChange={handlePlannerProgress}
           onGenerate={handlePlannerSubmit}
           disabled={submitting}
+          resetTrigger={resetFormTrigger}
         />
       </section>
 
@@ -191,8 +332,15 @@ export default function Home() {
           onLeadSubmit={handleLeadSubmit}
         />
       )}
+      
+      <ParentPlanLoadingModal 
+        isOpen={showLoadingModal}
+        status={loadingStatus}
+        progress={loadingProgress}
+      />
 
       <footer className="mt-12 border-t py-6" />
     </div>
+    </>
   );
 }

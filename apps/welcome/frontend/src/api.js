@@ -140,6 +140,130 @@ export async function getCurrentUser() {
   }
 }
 
+// ✅ Password validation helper
+export const validatePassword = (password) => {
+  const errors = [];
+  if (password.length < 8) errors.push("At least 8 characters required");
+  if (!/[A-Z]/.test(password)) errors.push("One uppercase letter required");
+  if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) errors.push("One special character required");
+  return { valid: errors.length === 0, errors };
+};
+
+// ✅ Check if email should use Google auth
+export const shouldUseGoogleAuth = (email) => {
+  return email.toLowerCase().includes('@gmail.com');
+};
+
+// ✅ Access Request API Functions - reusing existing patterns
+export const createAccessRequest = async (requestData) => {
+  try {
+    console.log('📝 Creating access request:', requestData);
+    
+    const response = await fetch(`${BACKEND_URL}/api/request-access`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestData),
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.detail || 'Failed to create access request');
+    }
+    
+    const result = await response.json();
+    console.log('✅ Access request created successfully');
+    return result;
+  } catch (error) {
+    console.error('❌ Error creating access request:', error);
+    throw error;
+  }
+};
+
+export const fetchAccessRequests = async (status = 'pending') => {
+  try {
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !session) {
+      throw new Error('Authentication required');
+    }
+    
+    const response = await fetch(`${BACKEND_URL}/api/access-requests?status=${status}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.detail || 'Failed to fetch access requests');
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('❌ Error fetching access requests:', error);
+    throw error;
+  }
+};
+
+export const approveAccessRequest = async (approvalData) => {
+  try {
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !session) {
+      throw new Error('Authentication required');
+    }
+    
+    const response = await fetch(`${BACKEND_URL}/api/approve-access`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(approvalData),
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.detail || 'Failed to approve access request');
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('❌ Error approving access request:', error);
+    throw error;
+  }
+};
+
+export const rejectAccessRequest = async (rejectionData) => {
+  try {
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !session) {
+      throw new Error('Authentication required');
+    }
+    
+    const response = await fetch(`${BACKEND_URL}/api/reject-access`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(rejectionData),
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.detail || 'Failed to reject access request');
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('❌ Error rejecting access request:', error);
+    throw error;
+  }
+};
+
 export const savePMLead = async (email, company) => {
   try {
     console.log('📝 Saving lead data:', { email, company });
@@ -565,6 +689,47 @@ export const generateAIPlan = async (planData) => {
 };
 
 // ✅ Combined function using both direct DB + secure AI
+// ✅ Function for complete lead capture flow (public homepage)
+export const captureLeadWithPlan = async ({ planData, email, company, fullName, requestAccess }) => {
+  try {
+    console.log('🚀 Starting lead capture with PM plan generation');
+    
+    // Call backend endpoint that handles everything with service key
+    const response = await fetch(`${BACKEND_URL}/api/lead-capture`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ 
+        planData,
+        email,
+        company,
+        fullName,
+        requestAccess
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.detail || `Backend API call failed: ${response.status}`);
+    }
+
+    const result = await response.json();
+    
+    if (!result.success) {
+      throw new Error('Lead capture failed');
+    }
+
+    console.log('✅ Lead captured and PM plan generated successfully');
+    return result;
+    
+  } catch (error) {
+    console.error("❌ Error in lead capture:", error);
+    throw error;
+  }
+};
+
+// ✅ Original function for authenticated users (DO NOT MODIFY)
 export const generatePMPlan = async (planData) => {
   try {
     console.log('🚀 Starting PM plan generation process');
@@ -2156,5 +2321,34 @@ export const suggestChildAssets = async (parentAssetData) => {
   } catch (error) {
     console.error('❌ Error requesting child asset suggestions:', error);
     throw error;
+  }
+};
+
+// Send PM Plan Generation Notification Email
+export const sendPMPlanNotification = async (notificationData) => {
+  try {
+    console.log('📧 Sending PM plan notification email...');
+
+    const response = await fetch(`${BACKEND_URL}/api/pm-plan-notification`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(notificationData)
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(result.message || 'Failed to send notification email');
+    }
+
+    console.log('✅ PM plan notification sent successfully:', result);
+    return result;
+
+  } catch (error) {
+    console.error('❌ Error sending PM plan notification:', error);
+    // Don't throw error - we don't want to break PM plan generation if email fails
+    return { success: false, error: error.message };
   }
 };

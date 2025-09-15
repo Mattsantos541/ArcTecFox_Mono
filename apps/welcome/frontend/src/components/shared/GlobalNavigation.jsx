@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
-import { isUserSiteAdmin, getUserAdminSites } from "../../api";
+import { isUserSiteAdmin, getUserAdminSites, fetchAccessRequests } from "../../api";
 import UserStatusBar from "../UserStatusBar";
 
 // Admin Menu Component
-function AdminMenu({ adminSites = [] }) {
+function AdminMenu({ adminSites = [], pendingAccessRequests = 0 }) {
   const [isOpen, setIsOpen] = useState(false);
   const navigate = useNavigate();
 
@@ -73,10 +73,13 @@ function AdminMenu({ adminSites = [] }) {
                 )}
                 {isSuperAdmin && (
                   <button
-                    onClick={() => handleNavigation('/admin/super-admins')}
-                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                    onClick={() => handleNavigation('/admin/super-admins?tab=access-requests')}
+                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center justify-between"
                   >
-                    Super Admin Management
+                    <span>Super Admin Management</span>
+                    {pendingAccessRequests > 0 && (
+                      <span className="ml-2 text-xs text-gray-500">({pendingAccessRequests})</span>
+                    )}
                   </button>
                 )}
               </>
@@ -94,16 +97,12 @@ export default function GlobalNavigation() {
   const { user } = useAuth();
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminSites, setAdminSites] = useState([]);
+  const [pendingAccessRequests, setPendingAccessRequests] = useState(0);
   const [adminCheckLoading, setAdminCheckLoading] = useState(false);
   const lastCheckedUserId = useRef(null);
   const adminStatusCache = useRef(new Map());
   
   const isActive = (path) => location.pathname === path;
-  
-  const scrollToPlanner = () => {
-    const el = document.getElementById("pm-planner-section");
-    if (el) el.scrollIntoView({ behavior: "smooth" });
-  };
 
   // Check admin status when user changes
   const checkAdminStatus = useCallback(async () => {
@@ -113,6 +112,7 @@ export default function GlobalNavigation() {
       if (cached && Date.now() - cached.timestamp < 300000) { // 5 min cache
         setIsAdmin(cached.isAdmin);
         setAdminSites(cached.adminSites);
+        setPendingAccessRequests(cached.pendingAccessRequests || 0);
         lastCheckedUserId.current = user.id;
         setAdminCheckLoading(false);
         return;
@@ -128,15 +128,29 @@ export default function GlobalNavigation() {
           getUserAdminSites(user.id)
         ]);
         
+        // Check for pending access requests if user is super admin
+        let pendingCount = 0;
+        const isSuperAdmin = userAdminSites.some(site => site.roles?.name === 'super_admin');
+        if (isSuperAdmin) {
+          try {
+            const requests = await fetchAccessRequests('pending');
+            pendingCount = requests.length;
+          } catch (error) {
+            console.error('Error fetching access requests:', error);
+          }
+        }
+        
         // Cache the results
         adminStatusCache.current.set(user.id, {
           isAdmin: adminStatus,
           adminSites: userAdminSites,
+          pendingAccessRequests: pendingCount,
           timestamp: Date.now()
         });
         
         setIsAdmin(adminStatus);
         setAdminSites(userAdminSites);
+        setPendingAccessRequests(pendingCount);
       } catch (error) {
         console.error('Error checking admin status:', error);
         setIsAdmin(false);
@@ -148,6 +162,7 @@ export default function GlobalNavigation() {
     } else if (!user?.id) {
       setIsAdmin(false);
       setAdminSites([]);
+      setPendingAccessRequests(0);
       lastCheckedUserId.current = null;
     }
   }, [user?.id]);
@@ -172,22 +187,15 @@ export default function GlobalNavigation() {
             </span>
           </Link>
 
-          {/* Navigation Links - Only show Generate PM Plan button for non-authenticated users on landing page */}
+          {/* Navigation Links */}
           <nav className="hidden md:flex items-center space-x-6">
-            {!user && location.pathname === "/" && (
-              <button
-                onClick={scrollToPlanner}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors"
-              >
-                Generate PM Plan
-              </button>
-            )}
+            {/* PM Plan button removed */}
           </nav>
 
           {/* Menu and User Status */}
           <div className="flex items-center space-x-4">
             {user && (
-              <AdminMenu adminSites={adminSites} />
+              <AdminMenu adminSites={adminSites} pendingAccessRequests={pendingAccessRequests} />
             )}
             <UserStatusBar />
           </div>

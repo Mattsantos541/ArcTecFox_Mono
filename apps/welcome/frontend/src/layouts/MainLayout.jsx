@@ -207,7 +207,9 @@ function AuthHeader({ onAdminLoadingChange }) {
       <div className="bg-white border-b border-gray-200 px-6 py-4">
         <div className="max-w-6xl mx-auto flex justify-between items-center">
           <div className="flex items-center space-x-6">
-            <h1 className="text-xl font-bold text-gray-800">ArcTecFox</h1>
+            <h1 className="text-xl font-bold bg-gradient-to-r from-blue-600 via-indigo-500 to-cyan-400 bg-clip-text text-transparent">
+              ArcTecFox — AI-Powered Preventive Maintenance
+            </h1>
             <div className="flex items-center space-x-4">
               {user.user_metadata?.avatar_url && (
                 <img 
@@ -254,7 +256,9 @@ function AuthHeader({ onAdminLoadingChange }) {
   return (
     <div className="bg-white border-b border-gray-200 px-6 py-4">
       <div className="max-w-6xl mx-auto">
-        <h1 className="text-xl font-bold text-gray-800 text-center mb-4">ArcTecFox</h1>
+        <h1 className="text-xl font-bold bg-gradient-to-r from-blue-600 via-indigo-500 to-cyan-400 bg-clip-text text-transparent text-center mb-4">
+          ArcTecFox — AI-Powered Preventive Maintenance
+        </h1>
         <div className="text-center">
           <h3 className="text-lg font-semibold text-gray-800 mb-2">
             Sign in to Access PM Tools

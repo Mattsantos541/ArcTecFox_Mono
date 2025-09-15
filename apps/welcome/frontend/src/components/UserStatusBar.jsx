@@ -1,8 +1,10 @@
 import React from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 
 export default function UserStatusBar() {
-  const { user, loginWithGoogle, logout, loading } = useAuth();
+  const { user, logout, loading } = useAuth();
+  const navigate = useNavigate();
 
   if (loading) {
     return <span className="text-gray-600 text-sm">Loading...</span>;
@@ -34,7 +36,7 @@ export default function UserStatusBar() {
   // Returning-users link style
   return (
     <button
-      onClick={loginWithGoogle}
+      onClick={() => navigate('/login')}
       className="bg-white border px-3 py-1 text-sm rounded shadow hover:bg-gray-100"
       title="Returning users"
     >

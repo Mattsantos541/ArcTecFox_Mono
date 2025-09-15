@@ -1,8 +1,14 @@
 import React from 'react';
+import SEO from '../components/SEO';
 
 function PrivacyPolicy() {
   return (
-    <div className="prose max-w-4xl mx-auto p-8">
+    <>
+      <SEO 
+        title="Privacy Policy"
+        description="Learn how ArcTecFox protects your privacy and handles your data. We are committed to safeguarding your information while providing AI-powered preventive maintenance solutions."
+      />
+      <div className="prose max-w-4xl mx-auto p-8">
       <div className="mb-12">
         <h1 className="text-4xl font-bold mb-4">Privacy Policy for ArcTecFox</h1>
         <p className="text-lg text-gray-600">
@@ -152,6 +158,7 @@ function PrivacyPolicy() {
         </section>
       </div>
     </div>
+    </>
   );
 }
 

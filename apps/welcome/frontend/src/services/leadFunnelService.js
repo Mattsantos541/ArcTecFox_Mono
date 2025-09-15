@@ -1,11 +1,6 @@
 // services/leadFunnelService.js
-import { createClient } from "@supabase/supabase-js";
-
-// Simple client creator (reuses your .env VITE_* vars)
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY
-);
+// Use the shared Supabase client from api.js to prevent multiple instances
+import { supabase } from '../api';
 
 // Coerce possible string fields to arrays
 const toArray = (v) => {

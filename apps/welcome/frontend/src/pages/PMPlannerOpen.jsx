@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 
-export default function PMPlannerOpen({ onGenerate, onChange }) {
-  const [formData, setFormData] = useState({
+export default function PMPlannerOpen({ onGenerate, onChange, resetTrigger }) {
+  const initialFormData = {
     name: "",
     model: "",
     serial: "",
@@ -10,8 +10,17 @@ export default function PMPlannerOpen({ onGenerate, onChange }) {
     additional_context: "",
     environment: "",
     date_of_plan_start: "",
-  });
+  };
+  
+  const [formData, setFormData] = useState(initialFormData);
   const [submitting, setSubmitting] = useState(false);
+
+  // Reset form when resetTrigger changes
+  useEffect(() => {
+    if (resetTrigger) {
+      setFormData(initialFormData);
+    }
+  }, [resetTrigger]);
 
   // notify parent for progress bar
   useEffect(() => {

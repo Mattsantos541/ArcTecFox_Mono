@@ -1,7 +1,8 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import React, { useState, useEffect, useCallback } from "react"
 import { useNavigate } from "react-router-dom"
+import SEO from "../SEO"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -22,7 +23,9 @@ import { useAuth } from "../../hooks/useAuth"
 import { supabase, isUserSiteAdmin, getUserAdminSites } from "../../api" // Import the shared client
 import ManageAssets from "../../pages/ManageAssets"
 
-export default function MaintenanceSchedule() {
+const MaintenanceSchedule = React.memo(function MaintenanceSchedule() {
+  console.log('📊 [MAINTENANCE SCHEDULE] Component mounting/re-rendering');
+  
   // Remove the local Supabase client initialization - use the shared one
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
   const [currentMonth, setCurrentMonth] = useState(new Date())
@@ -57,6 +60,14 @@ export default function MaintenanceSchedule() {
   const { toast } = useToast()
   const navigate = useNavigate()
   const { user } = useAuth()
+
+  // Mount/unmount logging
+  useEffect(() => {
+    console.log('📊 [MAINTENANCE SCHEDULE] Component MOUNTED');
+    return () => {
+      console.log('📊 [MAINTENANCE SCHEDULE] Component UNMOUNTED');
+    };
+  }, []);
 
   // Add state for task actions
   const [viewingTask, setViewingTask] = useState(null)
@@ -159,7 +170,7 @@ export default function MaintenanceSchedule() {
   const [sortDirection, setSortDirection] = useState("asc")
 
   // Fetch tasks from database
-  const fetchTasks = async () => {
+  const fetchTasks = useCallback(async () => {
     if (!user) return
 
     try {
@@ -395,7 +406,7 @@ export default function MaintenanceSchedule() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [user, selectedSite, userSites, toast])
 
   // Update task in database with audit trail and task_signoff updates
   const updateTask = async (taskId, updates, originalTask = null, signoffUpdates = null) => {
@@ -2024,9 +2035,15 @@ export default function MaintenanceSchedule() {
   const stats = getSummaryStats()
 
   return (
-    <ComponentErrorBoundary name="Maintenance Schedule" fallbackMessage="Unable to load the maintenance schedule. Please try refreshing the page.">
-      <TooltipProvider>
-        <div className="space-y-6">
+    <>
+      <SEO 
+        title="Maintenance Dashboard"
+        description="Manage your preventive maintenance schedules, track tasks, and monitor asset health with ArcTecFox's AI-powered PM platform."
+        noindex={true}
+      />
+      <ComponentErrorBoundary name="Maintenance Schedule" fallbackMessage="Unable to load the maintenance schedule. Please try refreshing the page.">
+        <TooltipProvider>
+          <div className="space-y-6">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-2xl font-bold">Maintenance Schedule</h2>
@@ -3682,5 +3699,8 @@ export default function MaintenanceSchedule() {
         </div>
       </TooltipProvider>
     </ComponentErrorBoundary>
+    </>
   )
-}
+});
+
+export default MaintenanceSchedule;

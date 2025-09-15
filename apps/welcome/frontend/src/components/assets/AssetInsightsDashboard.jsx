@@ -6,7 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { Calendar, DollarSign, Clock, Wrench, TrendingUp, ToggleLeft, ToggleRight, ClipboardList } from 'lucide-react';
 
-const AssetInsightsDashboard = ({ parentAsset, childAssets }) => {
+const AssetInsightsDashboard = React.memo(({ parentAsset, childAssets }) => {
   const [maintenanceHistory, setMaintenanceHistory] = useState([]);
   const [consumables, setConsumables] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -720,6 +720,6 @@ const AssetInsightsDashboard = ({ parentAsset, childAssets }) => {
       </Tabs>
     </div>
   );
-};
+});
 
 export default AssetInsightsDashboard;

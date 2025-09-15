@@ -2,8 +2,8 @@
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
-from openai import OpenAI, APIConnectionError, OpenAIError
 from datetime import datetime
+import google.generativeai as genai
 import logging
 import os
 import json
@@ -12,8 +12,8 @@ from typing import Optional, Any, Dict
 router = APIRouter()
 logger = logging.getLogger("main")
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
+# Configure Gemini
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 # ============
 # Input model
@@ -38,69 +38,127 @@ class PMPlanInput(BaseModel):
 # =================
 def generate_prompt(data: PMPlanInput) -> str:
     today = datetime.utcnow().date().isoformat()
+    parent_asset = data.parent_asset if data.parent_asset else "Not applicable"
+    child_asset = data.child_asset if data.child_asset else "Not applicable"
+    site_location = data.site_location if data.site_location else "Not applicable"
+    environment = data.environment if data.environment else "Not applicable"
+    hours = data.hours if data.hours else "Not applicable"
+    frequency = data.frequency if data.frequency else "Not applicable"
+    criticality = data.criticality if data.criticality else "Medium"
+    addl = data.additional_context if data.additional_context else "Not applicable"
+
     return f"""
-You are an expert in preventive maintenance (PM) for industrial assets. Generate a detailed preventive maintenance plan for the following asset.
+ROLE & SCOPE
+You are an expert in enterprise asset management, industrial machinery, and preventive maintenance planning. 
+You have deep knowledge of rotating equipment, mechanical systems, electrical systems, and control systems across 
+multiple industries. You generate authoritative, standard-compliant preventive maintenance plans for child assets 
+(components), drawing from OEM manuals, ISO/ASTM/API standards, and trusted supplier guidance (e.g., SKF, Mobil, Shell).
+Produce a child-asset/component-level PM plan for the specified child asset (component scope only).
 
-Parent/Child Hierarchy & Universal Context (applies to all tasks unless overridden):
-* Parent Asset: {data.parent_asset if data.parent_asset else "Not provided"}
-* Child Asset: {data.child_asset if data.child_asset else "Not provided"}
-* Site Location: {data.site_location if data.site_location else "Not provided"}
-* Environment: {data.environment if data.environment else "Not provided"}
-* Operating Hours: {data.hours}
-* PM Frequency: {data.frequency}
-* Criticality: {data.criticality}
-* Additional Context: {data.additional_context}
-* Plan Start Date: {today}
 
-**Deduplication & Inheritance Rules (IMPORTANT):**
-* Treat Site Location, Environment, Operating Hours, and Criticality as **universal** for this plan and **inherited by the child asset**. Do **not** repeat these in every field; only call out **deviations or overrides** at the task level.
-* Avoid redundant phrasing across tasks. Keep fields concise and only include details unique to the task.
-* If any universal field is unknown, proceed using best practices and state assumptions in the relevant task's "comments".
+UNIVERSAL CONTEXT (inherits unless overridden at task level)
+- Parent Asset: {parent_asset}
+- Child Asset: {child_asset}
+- Site Location: {site_location}
+- Environment: {environment}
+- Operating Hours: {hours}
+- PM Frequency: {frequency}
+- Criticality: {criticality}
+- Additional Context: {addl}
+- Plan Start Date: {today}
 
-**Manual & Sources Policy (MANDATORY):**
-* If a **manufacturer’s manual or manual content has been uploaded/provided to the system**, treat it as primary. **Extract and include exact steps, specifications, materials (brands/grades), and part numbers** from the manual where relevant, and **cite section/page** in "citations".
-* If **no manual content** is available, provide **concrete, authoritative** recommendations using credible standards (ISO/ASTM/API) or reputable supplier docs (e.g., SKF, Mobil, Shell), and cite those sources.
-* ⚠️ **Never** output phrases like "refer to the manual" or "see manual"; always include the actual recommended values/steps/materials.
+POLICIES (MANDATORY)
+- If the system has manufacturer manual content available, treat it as primary. Extract concrete instructions/intervals/specs/lubricants/part numbers and cite exact sections/pages in "citations".
+- If no manual content is available, use recognized standards/suppliers (ISO/ASTM/API; SKF/Mobil/Shell). Cite them. Never write “refer to the manual”; always provide actual values/steps.
+- Do not include calendar dates anywhere; use numeric intervals in **weeks** only.
 
-**Instructions:**
-1. Organize tasks into the following standard frequency groups (for readability only):
-   * Daily, Weekly, Monthly, Quarterly, Yearly
-   However, **all task frequencies must be expressed as a numeric `maintenance_interval` in months**:
-   - Daily ≈ 0.033, Weekly ≈ 0.25, Biweekly ≈ 0.5, Monthly = 1, Quarterly = 3, Yearly = 12
-   Use fractional months as needed. **Do not output any calendar dates.**
+TASK TYPE RESTRICTIONS
+- Exclude routine cleaning or visual-only inspections unless the OEM manual explicitly prescribes them or a standard/supplier requires them. If included, cite the exact source.
+- Otherwise, focus on technical, measurable tasks (lubrication, torque, calibration, functional checks, replacements, adjustments, monitoring, safety interlocks).
 
-2. For each task, provide **all** of the following fields. If a field is not applicable, explicitly return "Not applicable". Do not omit fields. Apply the **Manual & Sources Policy** above:
-   * "parent_asset": Inherit from universal context.
-   * "child_asset": Inherit from universal context.
-   * "task_name": A clear, specific name for the maintenance task.
-   * "maintenance_interval": Months only (numeric, e.g., 0.25, 1, 3, 12). This **replaces any per-date scheduling output**.
-   * "instructions": An array of clear, step-by-step instructions.
-   * "reason": A short explanation of why this task is necessary.
-   * "engineering_rationale": A technical explanation that references universal context **only when it changes or is directly relevant**. Explicitly call out when the task addresses something from the additional context: "{data.additional_context}".
-   * "safety_precautions": Important safety measures or PPE required.
-   * "common_failures_prevented": Typical failures this task helps avoid. Highlight known failure modes and grease points or wear-prone areas where relevant.
-   * "usage_insights": Insights related to {data.hours}. Do **not** reference usage cycles.
-   * "tools_needed": List of tools required to complete the task.
-   * "number_of_technicians": How many technicians are typically needed.
-   * "estimated_time_minutes": Estimated time in minutes to complete this task. This field must be included for every task.
-   * "consumables": Supplies or parts that will be consumed in this task (single-use or limited-use). Be specific about **top recommendations** (brands, grades, part numbers). If not applicable, state "Not applicable".
-   * "risk_assessment": Likely risks and possible failures before the next interval for this task/component.
-   * "criticality_rating": "High" | "Medium" | "Low" for this task’s priority.
-   * "comments": Any additional notes, edge cases, or **explicit overrides** to the universal context (e.g., a task that must be done indoors despite an outdoor environment). If nothing to add, return "None".
-   * "citations": If manual content exists, cite **exact manual section/page** used. Otherwise cite credible standards (ISO/ASTM/API) or supplier data (e.g., SKF, Mobil, Shell).
-   * "inherits_parent_context": true/false indicating whether the task fully inherits the parent/child universal context.
-   * "context_overrides": Object with only the fields that deviate from the universal context (e.g., {{"environment": "Clean room"}}). Use an empty object if none.
+DEDUPLICATION & INHERITANCE
+- Treat Site Location, Environment, Operating Hours, and Criticality as universal context. Do NOT repeat them in every field; only note deviations in "context_overrides".
+- Keep language concise. Avoid redundant phrasing across tasks.
 
-3. **Do not output any per-task scheduled dates.** Replace any scheduling output with the required numeric "maintenance_interval" in months.
+DATA TYPES & UNITS
+- maintenance_interval: **weeks as a number ONLY**. Mapping:
+  Daily ≈ 0.143, Weekly = 1, Biweekly = 2, Monthly ≈ 4, Quarterly ≈ 13, Yearly ≈ 52. Use fractional weeks as needed.
+- estimated_time_minutes, number_of_technicians: integers.
+- Use "Not applicable" for any field where nothing applies. Arrays must contain at least one item (e.g., ["Not applicable"]) when otherwise empty.
+- Safety steps must precede any action that could expose energy. If LOTO applies, include it as the first step.
 
-4. You must address all input provided in the "additional_context". If specific tasks are generated as a result, make that connection clear in "engineering_rationale" or "comments".
+CHILD-ASSET SCOPE NOTES
+- Include lubrication tasks when applicable; identify grease points/zones if known. Provide specific product/type/quantity when available (prefer OEM), otherwise standards/suppliers with citations.
 
-5. Follow the **Manual & Sources Policy**: use concrete details from the uploaded manual if provided; otherwise use authoritative standards/suppliers. **Never** tell the user to "refer to the manual".
+TASK NAMING CONVENTION
+- task_name = "{child_asset} – {{Action}} – {{Area/Subsystem}}" (no marketing fluff).
 
-**Output Format:** Return a single valid JSON object structured like:
-{{ "maintenance_plan": [ {{task1}}, {{task2}}, ... ] }}
+HALLUCINATION GUARDRAILS
+- Never fabricate part numbers or brand-specific specs. If not known credibly, choose a conservative, widely accepted default and record rationale in "assumptions".
+- If any universal field is unknown, proceed with best practices and add a brief assumption.
 
-⚠️ **IMPORTANT:** Return only the raw JSON object. Do not include markdown formatting, commentary, or extra text.
+OUTPUT SECTION
+"maintenance_plan": child-asset tasks ONLY.
+
+REQUIRED FIELDS for each task (never omit; use "Not applicable" where needed):
+- "parent_asset", "child_asset", "task_name", "maintenance_interval",
+- "instructions" (array of steps),
+- "reason", "engineering_rationale",
+- "safety_precautions" (array),
+- "common_failures_prevented" (array),
+- "usage_insights",
+- "tools_needed" (array),
+- "number_of_technicians", "estimated_time_minutes",
+- "consumables" (array),
+- "risk_assessment",
+- "criticality_rating" ("High"|"Medium"|"Low"),
+- "comments",
+- "assumptions" (array),
+- "citations" (array),
+- "inherits_parent_context" (bool),
+- "context_overrides" (object with allowed keys: site_location, environment, operating_hours, criticality; empty if none)
+
+FEW-SHOT EXAMPLE (ABBREVIATED; 1 task)
+{{
+  "parent_asset": "{parent_asset}",
+  "child_asset": "{child_asset}",
+  "task_name": "{child_asset} – Bearing Lubrication – Drive End",
+  "maintenance_interval": 4,
+  "instructions": [
+    "Lock out/tag out per site policy",
+    "Clean grease fitting and surrounding area",
+    "Apply 2–3 shots of NLGI #2 lithium complex grease (per OEM spec) to the drive-end bearing",
+    "Rotate shaft manually to distribute grease",
+    "Wipe excess and re-install fitting cap"
+  ],
+  "reason": "Maintain adequate film and prevent bearing wear due to lubricant depletion",
+  "engineering_rationale": "Approx. monthly (4 weeks) interval aligned to continuous operation in {environment}; adjust if temperature trending indicates",
+  "safety_precautions": ["PPE per site policy", "LOTO before contact with rotating equipment"],
+  "common_failures_prevented": ["Bearing overheating", "Premature wear", "Seizure"],
+  "usage_insights": "For {hours}, consider trending vibration/temperature to optimize interval",
+  "tools_needed": ["Grease gun with zerk coupler", "Clean lint-free wipes"],
+  "number_of_technicians": 1,
+  "estimated_time_minutes": 15,
+  "consumables": ["NLGI #2 lithium complex grease (e.g., Mobil XHP 222)"],
+  "risk_assessment": "Low risk when LOTO applied; risk increases if contamination occurs",
+  "criticality_rating": "Medium",
+  "comments": "Not applicable",
+  "assumptions": ["OEM spec calls for NLGI #2; quantity verified on nameplate/manual"],
+  "citations": ["ISO 17359 – Condition monitoring", "SKF Grease Guide"],
+  "inherits_parent_context": true,
+  "context_overrides": {{}}
+}}
+
+FINAL OUTPUT REQUIREMENTS
+- Return ONE JSON object only, no extra text.
+- Begin your output immediately with:
+{{
+  "maintenance_plan": [
+
+SCHEMA REMINDER
+{{
+  "maintenance_plan": [ {{task1}}, {{task2}}, ... ]
+}}
 """
 
 
@@ -134,13 +192,13 @@ def _validate_plan_structure(plan_json: Dict[str, Any]) -> None:
             errors.append(f"{path} is not an object")
             continue
 
-        # Required keys presence (even if 'Not applicable')
+        # Required keys presence (even if "Not applicable")
         required_keys = [
             "parent_asset", "child_asset", "task_name", "maintenance_interval", "instructions",
             "reason", "engineering_rationale", "safety_precautions", "common_failures_prevented",
             "usage_insights", "tools_needed", "number_of_technicians", "estimated_time_minutes",
-            "consumables", "risk_assessment", "criticality_rating", "comments", "citations",
-            "inherits_parent_context", "context_overrides"
+            "consumables", "risk_assessment", "criticality_rating", "comments", "assumptions",
+            "citations", "inherits_parent_context", "context_overrides"
         ]
         for key in required_keys:
             if key not in task:
@@ -148,7 +206,7 @@ def _validate_plan_structure(plan_json: Dict[str, Any]) -> None:
 
         # Numeric validations
         if "maintenance_interval" in task and not _is_number(task.get("maintenance_interval")):
-            errors.append(f"{path}.maintenance_interval must be numeric (months)")
+            errors.append(f"{path}.maintenance_interval must be numeric (weeks)")
         if "estimated_time_minutes" in task and not _is_number(task.get("estimated_time_minutes")):
             errors.append(f"{path}.estimated_time_minutes must be numeric (minutes)")
 
@@ -164,9 +222,9 @@ def _validate_plan_structure(plan_json: Dict[str, Any]) -> None:
         if "context_overrides" in task and not isinstance(task.get("context_overrides"), dict):
             errors.append(f"{path}.context_overrides must be an object (dict)")
 
-        # Ensure deprecated field not present
+        # Disallow deprecated or off-spec fields
         if "scheduled_dates" in task:
-            errors.append(f"{path}.scheduled_dates must NOT be included; use maintenance_interval in months instead")
+            errors.append(f"{path}.scheduled_dates must NOT be included; use maintenance_interval in weeks instead")
 
     if errors:
         raise HTTPException(status_code=422, detail={"validation_errors": errors})
@@ -178,39 +236,40 @@ def _validate_plan_structure(plan_json: Dict[str, Any]) -> None:
 @router.post("/api/generate-ai-plan")
 async def generate_ai_plan(input: PMPlanInput, request: Request):
     logger.info(f"🚀 Received AI plan request: {input.name}")
+
     prompt = generate_prompt(input)
+
     try:
-        response = client.chat.completions.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": "You are an expert in preventive maintenance planning."},
-                {"role": "user", "content": prompt}
-            ],
-            timeout=40
+        model = genai.GenerativeModel(
+            model_name="gemini-2.0-flash-exp",
+            generation_config=genai.types.GenerationConfig(
+                temperature=0.4,               # more deterministic for schema output
+                max_output_tokens=8192,
+                response_mime_type="application/json",
+            ),
+            system_instruction="Always return pure JSON, no markdown, no prose outside the JSON."
         )
-        ai_output = response.choices[0].message.content
+
+        full_prompt = (
+            "You are an expert in preventive maintenance planning. "
+            "Always return pure JSON without any markdown formatting.\n\n" + prompt
+        )
+
+        response = model.generate_content(full_prompt)
+        ai_output = (response.text or "").replace("```json", "").replace("```", "").strip()
 
         # Parse & validate
         try:
             plan_json = json.loads(ai_output)
         except json.JSONDecodeError:
             logger.error("AI output was not valid JSON")
+            logger.error(f"Raw content (first 600 chars): {ai_output[:600]}...")
             raise HTTPException(status_code=422, detail="Model did not return valid JSON.")
         _validate_plan_structure(plan_json)
 
         logger.info("✅ AI plan generated and validated successfully")
-        # Return both raw and parsed JSON for convenience
         return {"plan": ai_output, "plan_json": plan_json}
 
-    except APIConnectionError as e:
-        logger.error(f"🔌 OpenAI connection error: {e}")
-        raise HTTPException(status_code=502, detail="OpenAI connection failed.")
-    except OpenAIError as e:
-        logger.error(f"🧠 OpenAI API error: {e}")
-        raise HTTPException(status_code=500, detail="OpenAI API error.")
-    except HTTPException:
-        # Already structured; just re-raise
-        raise
     except Exception as e:
-        logger.error(f"❌ Unexpected error: {e}")
-        raise HTTPException(status_code=500, detail="Unexpected server error.")
+        logger.error(f"🧠 Gemini error: {e}")
+        raise HTTPException(status_code=500, detail="Gemini API error.")
