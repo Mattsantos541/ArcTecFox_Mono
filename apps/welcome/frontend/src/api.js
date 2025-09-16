@@ -264,28 +264,8 @@ export const rejectAccessRequest = async (rejectionData) => {
   }
 };
 
-export const savePMLead = async (email, company) => {
-  try {
-    console.log('📝 Saving lead data:', { email, company });
-    
-    const { data, error } = await supabase
-      .from('pm_leads')
-      .insert([{
-        email: email,
-        org_name: company,
-      }])
-      .select()
-      .single();
-
-    if (error) throw error;
-    
-    console.log('✅ Lead data saved successfully:', data);
-    return data;
-  } catch (error) {
-    console.error('❌ Error saving lead:', error);
-    throw error;
-  }
-};
+// Note: savePMLead function removed - pm_leads table no longer in use
+// User email is already available in the users table
 
 export const savePMPlanInput = async (planData) => {
   try {
@@ -733,14 +713,11 @@ export const captureLeadWithPlan = async ({ planData, email, company, fullName, 
 export const generatePMPlan = async (planData) => {
   try {
     console.log('🚀 Starting PM plan generation process');
-    
-    // 1. Save lead (direct to Supabase)
-    await savePMLead(planData.email || "test@example.com", planData.company || "Test Company");
-    
-    // 2. Save plan input (direct to Supabase)
+
+    // 1. Save plan input (direct to Supabase)
     const savedPlanInput = await savePMPlanInput(planData);
-    
-    // 3. Generate AI plan (secure backend call)
+
+    // 2. Generate AI plan (secure backend call)
     const aiGeneratedPlan = await generateAIPlan(planData);
     
     // 4. Save AI results with criticality (direct to Supabase)
