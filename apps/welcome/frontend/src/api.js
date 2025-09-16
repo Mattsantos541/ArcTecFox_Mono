@@ -639,29 +639,48 @@ export const generateAIPlan = async (planData) => {
       throw new Error('Authentication required to generate AI plans');
     }
 
-    const response = await fetch(`${BACKEND_URL}/api/generate-ai-plan`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${session.access_token}`,
-      },
-      body: JSON.stringify({ planData }),
-    });
+    // Add timeout handling (60 seconds for AI generation)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+    }, 60000); // 60 second timeout
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.detail || `Backend API call failed: ${response.status}`);
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/generate-ai-plan`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ planData }),
+        signal: controller.signal, // Add abort signal for timeout
+      });
+
+      // Clear the timeout if request completes
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || `Backend API call failed: ${response.status}`);
+      }
+
+      const result = await response.json();
+
+      if (!result.success) {
+        throw new Error('AI plan generation failed');
+      }
+
+      console.log('✅ AI plan generated successfully via backend');
+      return result.data;
+
+    } catch (fetchError) {
+      // Handle timeout specifically
+      if (fetchError.name === 'AbortError') {
+        throw new Error('AI plan generation timed out after 60 seconds. Please try again.');
+      }
+      throw fetchError;
     }
 
-    const result = await response.json();
-    
-    if (!result.success) {
-      throw new Error('AI plan generation failed');
-    }
-
-    console.log('✅ AI plan generated successfully via backend');
-    return result.data;
-    
   } catch (error) {
     console.error("❌ Error generating AI plan:", error);
     throw error;

@@ -27,12 +27,11 @@ import PMPlanManager from '../components/assets/PMPlanManager';
 import { LoadingModal, SuggestionsLoadingModal, ConfirmModal } from '../components/assets/AssetModals';
 import ParentPlanLoadingModal from '../components/assets/ParentPlanLoadingModal';
 
-const ManageAssets = React.memo(({ onAssetUpdate, onPlanCreate, selectedSite, userSites: propUserSites }) => {
-  console.log('🏭 [MANAGE ASSETS] Component rendering - props changed?', { 
-    selectedSite, 
+const ManageAssets = React.memo(({ onAssetUpdate, selectedSite, userSites: propUserSites }) => {
+  console.log('🏭 [MANAGE ASSETS] Component rendering - props changed?', {
+    selectedSite,
     propUserSites: propUserSites?.length,
-    onAssetUpdate: typeof onAssetUpdate,
-    onPlanCreate: typeof onPlanCreate 
+    onAssetUpdate: typeof onAssetUpdate
   });
   
   const { user } = useAuth();
@@ -161,7 +160,7 @@ const ManageAssets = React.memo(({ onAssetUpdate, onPlanCreate, selectedSite, us
     console.log('🚀 [Component Mount] ManageAssets component mounted/updated');
     console.log('🚀 [Component Mount] Current URL:', window.location.pathname);
     console.log('🚀 [Component Mount] User exists:', !!user);
-    console.log('🚀 [Component Mount] Props:', { onAssetUpdate: !!onAssetUpdate, onPlanCreate: !!onPlanCreate });
+    console.log('🚀 [Component Mount] Props:', { onAssetUpdate: !!onAssetUpdate });
     
     if (user) {
       initializeComponent();
@@ -481,15 +480,27 @@ const ManageAssets = React.memo(({ onAssetUpdate, onPlanCreate, selectedSite, us
       // Get site details
       const site = userSites.find(s => s.id === parentAsset.site_id);
       
-      // Simulate progress updates
+      // Simulate progress updates with proper cleanup
+      const timers = [];
+
       const progressTimer = setInterval(() => {
         setParentPlanProgress(prev => Math.min(prev + 10, 90));
       }, 1000);
-      
-      setTimeout(() => setParentPlanStatus('generating'), 3000);
-      setTimeout(() => setParentPlanStatus('creating'), 6000);
-      setTimeout(() => setParentPlanStatus('saving'), 9000);
-      
+      timers.push(progressTimer);
+
+      const statusTimer1 = setTimeout(() => setParentPlanStatus('generating'), 3000);
+      const statusTimer2 = setTimeout(() => setParentPlanStatus('creating'), 6000);
+      const statusTimer3 = setTimeout(() => setParentPlanStatus('saving'), 9000);
+      timers.push(statusTimer1, statusTimer2, statusTimer3);
+
+      // Cleanup function for all timers
+      const cleanupTimers = () => {
+        clearInterval(progressTimer);
+        clearTimeout(statusTimer1);
+        clearTimeout(statusTimer2);
+        clearTimeout(statusTimer3);
+      };
+
       try {
         // Call parent plan generation API
         const planInput = {
@@ -530,15 +541,15 @@ const ManageAssets = React.memo(({ onAssetUpdate, onPlanCreate, selectedSite, us
         }
         
         // Complete progress
-        clearInterval(progressTimer);
+        cleanupTimers();
         setParentPlanProgress(100);
-        
+
         // Brief success pause
         await new Promise(resolve => setTimeout(resolve, 500));
-        
+
       } catch (error) {
         console.error('🤖 [Parent Plan ERROR]:', error);
-        clearInterval(progressTimer);
+        cleanupTimers();
         // Continue to child suggestions even if parent plan fails
       }
       
@@ -575,7 +586,7 @@ const ManageAssets = React.memo(({ onAssetUpdate, onPlanCreate, selectedSite, us
     // Debug logging to track different contexts
     console.log('🔍 [Parent Asset Creation] Starting...');
     console.log('🔍 [Context] Current URL:', window.location.pathname);
-    console.log('🔍 [Context] Props received:', { onAssetUpdate: !!onAssetUpdate, onPlanCreate: !!onPlanCreate });
+    console.log('🔍 [Context] Props received:', { onAssetUpdate: !!onAssetUpdate });
     console.log('🔍 [Context] User sites available:', userSites.length);
     console.log('🔍 [Context] Parent manual file attached:', !!parentManualFile);
     console.log('🔍 [Context] Component state:', {
@@ -759,13 +770,17 @@ const ManageAssets = React.memo(({ onAssetUpdate, onPlanCreate, selectedSite, us
       if (error) throw error;
 
       const createdAsset = data[0];
-      
+
       // Upload manual if provided
       if (childManualFile) {
         await uploadManualForAsset(childManualFile, newChildAsset.name, createdAsset.id, false);
       }
 
-      await loadChildAssets(selectedParentAsset.id);
+      // Add the new asset to the state instead of reloading everything
+      setChildAssets(prevAssets => [...prevAssets, createdAsset]);
+
+      // Just update the PM plan statuses for the new asset
+      await loadChildAssetPlanStatuses([...childAssets, createdAsset]);
       setShowAddChildAsset(false);
       setNewChildAsset({
         name: '',
@@ -898,7 +913,13 @@ const ManageAssets = React.memo(({ onAssetUpdate, onPlanCreate, selectedSite, us
         await recalculateTaskSignoffDates(assetId, dataToUpdate.plan_start_date);
       }
 
-      await loadChildAssets(selectedParentAsset.id);
+      // Update the specific child asset in state instead of reloading all
+      setChildAssets(prevAssets =>
+        prevAssets.map(asset =>
+          asset.id === childAssetId ? { ...asset, ...childAssetData } : asset
+        )
+      );
+
       if (!updates) {
         // Only reset inline editing state if not called from modal
         setEditingChildAsset(null);
@@ -1296,7 +1317,8 @@ const ManageAssets = React.memo(({ onAssetUpdate, onPlanCreate, selectedSite, us
 
         if (error) throw error;
 
-        await loadChildAssets(selectedParentAsset.id);
+        // Remove the deleted asset from state instead of reloading
+        setChildAssets(prevAssets => prevAssets.filter(asset => asset.id !== assetId));
         setSelectedChildAssetForPlan(null);
         setError(null);
       } catch (err) {
@@ -1581,39 +1603,51 @@ const ManageAssets = React.memo(({ onAssetUpdate, onPlanCreate, selectedSite, us
 
   // Load PM plan statuses for all child assets
   const loadChildAssetPlanStatuses = async (childAssetsList) => {
-    const statuses = {};
-    
-    await Promise.all(
-      childAssetsList.map(async (childAsset) => {
-        try {
-          const { data: plans, error } = await supabase
-            .from('pm_plans')
-            .select('id, status')
-            .eq('child_asset_id', childAsset.id)
-            .eq('status', 'Current')
-            .limit(1);
-          
-          if (error) {
-            console.error('Error checking PM plan status for child asset:', childAsset.id, error);
-            statuses[childAsset.id] = false;
-          } else {
-            const hasPlan = plans && plans.length > 0;
-            statuses[childAsset.id] = hasPlan;
-            if (plans && plans.length > 0) {
-              console.log(`✅ ${childAsset.name}: Has Current PM Plan`, { id: plans[0].id, status: plans[0].status });
-            } else {
-              console.log(`❌ ${childAsset.name}: No Current PM Plan found`);
-            }
-          }
-        } catch (error) {
-          console.error('Error checking PM plan status for child asset:', childAsset.id, error);
-          statuses[childAsset.id] = false;
-        }
-      })
-    );
-    
-    console.log('Final PM Plan statuses:', statuses);
-    setChildAssetPlanStatuses(statuses);
+    if (!childAssetsList || childAssetsList.length === 0) {
+      setChildAssetPlanStatuses({});
+      return;
+    }
+
+    try {
+      // Get all child asset IDs in a single array
+      const childAssetIds = childAssetsList.map(asset => asset.id);
+
+      // Single query to get all PM plans for all child assets at once
+      const { data: plans, error } = await supabase
+        .from('pm_plans')
+        .select('id, status, child_asset_id')
+        .in('child_asset_id', childAssetIds)
+        .eq('status', 'Current');
+
+      if (error) {
+        console.error('Error checking PM plan statuses:', error);
+        // Set all to false on error
+        const statuses = {};
+        childAssetIds.forEach(id => { statuses[id] = false; });
+        setChildAssetPlanStatuses(statuses);
+        return;
+      }
+
+      // Create a map of child_asset_id -> has plan
+      const statuses = {};
+
+      // Initialize all assets as having no plan
+      childAssetIds.forEach(id => { statuses[id] = false; });
+
+      // Mark assets that have plans
+      if (plans && plans.length > 0) {
+        plans.forEach(plan => {
+          statuses[plan.child_asset_id] = true;
+        });
+      }
+
+      setChildAssetPlanStatuses(statuses);
+    } catch (error) {
+      console.error('Error in loadChildAssetPlanStatuses:', error);
+      const statuses = {};
+      childAssetsList.forEach(asset => { statuses[asset.id] = false; });
+      setChildAssetPlanStatuses(statuses);
+    }
   };
 
   // Handle child asset click to display details and load PM plans
@@ -1716,11 +1750,12 @@ const ManageAssets = React.memo(({ onAssetUpdate, onPlanCreate, selectedSite, us
 
     try {
       setError(null);
-      
+      const newlyCreatedAssets = []; // Track newly created assets
+
       for (const indexStr of selectedIndices) {
         const index = parseInt(indexStr);
         const suggestion = suggestedAssets[index];
-        
+
         // Create child asset with AI-suggested data
         const parentAsset = createdParentAsset || selectedParentAsset;
         const childAssetData = {
@@ -1748,24 +1783,40 @@ const ManageAssets = React.memo(({ onAssetUpdate, onPlanCreate, selectedSite, us
         };
 
         console.log('Inserting child asset data:', childAssetData);
-        
-        const { error } = await supabase
+
+        const { data: createdAsset, error } = await supabase
           .from('child_assets')
-          .insert([childAssetData]);
+          .insert([childAssetData])
+          .select()
+          .single();
 
         if (error) {
           console.error('Error creating suggested child asset:', error);
           console.error('Failed data:', childAssetData);
           throw new Error(`Failed to create child asset: ${suggestion.name} - ${error.message}`);
         }
+
+        // Add the newly created asset to our tracking array
+        if (createdAsset) {
+          newlyCreatedAssets.push(createdAsset);
+        }
       }
 
-      // Reload child assets and close modal
+      // Update the state locally without reloading everything
       const parentId = createdParentAsset?.id || selectedParentAsset.id;
       if (createdParentAsset) {
         setSelectedParentAsset(createdParentAsset);
       }
-      await loadChildAssets(parentId);
+
+      // Add the newly created assets to the existing childAssets state
+      if (newlyCreatedAssets.length > 0) {
+        setChildAssets(prevAssets => [...prevAssets, ...newlyCreatedAssets]);
+      }
+
+      // Update the PM plan statuses for all child assets (including new ones)
+      await loadChildAssetPlanStatuses([...childAssets, ...newlyCreatedAssets]);
+
+      // Close modal and reset state
       setShowSuggestionsModal(false);
       setSuggestedAssets([]);
       setSelectedSuggestions({});
@@ -1919,10 +1970,7 @@ const ManageAssets = React.memo(({ onAssetUpdate, onPlanCreate, selectedSite, us
       // Refresh PM plan statuses for all child assets
       await loadChildAssetPlanStatuses(childAssets);
       
-      // Trigger task view and calendar refresh if callback provided
-      if (onPlanCreate) {
-        onPlanCreate();
-      }
+      // PM plan creation completed - local state has been updated
       
       // Show success message
       setError(null);

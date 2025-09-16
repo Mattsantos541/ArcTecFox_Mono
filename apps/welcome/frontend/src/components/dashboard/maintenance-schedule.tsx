@@ -2094,9 +2094,8 @@ const MaintenanceSchedule = React.memo(function MaintenanceSchedule() {
             </TabsList>
 
             <TabsContent value="assets" className="space-y-6" forceMount hidden={viewMode !== 'assets'}>
-              <ManageAssets 
-                onAssetUpdate={fetchTasks} 
-                onPlanCreate={fetchTasks} 
+              <ManageAssets
+                onAssetUpdate={fetchTasks}
                 selectedSite={selectedSite}
                 userSites={userSites}
               />
