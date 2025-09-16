@@ -1,9 +1,9 @@
 import React from 'react';
 import { Button } from '../ui/button';
 import { Tooltip, TooltipTrigger, TooltipContent } from '../ui/tooltip';
-import { Edit, Trash2, FileText, Eye, Download, BookOpen, Wrench } from 'lucide-react';
+import { Edit, Trash2, FileText, Eye, Download, BookOpen } from 'lucide-react';
 
-const AssetTable = React.memo(({ 
+const AssetTable = React.memo(({
   type, // 'parent' or 'child'
   assets,
   selectedAsset,
