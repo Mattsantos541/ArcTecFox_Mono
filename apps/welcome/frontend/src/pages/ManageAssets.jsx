@@ -189,10 +189,48 @@ const ManageAssets = React.memo(({ onAssetUpdate, selectedSite, userSites: propU
         .order('asset_name');
 
       if (error) throw error;
-      setAssetCategories(data || []);
+
+      // If we got data from dim_assets, use it
+      if (data && data.length > 0) {
+        setAssetCategories(data);
+        console.log(`✅ Loaded ${data.length} categories from dim_assets`);
+        return;
+      }
     } catch (err) {
-      console.error('Error loading asset categories:', err);
+      console.error('Error loading asset categories from dim_assets:', err);
     }
+
+    // Fallback to common asset categories if dim_assets is empty or inaccessible
+    const fallbackCategories = [
+      { asset_type_id: 'fb_1', asset_name: 'Pump' },
+      { asset_type_id: 'fb_2', asset_name: 'Motor' },
+      { asset_type_id: 'fb_3', asset_name: 'Compressor' },
+      { asset_type_id: 'fb_4', asset_name: 'Generator' },
+      { asset_type_id: 'fb_5', asset_name: 'HVAC' },
+      { asset_type_id: 'fb_6', asset_name: 'Conveyor' },
+      { asset_type_id: 'fb_7', asset_name: 'Gearbox' },
+      { asset_type_id: 'fb_8', asset_name: 'Transformer' },
+      { asset_type_id: 'fb_9', asset_name: 'Control Panel' },
+      { asset_type_id: 'fb_10', asset_name: 'Valve' },
+      { asset_type_id: 'fb_11', asset_name: 'Heat Exchanger' },
+      { asset_type_id: 'fb_12', asset_name: 'Boiler' },
+      { asset_type_id: 'fb_13', asset_name: 'Fan' },
+      { asset_type_id: 'fb_14', asset_name: 'Filter' },
+      { asset_type_id: 'fb_15', asset_name: 'Bearing' },
+      { asset_type_id: 'fb_16', asset_name: 'Electrical Equipment' },
+      { asset_type_id: 'fb_17', asset_name: 'Hydraulic System' },
+      { asset_type_id: 'fb_18', asset_name: 'Pneumatic System' },
+      { asset_type_id: 'fb_19', asset_name: 'Safety Equipment' },
+      { asset_type_id: 'fb_20', asset_name: 'Production Equipment' },
+      { asset_type_id: 'fb_21', asset_name: 'Material Handling' },
+      { asset_type_id: 'fb_22', asset_name: 'Process Equipment' },
+      { asset_type_id: 'fb_23', asset_name: 'Testing Equipment' },
+      { asset_type_id: 'fb_24', asset_name: 'Instrumentation' },
+      { asset_type_id: 'fb_25', asset_name: 'Lighting' }
+    ];
+
+    setAssetCategories(fallbackCategories);
+    console.log(`⚠️ Using fallback categories (${fallbackCategories.length} categories)`);
   };
 
   const checkUserPermissions = async () => {
@@ -2438,9 +2476,9 @@ const ManageAssets = React.memo(({ onAssetUpdate, selectedSite, userSites: propU
                               <TooltipProvider>
                                 <Tooltip>
                                   <TooltipTrigger asChild>
-                                    <Button 
-                                      variant="ghost" 
-                                      size="sm" 
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         handleExportChildAssetPDF(childAsset);
@@ -2453,12 +2491,12 @@ const ManageAssets = React.memo(({ onAssetUpdate, selectedSite, userSites: propU
                                     <p>Export PDF</p>
                                   </TooltipContent>
                                 </Tooltip>
-                                
+
                                 <Tooltip>
                                   <TooltipTrigger asChild>
-                                    <Button 
-                                      variant="ghost" 
-                                      size="sm" 
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         openEditModal(childAsset, false);
@@ -2471,12 +2509,12 @@ const ManageAssets = React.memo(({ onAssetUpdate, selectedSite, userSites: propU
                                     <p>Edit asset</p>
                                   </TooltipContent>
                                 </Tooltip>
-                                
+
                                 <Tooltip>
                                   <TooltipTrigger asChild>
-                                    <Button 
-                                      variant="ghost" 
-                                      size="sm" 
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         handleDeleteChildAsset(childAsset.id);
