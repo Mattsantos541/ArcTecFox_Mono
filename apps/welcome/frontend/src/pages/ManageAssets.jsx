@@ -2494,7 +2494,7 @@ const ManageAssets = React.memo(({ onAssetUpdate, selectedSite, userSites: propU
                           <td className="px-3 py-1.5 text-xs font-medium text-blue-800 uppercase tracking-wide">
                             Criticality
                           </td>
-                          <td className="px-3 py-1.5 text-xs font-medium text-blue-800 uppercase tracking-wide">
+                          <td className="px-3 py-1.5 text-xs font-medium text-blue-800 uppercase tracking-wide text-center">
                             PM Plan
                           </td>
                           <td className="px-3 py-1.5 text-xs font-medium text-blue-800 uppercase tracking-wide">
@@ -2538,7 +2538,7 @@ const ManageAssets = React.memo(({ onAssetUpdate, selectedSite, userSites: propU
                               {childAsset.criticality || 'Medium'}
                             </div>
                           </td>
-                          <td className="px-3 py-4 whitespace-nowrap">
+                          <td className="px-3 py-4 whitespace-nowrap text-center">
                             <div className="text-sm flex justify-center">
                               {childAssetPlanStatuses[childAsset.id] ? (
                                 <span className="inline-flex items-center justify-center w-6 h-6 bg-green-100 text-green-600 rounded-full">
