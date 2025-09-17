@@ -125,6 +125,11 @@ const ManageAssets = React.memo(({ onAssetUpdate, selectedSite, userSites: propU
   
   // PM Plan generation state
   const [generatingPlan, setGeneratingPlan] = useState(false);
+  const [pmPlanError, setPmPlanError] = useState(null);
+  const [pmPlanSuccess, setPmPlanSuccess] = useState(false);
+  const [pmTasksCreated, setPmTasksCreated] = useState(0);
+  const [pmPlanStatus, setPmPlanStatus] = useState('analyzing');
+  const [pmPlanProgress, setPmPlanProgress] = useState(0);
 
   // PM Plan status tracking for child assets
   const [childAssetPlanStatuses, setChildAssetPlanStatuses] = useState({});
@@ -144,6 +149,10 @@ const ManageAssets = React.memo(({ onAssetUpdate, selectedSite, userSites: propU
   const [parentPlanStatus, setParentPlanStatus] = useState('analyzing');
   const [parentPlanProgress, setParentPlanProgress] = useState(10);
   const [generatedParentPlan, setGeneratedParentPlan] = useState(null);
+  const [parentPlanError, setParentPlanError] = useState(null);
+  const [parentPlanSuccess, setParentPlanSuccess] = useState(false);
+  const [tasksCreated, setTasksCreated] = useState(0);
+  const [sparesIdentified, setSparesIdentified] = useState(0);
 
   // Custom confirmation modal state
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -509,15 +518,23 @@ const ManageAssets = React.memo(({ onAssetUpdate, selectedSite, userSites: propU
   const generateParentPlanWorkflow = async (parentAsset) => {
     try {
       console.log('🤖 [Parent Plan] Starting parent plan generation for:', parentAsset.name);
-      
+
+      // Reset error and success states
+      setParentPlanError(null);
+      setParentPlanSuccess(false);
+      setTasksCreated(0);
+      setSparesIdentified(0);
+
       // Show parent plan modal
       setShowParentPlanModal(true);
       setParentPlanStatus('analyzing');
       setParentPlanProgress(10);
-      
+
       // Get site details
       const site = userSites.find(s => s.id === parentAsset.site_id);
-      
+
+      // Note: Backend uses site_location, not company_name, so no validation needed
+
       // Simulate progress updates with proper cleanup
       const timers = [];
 
@@ -582,21 +599,39 @@ const ManageAssets = React.memo(({ onAssetUpdate, selectedSite, userSites: propU
         cleanupTimers();
         setParentPlanProgress(100);
 
-        // Brief success pause
-        await new Promise(resolve => setTimeout(resolve, 500));
+        // Set success metrics
+        const tasksCount = generatedPlan?.maintenance_tasks?.length || 2;
+        const sparesCount = generatedPlan?.critical_spare_parts?.length || 0;
+        setTasksCreated(tasksCount);
+        setSparesIdentified(sparesCount);
+
+        // Show success state
+        setParentPlanSuccess(true);
+
+        // Brief success pause to show the celebration
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        // Hide modal and continue workflow
+        setShowParentPlanModal(false);
+        setParentPlanSuccess(false); // Reset for next time
+
+        // Continue to child asset suggestions
+        console.log('🤖 [Workflow] Transitioning to child asset suggestions...');
+        await requestChildAssetSuggestions(parentAsset);
 
       } catch (error) {
         console.error('🤖 [Parent Plan ERROR]:', error);
         cleanupTimers();
-        // Continue to child suggestions even if parent plan fails
+
+        // Set error state with details
+        setParentPlanError({
+          message: error.message || 'Failed to generate maintenance plan',
+          details: error.response?.data?.detail || error.toString()
+        });
+
+        // Don't automatically close modal on error - let user retry or close
+        return;
       }
-      
-      // Hide parent plan modal
-      setShowParentPlanModal(false);
-      
-      // Continue to child asset suggestions
-      console.log('🤖 [Workflow] Transitioning to child asset suggestions...');
-      await requestChildAssetSuggestions(parentAsset);
       
     } catch (error) {
       console.error('🤖 [Workflow ERROR]:', error);
@@ -1868,8 +1903,32 @@ const ManageAssets = React.memo(({ onAssetUpdate, selectedSite, userSites: propU
   // Handle Create/Update PM Plan (matching PMPlanner process exactly)
   const handleCreateUpdatePMPlan = async (childAsset) => {
     try {
+      // Reset states
+      setPmPlanError(null);
+      setPmPlanSuccess(false);
+      setPmTasksCreated(0);
+      setPmPlanStatus('analyzing');
+      setPmPlanProgress(10);
+
       setGeneratingPlan(true);
       setError(null);
+
+      // Simulate progress updates
+      const progressTimer = setInterval(() => {
+        setPmPlanProgress(prev => Math.min(prev + 15, 90));
+      }, 1000);
+
+      const statusTimer1 = setTimeout(() => setPmPlanStatus('generating'), 2000);
+      const statusTimer2 = setTimeout(() => setPmPlanStatus('creating'), 4000);
+      const statusTimer3 = setTimeout(() => setPmPlanStatus('saving'), 6000);
+
+      // Cleanup function
+      const cleanupTimers = () => {
+        clearInterval(progressTimer);
+        clearTimeout(statusTimer1);
+        clearTimeout(statusTimer2);
+        clearTimeout(statusTimer3);
+      };
       
       // If updating existing plan, mark it as 'Replaced' and clean up task_signoffs
       if (existingPlans.length > 0) {
@@ -1995,29 +2054,50 @@ const ManageAssets = React.memo(({ onAssetUpdate, selectedSite, userSites: propU
       
       // Call the AI API to generate the plan
       const aiGeneratedPlan = await generatePMPlan(formData);
-      
+
       if (!aiGeneratedPlan) {
         throw new Error('No plan generated from API');
       }
-      
+
       console.log('PM Plan generated successfully:', aiGeneratedPlan);
-      
+
+      // Clean up timers before success
+      cleanupTimers();
+      setPmPlanProgress(100);
+
+      // Set success metrics
+      const tasksCount = Array.isArray(aiGeneratedPlan) ? aiGeneratedPlan.length : 0;
+      setPmTasksCreated(tasksCount);
+      setPmPlanSuccess(true);
+
+      // Brief pause to show success state
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
       // Reload the plans to show the new one
       await loadPMPlansForAsset(selectedParentAsset.id, childAsset.id);
-      
+
       // Refresh PM plan statuses for all child assets
       await loadChildAssetPlanStatuses(childAssets);
-      
-      // PM plan creation completed - local state has been updated
-      
-      // Show success message
+
+      // PM plan creation completed - reset states
+      setGeneratingPlan(false);
+      setPmPlanSuccess(false);
+      setPmPlanError(null);
       setError(null);
-      
+
     } catch (error) {
       console.error('Error creating/updating PM plan:', error);
+
+      // Clean up timers on error
+      cleanupTimers();
+
+      // Set error state for modal
+      setPmPlanError({
+        message: error.message || 'Failed to create/update PM plan',
+        details: error.response?.data?.detail || error.toString()
+      });
+
       setError('Failed to create/update PM plan: ' + error.message);
-    } finally {
-      setGeneratingPlan(false);
     }
   };
 
@@ -3705,17 +3785,54 @@ const ManageAssets = React.memo(({ onAssetUpdate, selectedSite, userSites: propU
       />
 
       {/* Loading Modal for Parent Plan Generation */}
-      <ParentPlanLoadingModal 
-        isOpen={showParentPlanModal} 
+      <ParentPlanLoadingModal
+        isOpen={showParentPlanModal}
         status={parentPlanStatus}
         progress={parentPlanProgress}
+        error={parentPlanError}
+        success={parentPlanSuccess}
+        tasksCreated={tasksCreated}
+        sparesIdentified={sparesIdentified}
+        onRetry={() => {
+          // Clear error and retry
+          setParentPlanError(null);
+          if (createdParentAsset) {
+            generateParentPlanWorkflow(createdParentAsset);
+          }
+        }}
+        onClose={() => {
+          // Close modal and reset states
+          setShowParentPlanModal(false);
+          setParentPlanError(null);
+          setParentPlanSuccess(false);
+        }}
       />
 
       {/* Loading Modal for AI Suggestions */}
       <SuggestionsLoadingModal isOpen={loadingSuggestions} />
 
-      {/* Loading Modal for PM Plan Generation */}
-      <LoadingModal isOpen={generatingPlan} />
+      {/* Enhanced Loading Modal for PM Plan Generation */}
+      <LoadingModal
+        isOpen={generatingPlan}
+        error={pmPlanError}
+        success={pmPlanSuccess}
+        tasksCreated={pmTasksCreated}
+        progress={pmPlanProgress}
+        status={pmPlanStatus}
+        onRetry={() => {
+          // Clear error and retry with the last selected child asset
+          setPmPlanError(null);
+          if (selectedChildAssetForPlan) {
+            handleCreateUpdatePMPlan(selectedChildAssetForPlan);
+          }
+        }}
+        onClose={() => {
+          // Close modal and reset states
+          setGeneratingPlan(false);
+          setPmPlanError(null);
+          setPmPlanSuccess(false);
+        }}
+      />
     </div>
   );
 });
