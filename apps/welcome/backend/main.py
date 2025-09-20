@@ -48,6 +48,7 @@ from api.agent_executor import router as agent_router
 from api.bulk_import import router as bulk_import_router
 from api.full_parent_create_prompt import router as parent_plan_router
 from api.access_requests import router as access_requests_router, send_notification_email
+from api.extract_asset_details import router as extract_details_router
 from api.pm_plan_notification import router as pm_plan_notification_router
 from api.send_invitation import InvitationRequest, send_invitation_email
 from api.send_test_invitation import TestInvitationRequest, send_test_invitation_email
@@ -96,6 +97,7 @@ app.include_router(agent_router, prefix="/api", tags=["agents"])
 app.include_router(bulk_import_router, prefix="/api", tags=["bulk-import"])
 app.include_router(parent_plan_router, prefix="/api", tags=["parent-plans"])
 app.include_router(access_requests_router, prefix="/api", tags=["access-requests"])
+app.include_router(extract_details_router, prefix="/api", tags=["extraction"])
 app.include_router(pm_plan_notification_router, tags=["pm-notifications"])
 
 # Environment-based CORS configuration with smart pattern matching

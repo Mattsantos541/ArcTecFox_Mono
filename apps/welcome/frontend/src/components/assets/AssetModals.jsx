@@ -225,7 +225,7 @@ function SuggestionsLoadingModal({ isOpen }) {
           </div>
           <h3 className="text-xl font-semibold text-gray-800 mb-2">🤖 Getting AI Suggestions</h3>
           <p className="text-gray-600 mb-4">
-            Our AI is analyzing your parent asset and suggesting relevant child components...
+            Our AI is analyzing your parent asset details to suggest relevant child components that match your specifications...
           </p>
           <div className="flex justify-center">
             <div className="text-sm text-green-600">

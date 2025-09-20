@@ -2122,6 +2122,44 @@ export const generateParentPlan = async (parentAssetData) => {
   }
 };
 
+// Extract asset details from user manual using AI
+export const extractAssetDetails = async (manualContent) => {
+  try {
+    console.log('🔍 Extracting asset details from manual');
+
+    // Get current session for auth token
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !session) {
+      throw new Error('Authentication required to extract asset details');
+    }
+
+    const response = await fetch(`${BACKEND_URL}/api/extract-asset-details`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({
+        manual_content: manualContent
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('🔍 Asset details extraction failed:', response.status, errorText);
+      throw new Error(`Failed to extract asset details: ${response.status}`);
+    }
+
+    const result = await response.json();
+    console.log('🔍 Asset details extracted successfully:', result);
+
+    return result;
+  } catch (error) {
+    console.error('🔍 Error extracting asset details:', error);
+    throw error;
+  }
+};
+
 // Create PM Plan record for parent asset
 export const createParentPMPlan = async (parentAssetId, siteId) => {
   try {

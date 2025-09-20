@@ -3,9 +3,9 @@ import { Upload, Sparkles, Download, Edit, Trash2, FileText } from 'lucide-react
 import { useAuth } from '../hooks/useAuth';
 import { Button } from '../components/ui/button';
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '../components/ui/tooltip';
-import { 
-  supabase, 
-  isUserSiteAdmin, 
+import {
+  supabase,
+  isUserSiteAdmin,
   getUserAdminSites,
   fetchPMPlansByAsset,
   generatePMPlan,
@@ -14,7 +14,8 @@ import {
   generateParentPlan,
   createParentPMPlan,
   createPMTasks,
-  updateParentAssetSpares
+  updateParentAssetSpares,
+  extractAssetDetails
 } from '../api';
 import FileUpload from '../components/forms/FileUpload';
 import { createStorageService } from '../services/storageService';
@@ -26,6 +27,7 @@ import AssetTable from '../components/assets/AssetTable';
 import PMPlanManager from '../components/assets/PMPlanManager';
 import { LoadingModal, SuggestionsLoadingModal, ConfirmModal } from '../components/assets/AssetModals';
 import ParentPlanLoadingModal from '../components/assets/ParentPlanLoadingModal';
+import AssetDetailsModal from '../components/assets/AssetDetailsModal';
 
 const ManageAssets = React.memo(({ onAssetUpdate, selectedSite, userSites: propUserSites }) => {
   console.log('🏭 [MANAGE ASSETS] Component rendering - props changed?', {
@@ -164,6 +166,23 @@ const ManageAssets = React.memo(({ onAssetUpdate, selectedSite, userSites: propU
     onConfirm: () => {},
     dangerous: true
   });
+
+  // Asset Details Modal state for enhanced parent creation
+  const [showAssetDetailsModal, setShowAssetDetailsModal] = useState(false);
+  const [extracting, setExtracting] = useState(false);
+  const [extractedData, setExtractedData] = useState({
+    make: null,
+    model: null,
+    serial_number: null,
+    category: null
+  });
+  const [assetDetails, setAssetDetails] = useState({
+    make: '',
+    model: '',
+    serial_number: '',
+    category: ''
+  });
+  const [pendingParentAsset, setPendingParentAsset] = useState(null);
 
   useEffect(() => {
     console.log('🚀 [Component Mount] ManageAssets component mounted/updated');
@@ -642,98 +661,149 @@ const ManageAssets = React.memo(({ onAssetUpdate, selectedSite, userSites: propU
 
   const handleCreateParentAsset = async (e) => {
     e.preventDefault();
-    
+
     // Validate file type if a manual is attached
     if (parentManualFile) {
       const supportedTypes = ['.pdf', '.doc', '.docx', '.txt', '.jpg', '.jpeg', '.png', '.gif'];
       const fileName = parentManualFile.name.toLowerCase();
       const fileExtension = fileName.substring(fileName.lastIndexOf('.'));
-      
+
       if (!supportedTypes.includes(fileExtension)) {
         setError(`Unsupported file type: ${fileExtension}. Supported file types are: PDF, DOC, DOCX, TXT, JPG, JPEG, PNG, GIF`);
         setParentFileUploadError(`File type ${fileExtension} is not supported`);
-        return; // Stop the creation process
+        return;
       }
     }
-    
-    // Debug logging to track different contexts
-    console.log('🔍 [Parent Asset Creation] Starting...');
-    console.log('🔍 [Context] Current URL:', window.location.pathname);
-    console.log('🔍 [Context] Props received:', { onAssetUpdate: !!onAssetUpdate });
-    console.log('🔍 [Context] User sites available:', userSites.length);
-    console.log('🔍 [Context] Parent manual file attached:', !!parentManualFile);
-    console.log('🔍 [Context] Component state:', {
-      loadingSuggestions,
-      showSuggestionsModal,
-      suggestedAssets: suggestedAssets.length,
-      createdParentAsset: !!createdParentAsset
-    });
-    
+
     if (userSites.length === 0) {
-      console.error('🔍 [Error] No user sites available');
       setError('You do not have access to any sites');
       return;
     }
 
     if (!newParentAsset.name.trim()) {
-      console.error('🔍 [Error] Asset name is empty');
       setError('Asset name is required');
       return;
     }
 
     if (!newParentAsset.site_id) {
-      console.error('🔍 [Error] Site ID is missing');
       setError('Site selection is required');
       return;
     }
 
-    console.log('🔍 [Validation] All checks passed, proceeding with creation');
+    // Store the base asset data for later use
+    setPendingParentAsset({
+      ...newParentAsset,
+      purchase_date: newParentAsset.purchase_date || null,
+      install_date: newParentAsset.install_date || null,
+      cost_to_replace: newParentAsset.cost_to_replace ? parseFloat(newParentAsset.cost_to_replace) || null : null
+    });
+
+    // Reset the extracted data for new asset
+    setExtractedData({
+      make: null,
+      model: null,
+      serial_number: null,
+      category: null
+    });
+    setAssetDetails({
+      make: '',
+      model: '',
+      serial_number: '',
+      category: ''
+    });
+
+    // Check if manual was provided and extract details
+    if (parentManualFile) {
+      console.log('🔍 Manual provided, extracting details...');
+      setShowAssetDetailsModal(true);
+      setExtracting(true);
+
+      try {
+        // Read file content for extraction
+        const fileContent = await readFileContent(parentManualFile);
+
+        // Call extraction API
+        const extractionResult = await extractAssetDetails(fileContent);
+
+        // Update states with extracted data
+        setExtractedData(extractionResult.extracted || {});
+        setAssetDetails({
+          make: extractionResult.extracted?.make || '',
+          model: extractionResult.extracted?.model || '',
+          serial_number: extractionResult.extracted?.serial_number || '',
+          category: extractionResult.extracted?.category || ''
+        });
+
+        setExtracting(false);
+      } catch (error) {
+        console.error('Extraction failed:', error);
+        setExtracting(false);
+        // Continue with manual entry on extraction failure
+      }
+    } else {
+      // No manual provided, show modal for manual entry
+      console.log('🔍 No manual provided, showing manual entry form...');
+      setShowAssetDetailsModal(true);
+    }
+  };
+
+  // Helper function to read file content
+  const readFileContent = async (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target.result);
+      reader.onerror = reject;
+      reader.readAsText(file);
+    });
+  };
+
+  // Function to handle asset details confirmation
+  const handleAssetDetailsConfirm = async () => {
+    if (!pendingParentAsset) return;
+
     try {
-      // Fix date handling to prevent timezone issues
-      // Ensure dates are sent as pure YYYY-MM-DD strings or null
-      const assetData = {
-        ...newParentAsset,
-        purchase_date: newParentAsset.purchase_date ? newParentAsset.purchase_date : null,
-        install_date: newParentAsset.install_date ? newParentAsset.install_date : null,
-        cost_to_replace: newParentAsset.cost_to_replace ? parseFloat(newParentAsset.cost_to_replace) || null : null,
+      // Combine pending asset data with details from modal
+      const completeAssetData = {
+        ...pendingParentAsset,
+        make: assetDetails.make || null,
+        model: assetDetails.model || null,
+        serial_number: assetDetails.serial_number || null,
+        category: assetDetails.category || null,
         status: 'active',
         created_by: user.id
       };
-      
-      console.log('🔍 [Database] Inserting parent asset with data:', assetData);
+
+      console.log('🔍 Creating parent asset with complete data:', completeAssetData);
+
       const { data, error } = await supabase
         .from('parent_assets')
-        .insert([assetData])
+        .insert([completeAssetData])
         .select();
 
       if (error) {
-        console.error('🔍 [Database Error] Failed to insert parent asset:', error);
+        console.error('Failed to create parent asset:', error);
         throw error;
       }
 
       const createdAsset = data[0];
-      console.log('🔍 [Success] Parent asset created with ID:', createdAsset.id);
-      console.log('🔍 [Success] Created asset data:', createdAsset);
-      
-      // Upload manual if provided (don't let upload failure prevent child asset suggestions)
+      console.log('✅ Parent asset created:', createdAsset);
+
+      // Upload manual if provided
       if (parentManualFile) {
-        console.log('🔍 [File Upload] Attempting to upload manual...');
         try {
-          await uploadManualForAsset(parentManualFile, newParentAsset.name, createdAsset.id, true);
-          console.log('🔍 [File Upload] Manual uploaded successfully');
+          await uploadManualForAsset(parentManualFile, pendingParentAsset.name, createdAsset.id, true);
+          console.log('✅ Manual uploaded successfully');
         } catch (uploadError) {
-          console.error('🔍 [File Upload Error] File upload failed, but continuing with asset creation:', uploadError);
+          console.error('Manual upload failed:', uploadError);
           setParentFileUploadError(`Failed to upload manual: ${uploadError.message}`);
         }
-      } else {
-        console.log('🔍 [File Upload] No manual file attached, skipping upload');
       }
 
-      console.log('🔍 [Loading] Refreshing parent assets list...');
+      // Refresh parent assets list
       await loadParentAssets();
-      console.log('🔍 [Loading] Parent assets list refreshed');
-      
-      // Reset form immediately after successful creation
+
+      // Close modal and reset states
+      setShowAssetDetailsModal(false);
       setShowAddParentAsset(false);
       setNewParentAsset({
         name: '',
@@ -749,13 +819,16 @@ const ManageAssets = React.memo(({ onAssetUpdate, selectedSite, userSites: propU
       });
       setParentManualFile(null);
       setParentFileUploadError(null);
+      setPendingParentAsset(null);
       setError(null);
-      
-      // Store created asset for later use
-      const assetWithEnvironment = {...createdAsset, environment: userSites.find(s => s.id === createdAsset.site_id)?.environment};
-      console.log('🔍 [Workflow] Starting parent plan generation workflow for:', assetWithEnvironment);
+
+      // Store created asset and start parent plan generation
+      const assetWithEnvironment = {
+        ...createdAsset,
+        environment: userSites.find(s => s.id === createdAsset.site_id)?.environment
+      };
       setCreatedParentAsset(assetWithEnvironment);
-      
+
       // Start parent plan generation workflow
       await generateParentPlanWorkflow(createdAsset);
     } catch (err) {
@@ -2211,50 +2284,6 @@ const ManageAssets = React.memo(({ onAssetUpdate, selectedSite, userSites: propU
                     onChange={(e) => setNewParentAsset(prev => ({ ...prev, name: e.target.value }))}
                     className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                     required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Make
-                  </label>
-                  <input
-                    type="text"
-                    value={newParentAsset.make}
-                    onChange={(e) => setNewParentAsset(prev => ({ ...prev, make: e.target.value }))}
-                    className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Model
-                  </label>
-                  <input
-                    type="text"
-                    value={newParentAsset.model}
-                    onChange={(e) => setNewParentAsset(prev => ({ ...prev, model: e.target.value }))}
-                    className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Serial Number
-                  </label>
-                  <input
-                    type="text"
-                    value={newParentAsset.serial_number}
-                    onChange={(e) => setNewParentAsset(prev => ({ ...prev, serial_number: e.target.value }))}
-                    className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Category
-                  </label>
-                  <input
-                    type="text"
-                    value={newParentAsset.category}
-                    onChange={(e) => setNewParentAsset(prev => ({ ...prev, category: e.target.value }))}
-                    className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                   />
                 </div>
                 <div>
@@ -3806,6 +3835,21 @@ const ManageAssets = React.memo(({ onAssetUpdate, selectedSite, userSites: propU
           setParentPlanError(null);
           setParentPlanSuccess(false);
         }}
+      />
+
+      {/* Asset Details Modal for Enhanced Parent Creation */}
+      <AssetDetailsModal
+        show={showAssetDetailsModal}
+        onClose={() => {
+          setShowAssetDetailsModal(false);
+          setExtracting(false);
+        }}
+        extracting={extracting}
+        extractedData={extractedData}
+        assetDetails={assetDetails}
+        setAssetDetails={setAssetDetails}
+        onConfirm={handleAssetDetailsConfirm}
+        manualProvided={!!parentManualFile}
       />
 
       {/* Loading Modal for AI Suggestions */}
