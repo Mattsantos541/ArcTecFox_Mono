@@ -28,6 +28,7 @@ import PMPlanManager from '../components/assets/PMPlanManager';
 import { LoadingModal, SuggestionsLoadingModal, ConfirmModal } from '../components/assets/AssetModals';
 import ParentPlanLoadingModal from '../components/assets/ParentPlanLoadingModal';
 import AssetDetailsModal from '../components/assets/AssetDetailsModal';
+import { extractTextFromFile, truncateTextForAPI } from '../utils/fileTextExtractor';
 
 const ManageAssets = React.memo(({ onAssetUpdate, selectedSite, userSites: propUserSites }) => {
   console.log('🏭 [MANAGE ASSETS] Component rendering - props changed?', {
@@ -719,11 +720,17 @@ const ManageAssets = React.memo(({ onAssetUpdate, selectedSite, userSites: propU
       setExtracting(true);
 
       try {
-        // Read file content for extraction
-        const fileContent = await readFileContent(parentManualFile);
+        // Extract readable text from file (handles PDFs, DOCs, etc.)
+        console.log(`🔍 Extracting text from ${parentManualFile.type} file: ${parentManualFile.name}`);
+        const extractedText = await extractTextFromFile(parentManualFile);
+
+        // Truncate content for API (20KB limit for better processing)
+        const truncatedContent = truncateTextForAPI(extractedText, 20000);
+
+        console.log(`🔍 Extracted text: ${extractedText.length} chars, sending: ${truncatedContent.length} chars`);
 
         // Call extraction API
-        const extractionResult = await extractAssetDetails(fileContent);
+        const extractionResult = await extractAssetDetails(truncatedContent);
 
         // Update states with extracted data
         setExtractedData(extractionResult.extracted || {});
@@ -747,15 +754,6 @@ const ManageAssets = React.memo(({ onAssetUpdate, selectedSite, userSites: propU
     }
   };
 
-  // Helper function to read file content
-  const readFileContent = async (file) => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (e) => resolve(e.target.result);
-      reader.onerror = reject;
-      reader.readAsText(file);
-    });
-  };
 
   // Function to handle asset details confirmation
   const handleAssetDetailsConfirm = async () => {
